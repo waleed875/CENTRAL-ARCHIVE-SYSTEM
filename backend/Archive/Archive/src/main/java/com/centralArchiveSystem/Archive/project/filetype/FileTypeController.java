@@ -43,7 +43,7 @@ public class FileTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileTypeResponse>> create(@Valid @RequestBody FileTypeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(fileTypeService.create(request), "File type created successfully"));
@@ -55,7 +55,7 @@ public class FileTypeController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileTypeResponse>> update(
             @PathVariable UUID id,
             @Valid @RequestBody FileTypeRequest request) {
@@ -63,7 +63,7 @@ public class FileTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         fileTypeService.delete(id);
         return ResponseEntity.ok(ApiResponse.success(null, "File type deleted successfully"));

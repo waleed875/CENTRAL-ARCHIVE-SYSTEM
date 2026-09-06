@@ -41,7 +41,7 @@ public class RoleController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Create a new role")
     public ApiResponse<RoleResponse> create(@Valid @RequestBody RoleRequest request) {
         RoleResponse response = roleService.create(request);
@@ -56,7 +56,7 @@ public class RoleController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing role")
     public ApiResponse<RoleResponse> update(@PathVariable UUID id, @Valid @RequestBody RoleRequest request) {
         RoleResponse response = roleService.update(id, request);
@@ -64,7 +64,7 @@ public class RoleController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Soft-deactivate a role (must have no active users)")
     public ApiResponse<Void> delete(@PathVariable UUID id) {
         roleService.delete(id);

@@ -42,7 +42,7 @@ public class OrganizationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<OrganizationResponse>> create(@Valid @RequestBody OrganizationRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(organizationService.create(request), "Organization created"));
@@ -64,13 +64,13 @@ public class OrganizationController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<OrganizationResponse>> update(@PathVariable UUID id, @Valid @RequestBody OrganizationRequest request) {
         return ResponseEntity.ok(ApiResponse.success(organizationService.update(id, request), "Organization updated"));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         organizationService.delete(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Organization deleted"));

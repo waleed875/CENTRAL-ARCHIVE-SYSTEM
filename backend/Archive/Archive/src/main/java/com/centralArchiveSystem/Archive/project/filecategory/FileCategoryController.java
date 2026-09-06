@@ -41,7 +41,7 @@ public class FileCategoryController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileCategoryResponse>> create(@Valid @RequestBody FileCategoryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(fileCategoryService.create(request), "File category created successfully"));
@@ -53,7 +53,7 @@ public class FileCategoryController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileCategoryResponse>> update(
             @PathVariable UUID id,
             @Valid @RequestBody FileCategoryRequest request) {
@@ -61,7 +61,7 @@ public class FileCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         fileCategoryService.delete(id);
         return ResponseEntity.ok(ApiResponse.success(null, "File category deleted successfully"));

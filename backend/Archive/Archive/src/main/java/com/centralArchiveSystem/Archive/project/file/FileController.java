@@ -40,7 +40,7 @@ public class FileController {
     }
 
     @PostMapping("/api/v1/projects/{projectId}/files/upload")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileResponse>> uploadFile(
             @PathVariable UUID projectId,
             @RequestParam("file") MultipartFile file,
@@ -51,7 +51,7 @@ public class FileController {
     }
 
     @PostMapping("/api/v1/projects/{projectId}/files/upload-batch")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileBatchResponse>> uploadBatch(
             @PathVariable UUID projectId,
             @RequestParam("files") List<MultipartFile> files,
@@ -67,7 +67,7 @@ public class FileController {
     }
 
     @PatchMapping("/api/v1/files/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileResponse>> updateFileMetadata(
             @PathVariable UUID id,
             @Valid @RequestBody FileUploadRequest request) {
@@ -75,7 +75,7 @@ public class FileController {
     }
 
     @DeleteMapping("/api/v1/files/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<Void>> softDeleteFile(
             @PathVariable UUID id,
             @RequestParam(required = false) String reason) {
@@ -84,6 +84,7 @@ public class FileController {
     }
 
     @GetMapping("/api/v1/files/{id}/download")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry', 'auditor', 'archive_officer', 'import_officer', 'export_officer')")
     public void downloadFile(@PathVariable UUID id, HttpServletResponse response) {
         try {
             InputStream inputStream = fileService.downloadFile(id);
@@ -103,7 +104,7 @@ public class FileController {
     }
 
     @PostMapping("/api/v1/files/{id}/restore")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileResponse>> restoreFile(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(fileService.restoreFile(id), "File restored successfully"));
     }

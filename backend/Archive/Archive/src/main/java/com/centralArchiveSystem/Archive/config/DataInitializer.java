@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -52,10 +54,14 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedDefaultRoles() {
-        seedRole("ADMIN", "Administrator", "Full system access");
-        seedRole("IMPORT_OFFICER", "Import Officer", "Can import/export packages and create projects");
-        seedRole("REVIEWER", "Reviewer", "Can review, approve and correct projects");
-        seedRole("USER", "User", "Standard access");
+        seedRole("system_admin", "مدير النظام", "إدارة المستخدمين والأدوار والجهات والنظام والصلاحيات الحساسة");
+        seedRole("central_data_entry", "مدخل بيانات مركزي", "إنشاء المشاريع وتعديلها وإضافة الملفات من داخل المركز");
+        seedRole("auditor", "مدقق", "مراجعة المشاريع والملفات ثم الاعتماد أو طلب الاستكمال/الرفض");
+        seedRole("archive_officer", "مسؤول أرشفة", "تنفيذ وإدارة عمليات أرشفة المشاريع");
+        seedRole("import_officer", "مسؤول استيراد", "استيراد الحزم إلى النظام المركزي");
+        seedRole("export_officer", "مسؤول تصدير", "تصدير المشاريع والملفات والحزم");
+        seedRole("read_only", "مستخدم قراءة فقط", "استعراض البيانات المسموح بها بدون تعديل");
+        deactivateLegacyRoles();
     }
 
     private void seedRole(String code, String name, String description) {
@@ -71,10 +77,36 @@ public class DataInitializer implements CommandLineRunner {
         log.info("Seeded role: {}", code);
     }
 
+    private void deactivateLegacyRoles() {
+        List<String> legacyCodes = List.of("ADMIN", "IMPORT_OFFICER", "REVIEWER", "USER");
+        for (String code : legacyCodes) {
+            roleRepository.findByCode(code).ifPresent(role -> {
+                role.setIsActive(false);
+                roleRepository.save(role);
+                log.info("Deactivated legacy role: {}", code);
+            });
+        }
+    }
+
     private void seedAdminUser() {
-        if (!bootstrapAdminEnabled || userRepository.existsByUsername(bootstrapAdminUsername)) {
+        Optional<User> existingAdmin = userRepository.findByUsername(bootstrapAdminUsername);
+        Role systemAdminRole = roleRepository.findByCode("system_admin").orElse(null);
+
+        if (existingAdmin.isPresent() && systemAdminRole != null) {
+            User admin = existingAdmin.get();
+            admin.getRoles().add(systemAdminRole);
+            if (admin.getStatus() != User.UserStatus.ACTIVE) {
+                admin.setStatus(User.UserStatus.ACTIVE);
+            }
+            userRepository.save(admin);
+            log.info("Assigning system_admin role to existing bootstrap admin user (username={})", bootstrapAdminUsername);
             return;
         }
+
+        if (!bootstrapAdminEnabled || existingAdmin.isPresent()) {
+            return;
+        }
+
         User admin = new User();
         admin.setUsername(bootstrapAdminUsername);
         admin.setPasswordHash(passwordEncoder.encode(bootstrapAdminPassword));
@@ -83,7 +115,9 @@ public class DataInitializer implements CommandLineRunner {
         admin.setStatus(User.UserStatus.ACTIVE);
 
         Set<Role> roles = new HashSet<>();
-        roleRepository.findByCode("ADMIN").ifPresent(roles::add);
+        if (systemAdminRole != null) {
+            roles.add(systemAdminRole);
+        }
         admin.setRoles(roles);
 
         userRepository.save(admin);

@@ -44,7 +44,7 @@ public class UserController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Create a new user")
     public ApiResponse<UserResponse> create(@Valid @RequestBody UserRequest request) {
         UserResponse response = userService.create(request);
@@ -59,7 +59,7 @@ public class UserController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing user")
     public ApiResponse<UserResponse> update(@PathVariable UUID id, @Valid @RequestBody UserRequest request) {
         UserResponse response = userService.update(id, request);
@@ -67,7 +67,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Soft-delete (disable) a user")
     public ApiResponse<Void> delete(@PathVariable UUID id) {
         userService.delete(id);
@@ -83,7 +83,7 @@ public class UserController {
 
     @PostMapping("/{id}/roles")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Assign a role to a user")
     public ApiResponse<Void> addRole(@PathVariable UUID id, @RequestParam UUID roleId) {
         userService.addRole(id, roleId);
@@ -91,7 +91,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}/roles/{roleId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Remove a role from a user")
     public ApiResponse<Void> removeRole(@PathVariable UUID id, @PathVariable UUID roleId) {
         userService.removeRole(id, roleId);

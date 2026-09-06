@@ -39,7 +39,7 @@ public class ProjectTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<ProjectTypeResponse>> create(@Valid @RequestBody ProjectTypeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(projectTypeService.create(request), "Project type created"));
@@ -51,13 +51,13 @@ public class ProjectTypeController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<ProjectTypeResponse>> update(@PathVariable UUID id, @Valid @RequestBody ProjectTypeRequest request) {
         return ResponseEntity.ok(ApiResponse.success(projectTypeService.update(id, request), "Project type updated"));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         projectTypeService.delete(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Project type deleted"));

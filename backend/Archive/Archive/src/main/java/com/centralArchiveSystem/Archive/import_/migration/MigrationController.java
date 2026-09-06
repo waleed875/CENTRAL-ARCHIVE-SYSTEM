@@ -33,7 +33,7 @@ public class MigrationController {
     }
 
     @PostMapping("/migration-sources")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Create a migration source")
     public ResponseEntity<ApiResponse<MigrationSourceResponse>> createSource(
             @Valid @RequestBody MigrationSourceRequest request) {
@@ -49,7 +49,7 @@ public class MigrationController {
     }
 
     @PatchMapping("/migration-sources/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update a migration source")
     public ResponseEntity<ApiResponse<MigrationSourceResponse>> updateSource(
             @Parameter(description = "Source UUID") @PathVariable UUID id,
@@ -59,7 +59,7 @@ public class MigrationController {
     }
 
     @DeleteMapping("/migration-sources/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Delete a migration source")
     public ResponseEntity<ApiResponse<Void>> deleteSource(
             @Parameter(description = "Source UUID") @PathVariable UUID id) {
@@ -75,7 +75,7 @@ public class MigrationController {
     }
 
     @PostMapping("/migration-sources/{id}/batches")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Create a batch for a migration source")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> createBatch(
             @Parameter(description = "Source UUID") @PathVariable UUID id,
@@ -92,7 +92,7 @@ public class MigrationController {
     }
 
     @PatchMapping("/migration-batches/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update a migration batch")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> updateBatch(
             @Parameter(description = "Batch UUID") @PathVariable UUID id,
@@ -102,7 +102,7 @@ public class MigrationController {
     }
 
     @PostMapping("/migration-batches/{id}/run")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Start a migration batch in the background")
     public ResponseEntity<ApiResponse<Map<String, String>>> runBatch(
             @Parameter(description = "Batch UUID") @PathVariable UUID id,
@@ -115,7 +115,7 @@ public class MigrationController {
     }
 
     @PostMapping("/migration-batches/{id}/complete")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Mark a migration batch as completed")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> completeBatch(
             @Parameter(description = "Batch UUID") @PathVariable UUID id,

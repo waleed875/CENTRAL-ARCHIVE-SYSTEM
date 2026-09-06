@@ -36,7 +36,7 @@ public class ConfidentialityLevelController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Create a new confidentiality level")
     public ResponseEntity<ApiResponse<ConfidentialityLevelResponse>> create(
             @Valid @RequestBody ConfidentialityLevelRequest request) {
@@ -51,7 +51,7 @@ public class ConfidentialityLevelController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update a confidentiality level")
     public ResponseEntity<ApiResponse<ConfidentialityLevelResponse>> update(
             @PathVariable UUID id,
@@ -60,7 +60,7 @@ public class ConfidentialityLevelController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Delete a confidentiality level")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         confidentialityLevelService.delete(id);

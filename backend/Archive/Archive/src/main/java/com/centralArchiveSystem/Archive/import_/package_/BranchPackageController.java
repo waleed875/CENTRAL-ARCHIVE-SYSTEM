@@ -49,7 +49,7 @@ public class BranchPackageController {
     }
 
     @PostMapping(value = "/receive", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Receive a branch package by uploading manifest file")
     public ResponseEntity<ApiResponse<PackageResponse>> receive(
             @Parameter(description = "Manifest file (JSON)", required = true)
@@ -64,7 +64,7 @@ public class BranchPackageController {
     }
 
     @PostMapping(value = "/receive/json", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Receive a branch package by submitting JSON manifest directly")
     public ResponseEntity<ApiResponse<PackageResponse>> receiveJson(
             @RequestBody String manifestJson,
@@ -83,14 +83,14 @@ public class BranchPackageController {
     }
 
     @PostMapping("/{id}/verify")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Verify package integrity and manifest")
     public ResponseEntity<ApiResponse<PackageVerifyResponse>> verify(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(branchPackageService.verify(id), "Package verified"));
     }
 
     @PostMapping("/{id}/import")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Import package projects and files (background process)")
     public ResponseEntity<ApiResponse<Map<String, String>>> importPackage(
             @PathVariable UUID id,

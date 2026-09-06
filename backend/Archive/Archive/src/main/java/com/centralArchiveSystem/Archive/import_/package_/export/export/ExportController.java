@@ -25,7 +25,7 @@ public class ExportController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'export_officer')")
     @Operation(summary = "Create an export package from selected projects")
     public ResponseEntity<ApiResponse<ProjectExport>> create(@Valid @RequestBody ExportRequest request) {
         ProjectExport export = exportService.createExport(
@@ -49,6 +49,7 @@ public class ExportController {
     }
 
     @GetMapping("/{id}/manifest")
+    @PreAuthorize("hasAnyRole('system_admin', 'export_officer')")
     @Operation(summary = "Download the export package manifest (JSON)")
     public ResponseEntity<String> downloadManifest(@PathVariable UUID id) {
         ProjectExport export = exportService.getById(id);

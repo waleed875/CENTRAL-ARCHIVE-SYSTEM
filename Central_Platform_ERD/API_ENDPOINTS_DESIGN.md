@@ -80,7 +80,7 @@ Response: {
     "username": "string",
     "full_name": "string",
     "organization": { "id": "uuid", "name": "string" },
-    "roles": [{ "code": "ADMIN", "name": "Administrator" }],
+    "roles": [{ "code": "system_admin", "name": "مدير النظام" }],
     "max_confidentiality_level": { "id": "uuid", "level_order": 3 }
   }
 }
@@ -119,12 +119,12 @@ Response: 200 OK
 |--------|----------|-------------|------|
 | GET | `/organizations` | List organizations | Yes |
 | GET | `/organizations/tree` | Get full tree | Yes |
-| POST | `/organizations` | Create organization | ADMIN |
+| POST | `/organizations` | Create organization | system_admin |
 | GET | `/organizations/:id` | Get one organization | Yes |
 | GET | `/organizations/:id/tree` | Get subtree from node | Yes |
 | GET | `/organizations/:id/path` | Get path from root | Yes |
-| PATCH | `/organizations/:id` | Update organization | ADMIN |
-| DELETE | `/organizations/:id` | Deactivate organization | ADMIN |
+| PATCH | `/organizations/:id` | Update organization | system_admin |
+| DELETE | `/organizations/:id` | Deactivate organization | system_admin |
 
 ### GET /organizations
 
@@ -222,18 +222,18 @@ Errors: 422 if has active children or active projects
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/users` | List users | Yes |
-| POST | `/users` | Create user | ADMIN |
+| POST | `/users` | Create user | system_admin |
 | GET | `/users/:id` | Get one user | Yes |
-| PATCH | `/users/:id` | Update user | ADMIN |
-| DELETE | `/users/:id` | Deactivate user | ADMIN |
+| PATCH | `/users/:id` | Update user | system_admin |
+| DELETE | `/users/:id` | Deactivate user | system_admin |
 | GET | `/users/:id/roles` | List user roles | Yes |
-| POST | `/users/:id/roles` | Assign role | ADMIN |
-| DELETE | `/users/:id/roles/:roleId` | Remove role | ADMIN |
+| POST | `/users/:id/roles` | Assign role | system_admin |
+| DELETE | `/users/:id/roles/:roleId` | Remove role | system_admin |
 
 ### GET /users
 
 ```
-Query: ?organization_id=uuid&status=ACTIVE&role=REVIEWER&search=ahmed&page=1&limit=20
+Query: ?organization_id=uuid&status=ACTIVE&role=auditor&search=ahmed&page=1&limit=20
 
 Response: [{
   "id": "uuid",
@@ -243,7 +243,7 @@ Response: [{
   "status": "ACTIVE",
   "organization": { "id": "uuid", "name": "Quality Lab", "code": "QL-01" },
   "max_confidentiality_level": { "id": "uuid", "name": "Secret", "level_order": 3 },
-  "roles": [{ "id": "uuid", "code": "REVIEWER", "name": "Reviewer" }],
+  "roles": [{ "id": "uuid", "code": "auditor", "name": "مدقق" }],
   "created_at": "2025-01-01T00:00:00Z"
 }]
 ```
@@ -311,8 +311,8 @@ Errors: 422 if user has active import operations
 ```
 Response: [{
   "id": "uuid",
-  "code": "ADMIN",
-  "name": "Administrator",
+  "code": "system_admin",
+  "name": "مدير النظام",
   "assigned_at": "2025-01-01T00:00:00Z",
   "assigned_by": { "id": "uuid", "full_name": "string" }
 }]
@@ -336,13 +336,24 @@ Response: 204 No Content
 
 ## 4. Roles
 
+النظام المركزي يعتمد فقط على الأدوار المركزية السبعة التالية:
+| الدور البرمجي | الاسم العربي | الوظيفة الأساسية |
+|---|---|---|
+| `system_admin` | مدير النظام | إدارة المستخدمين والأدوار والجهات والنظام والصلاحيات الحساسة |
+| `central_data_entry` | مدخل بيانات مركزي | إنشاء المشاريع وتعديلها وإضافة الملفات من داخل المركز |
+| `auditor` | مدقق | مراجعة المشاريع والملفات ثم الاعتماد أو طلب الاستكمال/الرفض |
+| `archive_officer` | مسؤول أرشفة | تنفيذ وإدارة عمليات أرشفة المشاريع |
+| `import_officer` | مسؤول استيراد | استيراد الحزم إلى النظام المركزي |
+| `export_officer` | مسؤول تصدير | تصدير المشاريع والملفات والحزم |
+| `read_only` | مستخدم قراءة فقط | استعراض البيانات المسموح بها بدون تعديل |
+
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/roles` | List all roles | Yes |
-| POST | `/roles` | Create role | ADMIN |
+| POST | `/roles` | Create role | system_admin |
 | GET | `/roles/:id` | Get one role | Yes |
-| PATCH | `/roles/:id` | Update role | ADMIN |
-| DELETE | `/roles/:id` | Deactivate role | ADMIN |
+| PATCH | `/roles/:id` | Update role | system_admin |
+| DELETE | `/roles/:id` | Deactivate role | system_admin |
 
 ### GET /roles
 
@@ -351,9 +362,9 @@ Query: ?is_active=true&search=admin
 
 Response: [{
   "id": "uuid",
-  "code": "ADMIN",
-  "name": "Administrator",
-  "description": "Full system access",
+  "code": "system_admin",
+  "name": "مدير النظام",
+  "description": "إدارة المستخدمين والأدوار والجهات والنظام والصلاحيات الحساسة",
   "is_active": true,
   "users_count": 3
 }]
@@ -363,7 +374,7 @@ Response: [{
 
 ```
 Request: {
-  "code": "string (unique, e.g. ADMIN, REVIEWER, IMPORT_OFFICER)",
+  "code": "string (unique, e.g. system_admin, central_data_entry, auditor, archive_officer, import_officer, export_officer, read_only)",
   "name": "string",
   "description": "string?"
 }
@@ -399,10 +410,10 @@ Errors: 422 if role currently assigned to active users
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/confidentiality-levels` | List all levels | Yes |
-| POST | `/confidentiality-levels` | Create level | ADMIN |
+| POST | `/confidentiality-levels` | Create level | system_admin |
 | GET | `/confidentiality-levels/:id` | Get one level | Yes |
-| PATCH | `/confidentiality-levels/:id` | Update level | ADMIN |
-| DELETE | `/confidentiality-levels/:id` | Delete level | ADMIN |
+| PATCH | `/confidentiality-levels/:id` | Update level | system_admin |
+| DELETE | `/confidentiality-levels/:id` | Delete level | system_admin |
 
 ### GET /confidentiality-levels
 
@@ -461,10 +472,10 @@ Errors: 422 if used by any projects, files, or users
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/project-types` | List all types | Yes |
-| POST | `/project-types` | Create type | ADMIN |
+| POST | `/project-types` | Create type | system_admin |
 | GET | `/project-types/:id` | Get one type | Yes |
-| PATCH | `/project-types/:id` | Update type | ADMIN |
-| DELETE | `/project-types/:id` | Deactivate type | ADMIN |
+| PATCH | `/project-types/:id` | Update type | system_admin |
+| DELETE | `/project-types/:id` | Deactivate type | system_admin |
 
 ### GET /project-types
 
@@ -514,15 +525,15 @@ Response: 204 No Content (soft deactivation)
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/projects` | List projects | Yes |
-| POST | `/projects` | Create project | IMPORT_OFFICER+ |
+| POST | `/projects` | Create project | central_data_entry+ |
 | GET | `/projects/:id` | Get one project | Yes |
-| PATCH | `/projects/:id` | Update project | IMPORT_OFFICER+ |
-| POST | `/projects/:id/new-version` | Create new version | IMPORT_OFFICER+ |
+| PATCH | `/projects/:id` | Update project | central_data_entry+ |
+| POST | `/projects/:id/new-version` | Create new version | central_data_entry+ |
 | GET | `/projects/:id/versions` | List all versions | Yes |
-| PATCH | `/projects/:id/submit-for-review` | Submit for review | IMPORT_OFFICER+ |
-| PATCH | `/projects/:id/request-correction` | Request correction | REVIEWER+ |
-| PATCH | `/projects/:id/approve` | Approve project | REVIEWER+ |
-| PATCH | `/projects/:id/archive` | Archive project | ADMIN |
+| PATCH | `/projects/:id/submit-for-review` | Submit for review | central_data_entry+ |
+| PATCH | `/projects/:id/request-correction` | Request correction | auditor+ |
+| PATCH | `/projects/:id/approve` | Approve project | auditor+ |
+| PATCH | `/projects/:id/archive` | Archive project | system_admin, archive_officer |
 | GET | `/projects/search` | Full-text search | Yes |
 | GET | `/projects/stats` | Dashboard statistics | Yes |
 
@@ -808,9 +819,9 @@ Response: {
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/projects/:projectId/members` | List members | Yes |
-| POST | `/projects/:projectId/members` | Add member | IMPORT_OFFICER+ |
-| PATCH | `/projects/:projectId/members/:id` | Update member | IMPORT_OFFICER+ |
-| DELETE | `/projects/:projectId/members/:id` | Remove member | IMPORT_OFFICER+ |
+| POST | `/projects/:projectId/members` | Add member | central_data_entry+ |
+| PATCH | `/projects/:projectId/members/:id` | Update member | central_data_entry+ |
+| DELETE | `/projects/:projectId/members/:id` | Remove member | central_data_entry+ |
 
 ### GET /projects/:projectId/members
 
@@ -858,10 +869,10 @@ Errors: 422 if project is APPROVED/ARCHIVED
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/file-categories` | List categories | Yes |
-| POST | `/file-categories` | Create category | ADMIN |
+| POST | `/file-categories` | Create category | system_admin |
 | GET | `/file-categories/:id` | Get one category | Yes |
-| PATCH | `/file-categories/:id` | Update category | ADMIN |
-| DELETE | `/file-categories/:id` | Deactivate category | ADMIN |
+| PATCH | `/file-categories/:id` | Update category | system_admin |
+| DELETE | `/file-categories/:id` | Deactivate category | system_admin |
 
 ### GET /file-categories
 
@@ -916,10 +927,10 @@ Errors: 422 if has active files
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/file-types` | List types | Yes |
-| POST | `/file-types` | Create type | ADMIN |
+| POST | `/file-types` | Create type | system_admin |
 | GET | `/file-types/:id` | Get one type | Yes |
-| PATCH | `/file-types/:id` | Update type | ADMIN |
-| DELETE | `/file-types/:id` | Deactivate type | ADMIN |
+| PATCH | `/file-types/:id` | Update type | system_admin |
+| DELETE | `/file-types/:id` | Deactivate type | system_admin |
 
 ### GET /file-types
 
@@ -978,12 +989,12 @@ Response: 204 No Content (soft deactivation)
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/projects/:projectId/files` | List project files | Yes |
-| POST | `/projects/:projectId/files/upload` | Upload file(s) | IMPORT_OFFICER+ |
+| POST | `/projects/:projectId/files/upload` | Upload file(s) | central_data_entry+ |
 | GET | `/files/:id` | Get file metadata | Yes |
-| PATCH | `/files/:id` | Update file metadata | IMPORT_OFFICER+ |
-| DELETE | `/files/:id` | Soft delete file | IMPORT_OFFICER+ |
+| PATCH | `/files/:id` | Update file metadata | central_data_entry+ |
+| DELETE | `/files/:id` | Soft delete file | central_data_entry+ |
 | GET | `/files/:id/download` | Download file | Yes |
-| POST | `/files/:id/restore` | Restore deleted file | ADMIN |
+| POST | `/files/:id/restore` | Restore deleted file | system_admin |
 
 ### GET /projects/:projectId/files
 
@@ -1120,10 +1131,10 @@ Errors: 422 if file was not DELETED
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/packages` | List packages | Yes |
-| POST | `/packages/receive` | Receive package from terminal | IMPORT_OFFICER+ |
+| POST | `/packages/receive` | Receive package from terminal | import_officer+ |
 | GET | `/packages/:id` | Get one package | Yes |
-| POST | `/packages/:id/verify` | Verify package integrity | IMPORT_OFFICER+ |
-| POST | `/packages/:id/import` | Import package contents | IMPORT_OFFICER+ |
+| POST | `/packages/:id/verify` | Verify package integrity | import_officer+ |
+| POST | `/packages/:id/import` | Import package contents | import_officer+ |
 | GET | `/packages/:id/projects` | List projects in package | Yes |
 | GET | `/packages/:id/operations` | List import operations | Yes |
 
@@ -1293,16 +1304,16 @@ Response: [{
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | GET | `/migration-sources` | List sources | Yes |
-| POST | `/migration-sources` | Create source | ADMIN |
+| POST | `/migration-sources` | Create source | system_admin |
 | GET | `/migration-sources/:id` | Get one source | Yes |
-| PATCH | `/migration-sources/:id` | Update source | ADMIN |
-| DELETE | `/migration-sources/:id` | Delete source | ADMIN |
+| PATCH | `/migration-sources/:id` | Update source | system_admin |
+| DELETE | `/migration-sources/:id` | Delete source | system_admin |
 | GET | `/migration-sources/:id/batches` | List batches | Yes |
-| POST | `/migration-sources/:id/batches` | Create batch | ADMIN |
+| POST | `/migration-sources/:id/batches` | Create batch | system_admin |
 | GET | `/migration-batches/:id` | Get one batch | Yes |
-| PATCH | `/migration-batches/:id` | Update batch | ADMIN |
-| POST | `/migration-batches/:id/run` | Execute migration | ADMIN |
-| POST | `/migration-batches/:id/complete` | Mark batch done | ADMIN |
+| PATCH | `/migration-batches/:id` | Update batch | system_admin |
+| POST | `/migration-batches/:id/run` | Execute migration | system_admin |
+| POST | `/migration-batches/:id/complete` | Mark batch done | system_admin |
 
 ### GET /migration-sources
 
@@ -1437,9 +1448,9 @@ Response: 200 OK
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| GET | `/audit-logs` | Search audit logs | ADMIN |
-| GET | `/audit-logs/:id` | Get one log entry | ADMIN |
-| GET | `/audit-logs/entity/:type/:id` | Get entity history | ADMIN |
+| GET | `/audit-logs` | Search audit logs | system_admin |
+| GET | `/audit-logs/:id` | Get one log entry | system_admin |
+| GET | `/audit-logs/entity/:type/:id` | Get entity history | system_admin |
 
 ### GET /audit-logs
 

@@ -42,7 +42,7 @@ public class ProjectController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new project")
     public ResponseEntity<ApiResponse<ProjectResponse>> create(@Valid @RequestBody ProjectRequest request) {
         ProjectResponse response = projectService.create(request);
@@ -58,7 +58,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Update a project")
     public ResponseEntity<ApiResponse<ProjectResponse>> update(@PathVariable UUID id,
                                                    @Valid @RequestBody ProjectRequest request) {
@@ -67,7 +67,7 @@ public class ProjectController {
     }
 
     @PostMapping("/{id}/new-version")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new version of a project")
     public ResponseEntity<ApiResponse<ProjectResponse>> newVersion(@PathVariable UUID id) {
         ProjectResponse response = projectService.newVersion(id);
@@ -83,7 +83,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}/submit-for-review")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Submit a project for review")
     public ResponseEntity<ApiResponse<ProjectResponse>> submitForReview(@PathVariable UUID id) {
         ProjectResponse response = projectService.submitForReview(id);
@@ -91,7 +91,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}/request-correction")
-    @PreAuthorize("hasAnyRole('ADMIN', 'REVIEWER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Request correction on a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> requestCorrection(
             @PathVariable UUID id,
@@ -102,7 +102,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('ADMIN', 'REVIEWER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Approve a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> approve(
             @PathVariable UUID id,
@@ -113,7 +113,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('ADMIN', 'REVIEWER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Reject a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> reject(
             @PathVariable UUID id,
@@ -124,7 +124,7 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}/archive")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('system_admin', 'archive_officer')")
     @Operation(summary = "Archive an approved project")
     public ResponseEntity<ApiResponse<ProjectResponse>> archive(@PathVariable UUID id) {
         ProjectResponse response = projectService.archive(id);

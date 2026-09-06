@@ -28,7 +28,7 @@ public class ProjectMemberController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<MemberResponse>> create(
             @PathVariable UUID projectId,
             @Valid @RequestBody MemberRequest request) {
@@ -37,7 +37,7 @@ public class ProjectMemberController {
     }
 
     @PatchMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<MemberResponse>> update(
             @PathVariable UUID projectId,
             @PathVariable UUID id,
@@ -47,7 +47,7 @@ public class ProjectMemberController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'IMPORT_OFFICER')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<Void>> delete(
             @PathVariable UUID projectId,
             @PathVariable UUID id) {
