@@ -6,7 +6,7 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "baseUrl", "value": "https://w0x89x36-8080.euw.devtunnels.ms", "type": "string" },
     { "key": "username", "value": "admin", "type": "string" },
     { "key": "password", "value": "admin123", "type": "string" },
     { "key": "token", "value": "", "type": "string" },
