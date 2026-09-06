@@ -1,0 +1,708 @@
+{
+  "info": {
+    "name": "Central Archive - 04 Import & Migration",
+    "_postman_id": "import-migration-collection-0004",
+    "description": "Branch Package import and legacy DB Migration endpoints.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\n## First step\nRun **Setup > Login** once. It stores the token into `{{token}}` automatically. Bearer auth is configured at collection level.\n\n## Branch packages\nA TERMINAL produces a package manifest (JSON), which the central system receives via multipart (`receive`) or raw JSON (`receive/json`). Then verify, then import (with organization mapping / duplicate handling).\n\n## Import operations\nEach import creates operations per module that can be polled/updated by status: STARTED, SUCCESS, FAILED, PARTIAL.\n\n## Migration\nDefine a source (legacy DB), create batches, run a batch with connection config, then complete it.\n\n## Auto-captured IDs\nAfter receiving a package / creating an operation / creating a source or batch, ids are stored into `{{packageId}}`, `{{operationId}}`, `{{migrationSourceId}}`, `{{batchId}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "username", "value": "admin", "type": "string" },
+    { "key": "password", "value": "admin123", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "orgId", "value": "", "type": "string" },
+    { "key": "packageId", "value": "", "type": "string" },
+    { "key": "operationId", "value": "", "type": "string" },
+    { "key": "migrationSourceId", "value": "", "type": "string" },
+    { "key": "batchId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Login (required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+                  "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Branch Packages",
+      "item": [
+        {
+          "name": "List Packages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages?searchTerm=&status=&sourceOrganizationId=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages"],
+              "query": [
+                { "key": "searchTerm", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "sourceOrganizationId", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Receive Package (multipart manifest)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "receivedBy",
+                  "value": "system",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/receive?receivedBy=system",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "receive"],
+              "query": [
+                { "key": "receivedBy", "value": "system", "disabled": true }
+              ]
+            },
+            "description": "multipart/form-data. Select the manifest JSON file in the `file` field. Statuses: RECEIVED, VERIFIED, IMPORTED, FAILED, DUPLICATE. Stores the new id into `{{packageId}}` (if present in the response)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('packageId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Receive Package (raw JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"manifest\": \"paste your manifest JSON here\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/receive/json?receivedBy=system",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "receive", "json"],
+              "query": [
+                { "key": "receivedBy", "value": "system", "disabled": true }
+              ]
+            },
+            "description": "Sends the manifest as a raw JSON body. Paste the full manifest text."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('packageId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Package",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Verify Package",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "verify"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Package Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "projects"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Package Operations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "operations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Import Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetOrganizationId\": \"{{orgId}}\",\n  \"organizationMapping\": {},\n  \"skipDuplicates\": true,\n  \"overwriteExisting\": false,\n  \"importedBy\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "import"]
+            },
+            "description": "organizationMapping maps source organization UUID -> target organization UUID (optional). Returns 202 ACCEPTED; poll the package operations afterward."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('202 accepted', () => pm.response.to.have.status(202));"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Import Operations",
+      "item": [
+        {
+          "name": "List Operations By Package",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "operations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Import Operation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations?importedBy=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "packages", "{{packageId}}", "operations"],
+              "query": [
+                { "key": "importedBy", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Stores the new id into `{{operationId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('operationId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Import Operation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/{{operationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "operations", "{{operationId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Operation Status",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/operations/{{operationId}}/status?status=SUCCESS&errorMessage=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "operations", "{{operationId}}", "status"],
+              "query": [
+                { "key": "status", "value": "SUCCESS" },
+                { "key": "errorMessage", "value": "", "disabled": true }
+              ]
+            },
+            "description": "status: STARTED, SUCCESS, FAILED, PARTIAL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Migration Sources",
+      "item": [
+        {
+          "name": "List Migration Sources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Migration Source",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Legacy DB Office A\",\n  \"sourceType\": \"ORACLE\",\n  \"databaseName\": \"legacy_archives\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Legacy archive database\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources"]
+            },
+            "description": "Stores the new id into `{{migrationSourceId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('migrationSourceId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Migration Source",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Migration Source",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Legacy DB Office A\",\n  \"sourceType\": \"ORACLE\",\n  \"databaseName\": \"legacy_archives\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Migration Source",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Migration Batches",
+      "item": [
+        {
+          "name": "List Batches For Source",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}/batches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}", "batches"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Migration Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"First batch\",\n  \"projectsCount\": 100,\n  \"filesCount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}/batches",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}", "batches"]
+            },
+            "description": "Stores the new id into `{{batchId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('batchId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Migration Batch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-batches", "{{batchId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Migration Batch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"First batch (updated)\",\n  \"projectsCount\": 120,\n  \"filesCount\": 600\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-batches", "{{batchId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Run Migration Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"connection_string\": \"jdbc:oracle:thin:@//old-server:1521/ARCHIVE\",\n  \"file_path\": \"/data/legacy_export.csv\",\n  \"type\": \"ORACLE_TO_POSTGRES\",\n  \"type_mapping\": {\n    \"old_col\": \"new_col\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}/run",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-batches", "{{batchId}}", "run"]
+            },
+            "description": "Returns 202 ACCEPTED with a message when the run starts. Uses snake_case fields from MigrationRunRequest."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('202 accepted', () => pm.response.to.have.status(202));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Complete Migration Batch",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}/complete?projectsCount=0&filesCount=0&status=SUCCESS",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "migration-batches", "{{batchId}}", "complete"],
+              "query": [
+                { "key": "projectsCount", "value": "0" },
+                { "key": "filesCount", "value": "0" },
+                { "key": "status", "value": "SUCCESS" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

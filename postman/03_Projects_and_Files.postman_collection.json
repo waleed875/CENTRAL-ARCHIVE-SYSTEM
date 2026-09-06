@@ -1,0 +1,733 @@
+{
+  "info": {
+    "name": "Central Archive - 03 Projects & Files",
+    "_postman_id": "projects-files-collection-0003",
+    "description": "Projects, Project Members, and File management endpoints.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\n## First step\nRun **Setup > Login** once. It stores the token into `{{token}}` automatically. Bearer auth is configured at collection level.\n\n## File upload\nFile upload uses multipart/form-data: the file is sent as the `file` (single) or `files` (batch) field, and metadata (a `FileUploadRequest` JSON object) is sent as the `metadata` RequestPart field.\n\n## Project lifecycle\nDRAFT -> submit-for-review (UNDER_REVIEW) -> approve (APPROVED) or request-correction (NEEDS_CORRECTION) -> archive (ARCHIVED).\n\n## Auto-captured IDs\nAfter **Create Project** / **Add Member** / **Upload File**, the ids are stored into `{{projectId}}`, `{{memberId}}`, `{{fileId}}` respectively.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "username", "value": "admin", "type": "string" },
+    { "key": "password", "value": "admin123", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "orgId", "value": "", "type": "string" },
+    { "key": "projectTypeId", "value": "", "type": "string" },
+    { "key": "fileCategoryId", "value": "", "type": "string" },
+    { "key": "fileTypeId", "value": "", "type": "string" },
+    { "key": "projectId", "value": "", "type": "string" },
+    { "key": "memberId", "value": "", "type": "string" },
+    { "key": "fileId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Login (required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+                  "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects?organizationId=&year=&status=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects"],
+              "query": [
+                { "key": "organizationId", "value": "", "disabled": true },
+                { "key": "year", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"{{orgId}}\",\n  \"projectTypeId\": \"{{projectTypeId}}\",\n  \"confidentialityLevelId\": null,\n  \"projectNumber\": \"PRJ-2026-001\",\n  \"projectCode\": \"PRJ-2026-001-A\",\n  \"name\": \"Central Archive System\",\n  \"year\": 2026,\n  \"executingEntity\": \"ICT Dept\",\n  \"supervisorName\": \"Eng. Ali\",\n  \"description\": \"Main project description\",\n  \"notes\": \"Some notes\",\n  \"tableOfContents\": \"1. Intro\",\n  \"keywords\": \"archive, system\",\n  \"dataCompletionStatus\": \"INCOMPLETE\",\n  \"sourceType\": \"MANUAL\",\n  \"sourceReference\": null,\n  \"createdBy\": \"admin\",\n  \"members\": [\n    {\n      \"personName\": \"John Doe\",\n      \"organizationName\": \"ICT Dept\",\n      \"roleName\": \"Project Manager\",\n      \"notes\": \"Lead\"\n    },\n    {\n      \"personName\": \"Jane Smith\",\n      \"organizationName\": \"Archive Dept\",\n      \"roleName\": \"Archivist\",\n      \"notes\": null\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects"]
+            },
+            "description": "Needs `{{orgId}}` (create an organization in collection 02 first). Stores the new id into `{{projectId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('projectId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Project",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Project",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"{{orgId}}\",\n  \"projectTypeId\": \"{{projectTypeId}}\",\n  \"confidentialityLevelId\": null,\n  \"projectNumber\": \"PRJ-2026-001\",\n  \"projectCode\": \"PRJ-2026-001-A\",\n  \"name\": \"Central Archive System (Updated)\",\n  \"year\": 2026,\n  \"executingEntity\": \"ICT Dept\",\n  \"supervisorName\": \"Eng. Ali\",\n  \"description\": \"Updated description\",\n  \"notes\": null,\n  \"tableOfContents\": null,\n  \"keywords\": null,\n  \"dataCompletionStatus\": \"INCOMPLETE\",\n  \"sourceType\": \"MANUAL\",\n  \"sourceReference\": null,\n  \"createdBy\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Search Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/search?searchTerm=&organizationId=&status=&year=&page=1&size=20&sortBy=createdAt&sortDirection=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "search"],
+              "query": [
+                { "key": "searchTerm", "value": "", "disabled": true },
+                { "key": "organizationId", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "year", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" },
+                { "key": "sortBy", "value": "createdAt" },
+                { "key": "sortDirection", "value": "desc" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Project Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/stats?organizationId=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "stats"],
+              "query": [
+                { "key": "organizationId", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create New Version",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/new-version",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "new-version"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Project Versions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/versions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "versions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Submit For Review",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/submit-for-review",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "submit-for-review"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Request Correction",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewNotes\": \"Please fix the project name.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/request-correction",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "request-correction"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Approve Project",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "approve"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Archive Project",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/archive",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "archive"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Project Members",
+      "item": [
+        {
+          "name": "List Members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "members"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Add Member",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personName\": \"John Doe\",\n  \"organizationName\": \"ICT Dept\",\n  \"roleName\": \"Project Manager\",\n  \"notes\": \"Lead\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/members",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "members"]
+            },
+            "description": "Stores the new id into `{{memberId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('memberId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Member",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personName\": \"John Jonathan Doe\",\n  \"organizationName\": \"ICT Dept\",\n  \"roleName\": \"Project Manager\",\n  \"notes\": \"Updated\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/members/{{memberId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "members", "{{memberId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Member",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/members/{{memberId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "members", "{{memberId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "item": [
+        {
+          "name": "List Project Files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/files?categoryId=&typeId=&search=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "files"],
+              "query": [
+                { "key": "categoryId", "value": "", "disabled": true },
+                { "key": "typeId", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Upload File (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "metadata",
+                  "value": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"typeId\": \"{{fileTypeId}}\",\n  \"confidentialityLevelId\": null,\n  \"sourceType\": \"MANUAL\",\n  \"sourceReference\": null\n}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/files/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "files", "upload"]
+            },
+            "description": "multipart/form-data: select the file for `file`, and paste the FileUploadRequest JSON (categoryId, typeId required; confidentialityLevelId/sourceType/sourceReference optional) into the `metadata` field. Stores the new id into `{{fileId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('fileId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Upload Batch (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "metadata",
+                  "value": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"typeId\": \"{{fileTypeId}}\",\n  \"confidentialityLevelId\": null,\n  \"sourceType\": \"MANUAL\",\n  \"sourceReference\": null\n}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}/files/upload-batch",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects", "{{projectId}}", "files", "upload-batch"]
+            },
+            "description": "multipart/form-data: add multiple `files` file fields and one `metadata` field containing the FileUploadRequest JSON."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get File Metadata",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update File Metadata",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"typeId\": \"{{fileTypeId}}\",\n  \"confidentialityLevelId\": null,\n  \"sourceType\": \"MANUAL\",\n  \"sourceReference\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}"]
+            },
+            "description": "Uses FileUploadRequest as the body (categoryId, typeId required; others optional)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Download File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/download",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "download"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Restore File",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}", "restore"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete File (soft)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files/{{fileId}}?reason=Duplicate%20upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files", "{{fileId}}"],
+              "query": [
+                { "key": "reason", "value": "Duplicate upload", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

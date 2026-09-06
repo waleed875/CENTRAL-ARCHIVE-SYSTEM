@@ -1,0 +1,299 @@
+package com.centralArchiveSystem.Archive.project.file;
+
+import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
+import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
+import com.centralArchiveSystem.Archive.config.MinioConfig;
+import com.centralArchiveSystem.Archive.project.file.dto.*;
+import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
+import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
+import com.centralArchiveSystem.Archive.project.filetype.FileType;
+import com.centralArchiveSystem.Archive.project.filetype.FileTypeRepository;
+import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
+import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@Transactional(readOnly = true)
+public class FileService {
+
+    private static final Logger log = LoggerFactory.getLogger(FileService.class);
+
+    private final FileRepository fileRepository;
+    private final FileCategoryRepository fileCategoryRepository;
+    private final FileTypeRepository fileTypeRepository;
+    private final MinioService minioService;
+    private final MinioConfig minioConfig;
+    private final ProjectRepository projectRepository;
+
+    public FileService(FileRepository fileRepository,
+                       FileCategoryRepository fileCategoryRepository,
+                       FileTypeRepository fileTypeRepository,
+                       MinioService minioService,
+                       MinioConfig minioConfig,
+                       ProjectRepository projectRepository) {
+        this.fileRepository = fileRepository;
+        this.fileCategoryRepository = fileCategoryRepository;
+        this.fileTypeRepository = fileTypeRepository;
+        this.minioService = minioService;
+        this.minioConfig = minioConfig;
+        this.projectRepository = projectRepository;
+    }
+
+    public Page<FileResponse> listProjectFiles(UUID projectId, UUID categoryId, UUID typeId,
+                                               String search, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Page<FileEntity> files;
+
+        if (search != null && !search.isBlank()) {
+            files = fileRepository.searchByProjectAndQuery(projectId, search, pageable);
+        } else if (categoryId != null) {
+            files = fileRepository.findByProjectAndCategory(projectId, categoryId, pageable);
+        } else if (typeId != null) {
+            files = fileRepository.findByProjectAndType(projectId, typeId, pageable);
+        } else {
+            files = fileRepository.findByProjectIdAndDeletedAtIsNull(projectId, pageable);
+        }
+
+        return files.map(this::toResponse);
+    }
+
+    public FileResponse getFileMetadata(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        return toResponse(file);
+    }
+
+    @Transactional
+    public FileResponse uploadFile(UUID projectId, MultipartFile multipartFile,
+                                   FileUploadRequest request, UUID uploadedBy) {
+        if (!projectRepository.existsById(projectId)) {
+            throw new ResourceNotFoundException("Project", "id", projectId);
+        }
+
+        FileCategory category = fileCategoryRepository.findById(request.categoryId())
+                .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
+
+        FileType fileType = fileTypeRepository.findById(request.typeId())
+                .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + request.typeId()));
+
+        String originalName = multipartFile.getOriginalFilename();
+        String extension = extractExtension(originalName);
+        String storedName = UUID.randomUUID() + (extension != null ? "." + extension : "");
+        String bucketName = minioConfig.getBucket();
+        String objectKey = "projects/" + projectId + "/" + storedName;
+
+        try {
+            String checksum = calculateChecksum(multipartFile);
+
+            minioService.uploadFile(multipartFile, bucketName, objectKey);
+
+            FileEntity fileEntity = new FileEntity();
+            fileEntity.setProjectId(projectId);
+            fileEntity.setCategoryId(request.categoryId());
+            fileEntity.setTypeId(request.typeId());
+            fileEntity.setConfidentialityLevelId(request.confidentialityLevelId());
+            fileEntity.setOriginalName(originalName);
+            fileEntity.setStoredName(storedName);
+            fileEntity.setBucketName(bucketName);
+            fileEntity.setObjectKey(objectKey);
+            fileEntity.setExtension(extension);
+            fileEntity.setMimeType(multipartFile.getContentType());
+            fileEntity.setSizeBytes(multipartFile.getSize());
+            fileEntity.setChecksumSha256(checksum);
+            fileEntity.setStatus("ACTIVE");
+            fileEntity.setUploadedBy(uploadedBy);
+            fileEntity.setSourceType(request.sourceType());
+            fileEntity.setSourceReference(request.sourceReference());
+
+            FileEntity saved = fileRepository.save(fileEntity);
+            log.info("File uploaded successfully: id={}, originalName={}", saved.getId(), originalName);
+            return toResponse(saved);
+
+        } catch (Exception e) {
+            log.error("Failed to upload file: {}", originalName, e);
+            throw new RuntimeException("Failed to upload file: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    public FileBatchResponse uploadBatch(UUID projectId, List<MultipartFile> files,
+                                         FileUploadRequest request, UUID uploadedBy) {
+        List<FileResponse> successFiles = new ArrayList<>();
+        List<FileBatchResponse.BatchError> errors = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            try {
+                FileResponse response = uploadFile(projectId, file, request, uploadedBy);
+                successFiles.add(response);
+            } catch (Exception e) {
+                errors.add(new FileBatchResponse.BatchError(
+                        file.getOriginalFilename(),
+                        e.getMessage()
+                ));
+            }
+        }
+
+        return new FileBatchResponse(
+                files.size(),
+                successFiles.size(),
+                errors.size(),
+                successFiles,
+                errors
+        );
+    }
+
+    @Transactional
+    public FileResponse updateFileMetadata(UUID id, FileUploadRequest request) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+
+        if (request.categoryId() != null) {
+            fileCategoryRepository.findById(request.categoryId())
+                    .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
+            file.setCategoryId(request.categoryId());
+        }
+
+        if (request.typeId() != null) {
+            fileTypeRepository.findById(request.typeId())
+                    .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + request.typeId()));
+            file.setTypeId(request.typeId());
+        }
+
+        if (request.confidentialityLevelId() != null) {
+            file.setConfidentialityLevelId(request.confidentialityLevelId());
+        }
+
+        if (request.sourceType() != null) file.setSourceType(request.sourceType());
+        if (request.sourceReference() != null) file.setSourceReference(request.sourceReference());
+
+        FileEntity saved = fileRepository.save(file);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public void softDelete(UUID id, UUID deletedBy, String reason) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+
+        file.setStatus("DELETED");
+        file.setDeletedAt(LocalDateTime.now());
+        file.setDeletedBy(deletedBy);
+        file.setDeleteReason(reason);
+
+        fileRepository.save(file);
+        log.info("File soft deleted: id={}, deletedBy={}", id, deletedBy);
+    }
+
+    public InputStream downloadFile(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+
+        try {
+            return minioService.downloadFile(file.getBucketName(), file.getObjectKey());
+        } catch (Exception e) {
+            log.error("Failed to download file: id={}", id, e);
+            throw new RuntimeException("Failed to download file: " + e.getMessage(), e);
+        }
+    }
+
+    public String getFileName(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        return file.getOriginalName();
+    }
+
+    public String getFileMimeType(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        return file.getMimeType();
+    }
+
+    @Transactional
+    public FileResponse restoreFile(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+
+        if (file.getDeletedAt() == null) {
+            throw new IllegalStateException("File is not deleted and cannot be restored");
+        }
+
+        file.setStatus("ACTIVE");
+        file.setDeletedAt(null);
+        file.setDeletedBy(null);
+        file.setDeleteReason(null);
+
+        FileEntity saved = fileRepository.save(file);
+        log.info("File restored: id={}", id);
+        return toResponse(saved);
+    }
+
+    private String extractExtension(String fileName) {
+        if (fileName == null) return null;
+        int lastDotIndex = fileName.lastIndexOf('.');
+        if (lastDotIndex == -1 || lastDotIndex == fileName.length() - 1) return null;
+        return fileName.substring(lastDotIndex + 1).toLowerCase();
+    }
+
+    private String calculateChecksum(MultipartFile file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] fileBytes = file.getBytes();
+        byte[] hash = digest.digest(fileBytes);
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) hexString.append('0');
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+
+    private FileResponse toResponse(FileEntity file) {
+        FileCategory category = fileCategoryRepository.findById(file.getCategoryId()).orElse(null);
+        FileType fileType = fileTypeRepository.findById(file.getTypeId()).orElse(null);
+
+        return new FileResponse(
+                file.getId(),
+                file.getProjectId(),
+                file.getCategoryId(),
+                category != null ? category.getCode() : null,
+                category != null ? category.getName() : null,
+                file.getTypeId(),
+                fileType != null ? fileType.getCode() : null,
+                fileType != null ? fileType.getName() : null,
+                file.getConfidentialityLevelId(),
+                null,
+                file.getOriginalName(),
+                file.getStoredName(),
+                file.getBucketName(),
+                file.getObjectKey(),
+                file.getExtension(),
+                file.getMimeType(),
+                file.getSizeBytes(),
+                file.getChecksumSha256(),
+                file.getStatus(),
+                file.getUploadedBy(),
+                null,
+                file.getSourceType(),
+                file.getSourceReference(),
+                file.getDeletedAt(),
+                file.getDeletedBy(),
+                file.getDeleteReason(),
+                file.getCreatedAt(),
+                file.getUpdatedAt()
+        );
+    }
+}

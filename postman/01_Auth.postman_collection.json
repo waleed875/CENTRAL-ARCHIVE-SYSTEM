@@ -1,0 +1,234 @@
+{
+  "info": {
+    "name": "Central Archive - 01 Auth",
+    "_postman_id": "auth-collection-0001",
+    "description": "Authentication endpoints for the Central Archive System MVP.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\n## Flow\n1. Call **Login** (default admin / admin123) -> the access & refresh tokens are stored automatically into `{{token}}` and `{{refreshToken}}` by the test script.\n2. Use `{{token}}` on protected endpoints (Bearer auth is configured at collection level).\n3. Call **Refresh** before the token expires to get a new pair.\n\n## Credentials\nDefault seeded user: username `admin`, password `admin123`.\n\nNote: The other collections (02-05) each include their own Login under a `Setup` folder so they work standalone.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "admin123",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "auth", "login"]
+        },
+        "description": "Authenticates a user. On success the access token and refresh token are stored as collection variables `{{token}}` and `{{refreshToken}}`."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "const data = json && json.data ? json.data : json;",
+              "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+              "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);",
+              "pm.test('Token was captured', () => pm.collectionVariables.get('token') !== '');",
+              "pm.test('Login data present', () => data && data.user);"
+            ]
+          }
+        }
+      ],
+      "response": [
+        {
+          "name": "Success 200",
+          "originalRequest": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"success\": true,\n  \"data\": {\n    \"token\": \"<jwt>\",\n    \"expiresIn\": 3600,\n    \"user\": {\n      \"id\": \"0595388c-2a43-4e14-abf8-918da1c56e64\",\n      \"username\": \"admin\",\n      \"fullName\": \"System Administrator\",\n      \"organization\": null,\n      \"roles\": [\"ADMIN\"],\n      \"maxConfidentialityLevelId\": null\n    }\n  },\n  \"meta\": { \"message\": \"Login successful\" }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Get Current User",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "auth", "me"]
+        },
+        "description": "Returns the authenticated user's info. Requires a valid Bearer token ({{token}})."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "const data = json && json.data ? json.data : json;",
+              "pm.test('Returns username', () => data && data.username === pm.collectionVariables.get('username'));",
+              "if (data && data.id) pm.collectionVariables.set('currentUserId', data.id);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Refresh Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{refreshToken}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/refresh",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "auth", "refresh"]
+        },
+        "description": "Exchanges a valid refresh token ({{refreshToken}}) for a new access/refresh token pair."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "const data = json && json.data ? json.data : json;",
+              "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+              "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Change Password",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"newPassword123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/change-password",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "auth", "change-password"]
+        },
+        "description": "Changes the password of the currently authenticated user. New password must be 8-100 characters."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ],
+      "response": []
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/logout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "auth", "logout"]
+        },
+        "description": "Invalidates the current session / refresh token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Logout accepted', () => pm.response.code === 200 || pm.response.code === 204);"
+            ]
+          }
+        }
+      ],
+      "response": []
+    }
+  ]
+}

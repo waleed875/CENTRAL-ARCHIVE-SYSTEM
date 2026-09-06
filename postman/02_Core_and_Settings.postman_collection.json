@@ -1,0 +1,1254 @@
+{
+  "info": {
+    "name": "Central Archive - 02 Core & Settings",
+    "_postman_id": "core-settings-collection-0002",
+    "description": "Core master-data and settings endpoints: Organizations, Roles, Users, Confidentiality Levels, Project Types, File Categories, File Types.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\n## First step\nRun **Setup > Login** once. It authenticates and stores the token into `{{token}}` automatically. Bearer auth is configured at collection level.\n\n## Pagination notes\nAll list endpoints use a 1-based `page` value. Roles & Users use `limit`, `sort`, and `order`; the other endpoints use `size`.\n\n## Auto-captured IDs\nAfter running each **Create** request, the response id is stored into the matching collection variable: `{{orgId}}`, `{{roleId}}`, `{{userId}}`, `{{confLevelId}}`, `{{projectTypeId}}`, `{{fileCategoryId}}`, `{{fileTypeId}}`. That way later requests which reference those ids just work in sequence.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "username", "value": "admin", "type": "string" },
+    { "key": "password", "value": "admin123", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "orgId", "value": "", "type": "string" },
+    { "key": "roleId", "value": "", "type": "string" },
+    { "key": "userId", "value": "", "type": "string" },
+    { "key": "confLevelId", "value": "", "type": "string" },
+    { "key": "projectTypeId", "value": "", "type": "string" },
+    { "key": "fileCategoryId", "value": "", "type": "string" },
+    { "key": "fileTypeId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Login (required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Run this first. Stores the access token into `{{token}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+                  "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "List Organizations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations?search=&type=&isActive=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations"],
+              "query": [
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "type", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Organization Tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/tree",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "tree"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": null,\n  \"name\": \"Central Company\",\n  \"code\": \"CC\",\n  \"type\": \"COMPANY\",\n  \"description\": \"Top-level organization\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations"]
+            },
+            "description": "parentId is optional (null for top-level). On success stores the new id into `{{orgId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('orgId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Organization By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Organization Subtree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}/tree",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "{{orgId}}", "tree"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Organization Path",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}/path",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "{{orgId}}", "path"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Organization",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": null,\n  \"name\": \"Central Company (Updated)\",\n  \"code\": \"CC\",\n  \"type\": \"COMPANY\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Organization",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "organizations", "{{orgId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('204 or 200', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles?search=&isActive=&page=1&limit=20&sort=createdAt&order=DESC",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"],
+              "query": [
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort", "value": "createdAt" },
+                { "key": "order", "value": "DESC" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ADMIN\",\n  \"name\": \"Administrator\",\n  \"description\": \"Full system access\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles"]
+            },
+            "description": "Stores the new id into `{{roleId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('roleId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Role By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{roleId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ADMIN\",\n  \"name\": \"Administrator\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{roleId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roles", "{{roleId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users?search=&organizationId=&status=&page=1&limit=20&sort=createdAt&order=DESC",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users"],
+              "query": [
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "organizationId", "value": "", "disabled": true },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort", "value": "createdAt" },
+                { "key": "order", "value": "DESC" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"jdoe\",\n  \"password\": \"password123\",\n  \"fullName\": \"John Doe\",\n  \"email\": \"jdoe@example.com\",\n  \"organizationId\": \"{{orgId}}\",\n  \"maxConfidentialityLevelId\": null,\n  \"roleIds\": [\"{{roleId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users"]
+            },
+            "description": "password is required only on create. On update you may omit it. Stores the new id into `{{userId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('userId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get User By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"jdoe\",\n  \"password\": null,\n  \"fullName\": \"Johnathan Doe\",\n  \"email\": \"jdoe2@example.com\",\n  \"organizationId\": \"{{orgId}}\",\n  \"maxConfidentialityLevelId\": null,\n  \"roleIds\": [\"{{roleId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get User Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}", "roles"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Add Role To User",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles?roleId={{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}", "roles"],
+              "query": [
+                { "key": "roleId", "value": "{{roleId}}" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Remove Role From User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles/{{roleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "{{userId}}", "roles", "{{roleId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Confidentiality Levels",
+      "item": [
+        {
+          "name": "List Confidentiality Levels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels?page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "confidentiality-levels"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Confidentiality Level",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TOP_SECRET\",\n  \"name\": \"Top Secret\",\n  \"levelOrder\": 1,\n  \"description\": \"Highest level of confidentiality\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "confidentiality-levels"]
+            },
+            "description": "Stores the new id into `{{confLevelId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('confLevelId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Confidentiality Level",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Confidentiality Level",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TOP_SECRET\",\n  \"name\": \"Top Secret\",\n  \"levelOrder\": 1,\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Confidentiality Level",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Project Types",
+      "item": [
+        {
+          "name": "List Project Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types?isActive=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types"],
+              "query": [
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List All Project Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types/all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types", "all"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Project Type",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"INFRASTRUCTURE\",\n  \"name\": \"Infrastructure Project\",\n  \"description\": \"Civil / construction projects\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types"]
+            },
+            "description": "Stores the new id into `{{projectTypeId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('projectTypeId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get Project Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update Project Type",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"INFRASTRUCTURE\",\n  \"name\": \"Infrastructure Project\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete Project Type",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Categories",
+      "item": [
+        {
+          "name": "List File Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories?search=&isActive=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories"],
+              "query": [
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List All File Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories/all?isActive=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories", "all"],
+              "query": [
+                { "key": "isActive", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create File Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CONTRACTS\",\n  \"name\": \"Contracts\",\n  \"description\": \"Contract documents\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories"]
+            },
+            "description": "Stores the new id into `{{fileCategoryId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('fileCategoryId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get File Category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update File Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"CONTRACTS\",\n  \"name\": \"Contracts\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete File Category",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "File Types",
+      "item": [
+        {
+          "name": "List File Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types?categoryId=&search=&isActive=&page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types"],
+              "query": [
+                { "key": "categoryId", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "isActive", "value": "", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List File Types By Category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types/by-category/{{fileCategoryId}}?isActive=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types", "by-category", "{{fileCategoryId}}"],
+              "query": [
+                { "key": "isActive", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create File Type",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"code\": \"PDF\",\n  \"name\": \"PDF Document\",\n  \"defaultExtension\": \".pdf\",\n  \"description\": \"Portable Document Format\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types"]
+            },
+            "description": "Stores the new id into `{{fileTypeId}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 or 200', () => pm.response.code === 200 || pm.response.code === 201);",
+                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
+                  "const d = u(pm.response.json());",
+                  "if (d && d.id) pm.collectionVariables.set('fileTypeId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get File Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update File Type",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"code\": \"PDF\",\n  \"name\": \"PDF Document\",\n  \"defaultExtension\": \".pdf\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete File Type",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}
