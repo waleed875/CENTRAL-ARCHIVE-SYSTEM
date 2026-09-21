@@ -15,5 +15,7 @@ public interface ImportOperationRepository extends JpaRepository<ImportOperation
 
     List<ImportOperation> findByStatus(ImportOperation.Status status);
 
+    boolean existsByPackageIdAndStatus(UUID packageId, ImportOperation.Status status);
+
     long countByImportedByAndStatus(UUID importedBy, ImportOperation.Status status);
 }
