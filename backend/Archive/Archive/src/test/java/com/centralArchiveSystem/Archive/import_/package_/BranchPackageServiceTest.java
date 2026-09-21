@@ -12,6 +12,8 @@ import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.io.ByteArrayInputStream;
 import java.util.Map;
@@ -36,6 +38,9 @@ class BranchPackageServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         PackageArchiveService archive = mock(PackageArchiveService.class);
         ImportOperationService operations = mock(ImportOperationService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID packageId = UUID.randomUUID();
         UUID operationId = UUID.randomUUID();
@@ -65,7 +70,8 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
-                operations
+                operations,
+                transactionManager
         );
 
         service.importPackage(
@@ -100,6 +106,9 @@ class BranchPackageServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         PackageArchiveService archive = mock(PackageArchiveService.class);
         ImportOperationService operations = mock(ImportOperationService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID packageId = UUID.randomUUID();
         UUID packageUuid = UUID.randomUUID();
@@ -172,7 +181,8 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
-                operations
+                operations,
+                transactionManager
         );
 
         service.importPackage(
@@ -220,4 +230,102 @@ class BranchPackageServiceTest {
 
         verify(files, never()).save(any());
     }
+    @Test
+    void projectImportFailureRollsBackItsOwnTransaction() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        UUID packageId = UUID.randomUUID();
+        UUID packageUuid = UUID.randomUUID();
+        UUID targetOrganizationId = UUID.randomUUID();
+        UUID sourceProjectId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID importedBy = UUID.randomUUID();
+
+        String manifest = """
+                {
+                  "projects": [{
+                    "project_id": "%s",
+                    "project_number": "P-ROLLBACK",
+                    "name": "Rollback Project",
+                    "year": 2026,
+                    "members": [{
+                      "person_name": "Member"
+                    }],
+                    "files": []
+                  }]
+                }
+                """.formatted(sourceProjectId);
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setPackageUuid(packageUuid);
+        pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+        pkg.setManifestData(manifest);
+
+        ImportOperation operation = new ImportOperation();
+        operation.setId(operationId);
+        operation.setPackageId(packageId);
+        operation.setImportedBy(importedBy);
+        operation.setStatus(ImportOperation.Status.STARTED);
+
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+        when(operations.getById(operationId)).thenReturn(operation);
+        when(projects.findActiveByProjectNumberAndOrganizationIdAndYear(
+                "P-ROLLBACK", targetOrganizationId, 2026
+        )).thenReturn(Optional.empty());
+        when(projects.save(any(Project.class))).thenAnswer(invocation -> {
+            Project project = invocation.getArgument(0);
+            project.setId(UUID.randomUUID());
+            return project;
+        });
+        doThrow(new IllegalStateException("member persistence failed"))
+                .when(members).save(any());
+
+        BranchPackageService service = new BranchPackageService(
+                packages,
+                packageProjects,
+                objectMapper,
+                projects,
+                members,
+                files,
+                minio,
+                minioConfig,
+                archive,
+                operations,
+                transactionManager
+        );
+
+        service.importPackage(
+                packageId,
+                new PackageImportRequest(
+                        targetOrganizationId,
+                        Map.of(),
+                        true,
+                        false
+                ),
+                importedBy,
+                operationId
+        );
+
+        verify(transactionManager).rollback(transactionStatus);
+        verify(packageProjects, never()).save(any());
+        verify(operations).updateStatus(
+                eq(operationId),
+                eq(ImportOperation.Status.FAILED),
+                contains("All projects failed")
+        );
+    }
+
 }
