@@ -21,7 +21,7 @@ public class FileEntity {
     @Column(name = "category_id", nullable = false)
     private UUID categoryId;
 
-    @Column(name = "type_id", nullable = false)
+    @Column(name = "type_id")
     private UUID typeId;
 
     @Column(name = "confidentiality_level_id")
