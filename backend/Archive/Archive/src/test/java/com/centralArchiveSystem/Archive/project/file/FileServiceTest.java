@@ -154,6 +154,77 @@ class FileServiceTest {
     }
 
     @Test
+    void duplicateChecksumIsRejectedBeforeObjectStorageUpload() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory category =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setCode("DOCS");
+        category.setName("Documents");
+        category.setIsActive(true);
+
+        byte[] content = "duplicate content".getBytes(StandardCharsets.UTF_8);
+        String checksum = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(content)
+        );
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(fileRepository.existsByProjectIdAndChecksumSha256AndDeletedAtIsNull(
+                projectId,
+                checksum
+        )).thenReturn(true);
+
+        MockMultipartFile multipart = new MockMultipartFile(
+                "file",
+                "notes.txt",
+                "text/plain",
+                content
+        );
+
+        var request = new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
+                categoryId,
+                null,
+                null,
+                null,
+                null
+        );
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.uploadFile(projectId, multipart, request, UUID.randomUUID())
+        );
+
+        verifyNoInteractions(minioService);
+        verify(fileRepository, never()).save(any());
+    }
+
+    @Test
     void uploadWithoutFileTypeUsesFilenameExtensionForContentInspection() throws Exception {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
