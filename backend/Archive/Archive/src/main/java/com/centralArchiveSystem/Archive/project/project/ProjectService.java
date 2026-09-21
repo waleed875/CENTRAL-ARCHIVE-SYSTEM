@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.project.project;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
 import org.springframework.data.domain.Page;
@@ -19,37 +20,35 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
+    private final ConfidentialityAccessService confidentialityAccessService;
 
     public ProjectService(ProjectRepository projectRepository,
-                          ProjectMemberService projectMemberService) {
+                          ProjectMemberService projectMemberService,
+                          ConfidentialityAccessService confidentialityAccessService) {
         this.projectRepository = projectRepository;
         this.projectMemberService = projectMemberService;
+        this.confidentialityAccessService = confidentialityAccessService;
     }
 
     public Page<ProjectResponse> list(UUID organizationId, Integer year,
                                        Project.ProjectStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
-        if (organizationId != null && year != null && status != null) {
-            return projectRepository.findByOrganizationIdAndYearAndStatus(organizationId, year, status, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null && year != null) {
-            return projectRepository.findByOrganizationIdAndYearPaginated(organizationId, year, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null && status != null) {
-            return projectRepository.findByOrganizationIdAndStatus(organizationId, status, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null) {
-            return projectRepository.findByOrganizationId(organizationId, pageable)
-                    .map(ProjectResponse::fromEntity);
-        }
-
-        return projectRepository.findAll(pageable).map(ProjectResponse::fromEntity);
+        return projectRepository.searchAccessible(
+                null,
+                organizationId,
+                status,
+                year,
+                maxLevelOrder,
+                pageable
+        ).map(ProjectResponse::fromEntity);
     }
 
     public ProjectResponse getById(UUID id) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
         return ProjectResponse.fromEntity(project);
     }
 
@@ -158,12 +157,11 @@ public class ProjectService {
     public List<ProjectResponse> getVersions(UUID id) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
-        List<Project> versions = projectRepository.findAllVersionsByProjectNumberAndOrganizationIdAndYear(
-                project.getProjectNumber(), project.getOrganizationId(), project.getYear());
-
-        return versions.stream()
-                .sorted(Comparator.comparing(Project::getVersionNo).reversed())
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+        return projectRepository.findAccessibleVersions(project.getProjectUid(), maxLevelOrder)
+                .stream()
                 .map(ProjectResponse::fromEntity)
                 .collect(Collectors.toList());
     }
@@ -246,12 +244,16 @@ public class ProjectService {
                         ? Sort.Direction.DESC : Sort.Direction.ASC,
                         request.sortBy()));
 
-        return projectRepository.search(
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+
+        return projectRepository.searchAccessible(
                 request.searchTerm(),
                 request.organizationId(),
                 request.status(),
                 request.year(),
-                pageable).map(ProjectResponse::fromEntity);
+                maxLevelOrder,
+                pageable
+        ).map(ProjectResponse::fromEntity);
     }
 
     public ProjectStatsResponse getStats(UUID organizationId) {
