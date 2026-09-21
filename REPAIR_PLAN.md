@@ -90,7 +90,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [ ] Validate allowed file types using content inspection, not filename only.
 - [x] Use UTF-8-safe `Content-Disposition` generation for downloads.
 - [x] Ensure soft-deleted files cannot be downloaded through direct IDs.
-- [x] Remove newly uploaded MinIO objects when subsequent database persistence fails; broader reconciliation job remains future work.
+- [x] Remove newly uploaded MinIO objects when subsequent database persistence fails for both manual uploads and package imports; broader reconciliation job remains future work.
 
 ## Phase 6 - Audit Reliability
 
@@ -104,10 +104,10 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 ## Phase 7 - Tests and CI
 
 - [x] Add unit tests for JWT access/refresh token separation and tamper rejection.
-- [~] Add authentication/authorization integration tests; real HTTP login/logout/revocation coverage is in place, while broader role/authorization integration coverage remains pending.
+- [x] Add authentication/authorization integration tests covering real HTTP login/logout/revocation and method-role enforcement (`read_only` forbidden vs `system_admin` allowed).
 - [x] Add project versioning, PATCH-state, and confidentiality-aware statistics tests.
 - [ ] Add PostgreSQL integration tests with Testcontainers.
-- [ ] Add MinIO integration tests.
+- [~] Add MinIO integration tests; a real upload/download/delete test and CI service are implemented, final CI validation is in progress.
 - [x] Add package verification and export/import round-trip integrity tests.
 - [x] Add GitHub Actions for backend compile and focused unit tests.
 - [ ] Add dependency/security scanning.
@@ -117,6 +117,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Allow imported projects to enter the documented central review workflow.
 - [x] Restrict new project versions to APPROVED/ARCHIVED projects, use max existing version + 1, attribute the current creator, and copy members without copying files.
 - [x] Correct audit entity attribution/unwrapping for controller responses.
+- [x] Align project search with documented filters for type, confidentiality, source, project UID, creator, approver, and latest-version selection.
 - [x] Enforce organization hierarchy rules, safe deactivation, correct project counts, partial PATCH semantics, and database-level pagination filtering.
 
 - [x] Make file metadata PATCH partial with a dedicated update DTO.
