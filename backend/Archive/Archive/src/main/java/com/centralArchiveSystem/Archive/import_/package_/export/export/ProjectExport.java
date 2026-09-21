@@ -40,7 +40,7 @@ public class ProjectExport {
     @Column(name = "package_hash", length = 64)
     private String packageHash;
 
-    @Column(name = "manifest_hash", length = 64, columnDefinition = "char(64)")
+    @Column(name = "manifest_hash", length = 64)
     private String manifestHash;
 
     @Column(name = "package_object_key", columnDefinition = "TEXT")
