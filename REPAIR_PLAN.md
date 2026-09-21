@@ -48,7 +48,7 @@ Status: IN PROGRESS
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V8 are committed. V1-V7 and schema integration are green; final V8 validation is in progress.
+- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V8 are committed and PostgreSQL/Flyway/Hibernate validation is green in CI.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
@@ -87,7 +87,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 - [x] Stream SHA-256 calculation for uploads.
 - [x] Configure environment-driven maximum package upload/request sizes.
-- [~] Validate allowed file types using content inspection, not filename only; direct uploads now enforce active category/type consistency, expected extensions, magic/content signatures, executable rejection, and Office ZIP structure. Equivalent streaming validation for files inside imported `.pkg` archives remains pending.
+- [x] Validate allowed file types using content inspection, not filename only; direct uploads and imported `.pkg` verification now enforce extension/content consistency, executable rejection, Office ZIP structure, and bounded archive expansion in a single streaming pass.
 - [x] Use UTF-8-safe `Content-Disposition` generation for downloads.
 - [x] Ensure soft-deleted files cannot be downloaded through direct IDs.
 - [x] Remove newly uploaded MinIO objects when subsequent database persistence fails for both manual uploads and package imports; broader reconciliation job remains future work.
@@ -99,7 +99,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Capture request IP from the servlet request and make forwarded-header trust an explicit production setting.
 - [x] Make audit serialization bounded to avoid huge payloads.
 - [x] Ensure audit logging redacts credentials, token/secret fields, embedded file/package byte fields, and manifest payload fields.
-- [~] Define retention and immutability strategy; V8 installs an append-only PostgreSQL trigger with explicit controlled retention-purge mode, and `DEPLOYMENT.md` documents the purge procedure. Final V8 CI validation is in progress.
+- [x] Define retention and immutability strategy; V8 installs an append-only PostgreSQL trigger with explicit controlled retention-purge mode, `DEPLOYMENT.md` documents the purge procedure, and PostgreSQL CI validation is green.
 
 ## Phase 7 - Tests and CI
 
