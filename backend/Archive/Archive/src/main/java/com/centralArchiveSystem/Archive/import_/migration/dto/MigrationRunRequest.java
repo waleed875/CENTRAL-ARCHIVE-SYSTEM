@@ -8,12 +8,12 @@ import java.util.Map;
 @Schema(description = "Configuration for running a migration batch")
 public record MigrationRunRequest(
     @NotBlank(message = "Connection string is required")
-    @Schema(description = "Database connection string", example = "jdbc:oracle:thin:@//old-server:1521/ARCHIVE") String connection_string,
+    @Schema(description = "Configured legacy staging JDBC URL. Dynamic source connections are not enabled in the current MVP.", example = "jdbc:postgresql://legacy-staging:5432/ARC2") String connection_string,
 
-    @Schema(description = "File path for data import (CSV/XML)", example = "/data/legacy_export.csv") String file_path,
+    @Schema(description = "Reserved for a future file migration adapter; must be omitted in the current MVP") String file_path,
 
     @NotBlank(message = "Type is required")
-    @Schema(description = "Migration type", example = "ORACLE_TO_POSTGRES") String type,
+    @Schema(description = "Migration execution type; current supported value is LEGACY_DB", example = "LEGACY_DB") String type,
 
     @Schema(description = "Column/field mapping between source and target", example = "{\"old_col\":\"new_col\"}") Map<String, String> type_mapping
 ) {}
