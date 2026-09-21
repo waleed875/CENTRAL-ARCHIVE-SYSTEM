@@ -92,5 +92,8 @@ jobs:
       - name: Run MinIO integration tests
         run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
 
+      - name: Verify PostgreSQL schema invariants
+        run: bash mvnw -B -Dtest=PostgresSchemaIntegrationTest test
+
       - name: Verify Flyway migrations and Hibernate schema
         run: bash mvnw -B -Dtest=ArchiveApplicationTests test
