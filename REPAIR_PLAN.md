@@ -48,7 +48,7 @@ Status: COMPLETE
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V10 are committed and green against PostgreSQL 17, including V9 migration-batch normalization and the V10 single-active-import guard.
+- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V11 are committed and green against PostgreSQL 17, including V9 migration-batch normalization, the V10 single-active-package-import guard, and the V11 single-running-migration-batch guard.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
@@ -129,13 +129,29 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Validate project/file confidentiality before package export.
 - [x] Add stable archive instance UUID configuration for package manifests.
 
-## Pre-merge blocker discovered during final API audit
+## Migration hardening completed during final API audit
 
-- [ ] Implement the documented dynamic PostgreSQL/File migration adapters if they remain an MVP requirement. The current legacy runner intentionally supports only the configured staging datasource (`LEGACY_DB_*`); unsupported dynamic `connection_string`, `file_path`, source types, and mappings are now rejected explicitly instead of being silently ignored.
+- [x] Define the current MVP migration contract as a controlled PostgreSQL staging migration using the configured `LEGACY_DB_*` datasource. Dynamic database connections, file-based migration adapters, per-run project-type mappings, and per-run confidentiality overrides are explicitly deferred future scope and are rejected instead of silently ignored.
+- [x] Align `POST /migration-batches/:id/run` with the documented nested `migration_config` request shape.
+- [x] Gate both manual and internal legacy migration execution behind `LEGACY_MIGRATION_ENABLED`; keep the scheduler independently opt-in with `LEGACY_MIGRATION_SCHEDULE_ENABLED`.
 - [x] Align migration batch lifecycle DTOs and controller/service signatures.
 - [x] Normalize `migration_batches.batch_number` to `VARCHAR(80)` and enforce uniqueness per source.
+- [x] Prevent more than one migration batch from entering `RUNNING`; V11 enforces the same invariant in PostgreSQL.
 - [x] Prevent deleting migration sources while running or historical batches exist.
 - [x] Make migration source PATCH partial.
+- [x] Stream legacy Base64 file bodies to a bounded per-file spool instead of decoding entire files into heap memory; calculate SHA-256 during streaming and apply the same content inspection policy used by normal archive ingestion.
+- [x] Delete uploaded MinIO objects if legacy file metadata persistence fails, and persist file metadata plus the DONE tracking transition in one database transaction.
+- [x] Make migration file counters thread-safe under parallel workers.
+- [x] Use stable `LEGACY` / `LEGACY-FILE` codes instead of arbitrary first category/type records.
+- [x] Require `LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE` to match an existing confidentiality level before migrating files; do not silently assign the least restrictive level.
+- [x] Reject mismatches between legacy `filesuffix` and the original filename extension.
+- [x] Document the controlled migration window, staging-only contract, temporary disk requirement, scheduler controls, and post-migration shutdown procedure in README/DEPLOYMENT.
+
+## Deferred non-blocking post-MVP work
+
+- Dynamic PostgreSQL/File migration adapters and per-run migration mappings beyond the configured staging database.
+- A broader MinIO/database reconciliation job for detecting historical orphaned objects or metadata.
+- A formal organization-specific retention policy for preserved original package objects; the application preserves them and deployment policy must define retention duration.
 
 ## Phase 8 - Production Configuration
 
