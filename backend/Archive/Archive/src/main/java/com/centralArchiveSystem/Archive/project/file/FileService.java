@@ -89,12 +89,25 @@ public class FileService {
 
         FileCategory category = fileCategoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
+        if (!Boolean.TRUE.equals(category.getIsActive())) {
+            throw new IllegalStateException("File category is inactive");
+        }
 
         FileType fileType = fileTypeRepository.findById(request.typeId())
                 .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + request.typeId()));
+        if (!Boolean.TRUE.equals(fileType.getIsActive())) {
+            throw new IllegalStateException("File type is inactive");
+        }
+        if (!request.categoryId().equals(fileType.getCategoryId())) {
+            throw new IllegalArgumentException("Selected file type does not belong to selected category");
+        }
 
         String originalName = multipartFile.getOriginalFilename();
         String extension = extractExtension(originalName);
+        String detectedMimeType = FileContentInspector.validateMultipart(
+                multipartFile,
+                fileType.getDefaultExtension()
+        );
         String storedName = UUID.randomUUID() + (extension != null ? "." + extension : "");
         String bucketName = minioConfig.getBucket();
         String objectKey = "projects/" + projectId + "/" + storedName;
@@ -116,7 +129,7 @@ public class FileService {
             fileEntity.setBucketName(bucketName);
             fileEntity.setObjectKey(objectKey);
             fileEntity.setExtension(extension);
-            fileEntity.setMimeType(multipartFile.getContentType());
+            fileEntity.setMimeType(detectedMimeType);
             fileEntity.setSizeBytes(multipartFile.getSize());
             fileEntity.setChecksumSha256(checksum);
             fileEntity.setStatus("ACTIVE");
