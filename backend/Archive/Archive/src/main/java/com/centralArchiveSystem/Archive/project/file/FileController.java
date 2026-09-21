@@ -89,7 +89,7 @@ public class FileController {
     }
 
     @GetMapping("/api/v1/files/{id}/download")
-    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry', 'auditor', 'archive_officer', 'import_officer', 'export_officer')")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry', 'auditor', 'archive_officer', 'import_officer', 'export_officer', 'read_only')")
     public ResponseEntity<StreamingResponseBody> downloadFile(@PathVariable UUID id) {
         FileResponse fileMetadata = fileService.getFileMetadata(id);
         InputStream inputStream = fileService.downloadFile(id);
