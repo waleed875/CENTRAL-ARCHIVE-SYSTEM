@@ -75,7 +75,7 @@ public class FileController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileResponse>> updateFileMetadata(
             @PathVariable UUID id,
-            @Valid @RequestBody FileUploadRequest request) {
+            @RequestBody FileMetadataUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileService.updateFileMetadata(id, request), "File metadata updated successfully"));
     }
 
