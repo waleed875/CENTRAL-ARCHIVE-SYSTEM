@@ -204,8 +204,7 @@ public class FileService {
     }
 
     public InputStream downloadFile(UUID id) {
-        FileEntity file = fileRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        FileEntity file = getAccessibleFile(id);
 
         try {
             return minioService.downloadFile(file.getBucketName(), file.getObjectKey());
@@ -216,15 +215,11 @@ public class FileService {
     }
 
     public String getFileName(UUID id) {
-        FileEntity file = fileRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
-        return file.getOriginalName();
+        return getAccessibleFile(id).getOriginalName();
     }
 
     public String getFileMimeType(UUID id) {
-        FileEntity file = fileRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
-        return file.getMimeType();
+        return getAccessibleFile(id).getMimeType();
     }
 
     @Transactional
@@ -244,6 +239,22 @@ public class FileService {
         FileEntity saved = fileRepository.save(file);
         log.info("File restored: id={}", id);
         return toResponse(saved);
+    }
+
+    private FileEntity getAccessibleFile(UUID id) {
+        FileEntity file = fileRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+
+        if (file.getDeletedAt() != null || "DELETED".equalsIgnoreCase(file.getStatus())) {
+            throw new EntityNotFoundException("File not found with id: " + id);
+        }
+
+        Project project = projectRepository.findById(file.getProjectId())
+                .orElseThrow(() -> new ResourceNotFoundException("Project", "id", file.getProjectId()));
+
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+        confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
+        return file;
     }
 
     private String extractExtension(String fileName) {
