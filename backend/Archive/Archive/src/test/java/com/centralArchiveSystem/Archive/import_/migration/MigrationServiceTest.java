@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 
 class MigrationServiceTest {
 
-    private static final String LEGACY_URL = LEGACY_URL;
+    private static final String LEGACY_URL = "jdbc:postgresql://legacy/db";
 
     @Test
     void runBatchMovesPlannedBatchToRunningAndDispatchesExecution() {
