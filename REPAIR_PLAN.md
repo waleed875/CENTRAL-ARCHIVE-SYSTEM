@@ -107,7 +107,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Add authentication/authorization integration tests covering real HTTP login/logout/revocation and method-role enforcement (`read_only` forbidden vs `system_admin` allowed).
 - [x] Add project versioning, PATCH-state, and confidentiality-aware statistics tests.
 - [ ] Add PostgreSQL integration tests with Testcontainers.
-- [~] Add MinIO integration tests; a real upload/download/delete test and CI service are implemented, final CI validation is in progress.
+- [x] Add MinIO integration tests with a real MinIO service covering upload, download, presigned URL generation, and delete.
 - [x] Add package verification and export/import round-trip integrity tests.
 - [x] Add GitHub Actions for backend compile and focused unit tests.
 - [ ] Add dependency/security scanning.
