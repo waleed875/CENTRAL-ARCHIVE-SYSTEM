@@ -49,6 +49,8 @@ class ExportServiceTest {
         UUID fileId = UUID.randomUUID();
         UUID categoryId = UUID.randomUUID();
         UUID typeId = UUID.randomUUID();
+        UUID projectConfidentialityId = UUID.randomUUID();
+        UUID fileConfidentialityId = UUID.randomUUID();
         UUID exportedBy = UUID.randomUUID();
 
         Project project = new Project();
@@ -60,6 +62,7 @@ class ExportServiceTest {
         project.setProjectNumber("PRJ-001");
         project.setName("Round Trip Project");
         project.setYear(2026);
+        project.setConfidentialityLevelId(projectConfidentialityId);
         project.setStatus(Project.ProjectStatus.APPROVED);
 
         byte[] sourceContent = "round trip package content".getBytes(StandardCharsets.UTF_8);
@@ -70,6 +73,7 @@ class ExportServiceTest {
         file.setProjectId(projectId);
         file.setCategoryId(categoryId);
         file.setTypeId(typeId);
+        file.setConfidentialityLevelId(fileConfidentialityId);
         file.setOriginalName("document.txt");
         file.setStoredName("stored.txt");
         file.setBucketName("test-bucket");
