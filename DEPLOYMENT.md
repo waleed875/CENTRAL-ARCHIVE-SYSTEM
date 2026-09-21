@@ -189,7 +189,40 @@ Do not expose the retention-purge setting through the application API. Record
 the maintenance ticket/change identifier, purge boundary, row count, operator,
 and backup reference outside the table being purged.
 
-## 11. Release checklist
+## 11. Controlled legacy migration window
+
+Legacy migration is a maintenance operation against a separately restored
+PostgreSQL staging database. It is disabled by default.
+
+Before enabling migration:
+
+1. restore and validate the legacy backup in an isolated staging database;
+2. verify PostgreSQL and MinIO backups for the central archive;
+3. set `LEGACY_DB_URL`, `LEGACY_DB_USERNAME`, and `LEGACY_DB_PASSWORD`;
+4. set `LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE` to an existing
+   `core.confidentiality_levels.code`;
+5. keep `LEGACY_MIGRATION_SCHEDULE_ENABLED=false` unless automatic scheduling
+   is explicitly required;
+6. set `LEGACY_MIGRATION_ENABLED=true` only for the controlled migration
+   window.
+
+The API accepts only the configured staging JDBC URL. Dynamic database
+connections, file-based migration adapters, per-run type mappings, and per-run
+confidentiality overrides are not part of the current MVP and are rejected.
+
+Legacy file bodies are decoded from Base64 to a temporary spool file one item
+at a time, content-inspected, hashed, uploaded to MinIO, and then persisted.
+Ensure the host has enough temporary disk for the largest single legacy file.
+
+After the migration window:
+
+1. confirm all batches are in a terminal state;
+2. review FAILED/PARTIAL items and migration counts;
+3. set `LEGACY_MIGRATION_ENABLED=false`;
+4. keep `LEGACY_MIGRATION_SCHEDULE_ENABLED=false`;
+5. remove or rotate legacy staging credentials if they are no longer needed.
+
+## 12. Release checklist
 
 - GitHub Actions backend CI is green.
 - Flyway migrations pass against clean PostgreSQL.
@@ -202,8 +235,10 @@ and backup reference outside the table being purged.
 - PostgreSQL backup succeeds.
 - MinIO backup/replication is healthy.
 - restore procedure has been tested recently.
+- legacy migration is disabled unless an approved migration window is active.
+- the legacy migration scheduler is disabled unless explicitly required.
 
-## 12. Rollback
+## 13. Rollback
 
 If a release includes only backward-compatible migrations, the previous application may be redeployed if its JPA model still validates against the newer schema.
 
