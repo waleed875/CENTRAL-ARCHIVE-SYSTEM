@@ -18,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
@@ -73,7 +74,16 @@ public class AuthService implements UserDetailsService {
         return buildLoginResponse(user, userDetails);
     }
 
+    @Transactional
     public void logout() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            userRepository.findByUsername(authentication.getName()).ifPresent(user -> {
+                user.setTokenValidAfter(Instant.now());
+                user.setUpdatedAt(LocalDateTime.now());
+                userRepository.save(user);
+            });
+        }
         SecurityContextHolder.clearContext();
     }
 
@@ -90,6 +100,15 @@ public class AuthService implements UserDetailsService {
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new IllegalArgumentException("User account is not active");
         }
+        if (!tokenProvider.isIssuedOnOrAfter(refreshToken, user.getTokenValidAfter())) {
+            throw new IllegalArgumentException("Refresh token has been revoked");
+        }
+
+        // Rotate the token family: all previously issued access/refresh tokens
+        // for this user become invalid before the new pair is minted.
+        user.setTokenValidAfter(Instant.now());
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
 
         UserDetails userDetails = loadUserByUsername(username);
         return buildLoginResponse(user, userDetails);
@@ -119,6 +138,7 @@ public class AuthService implements UserDetailsService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setTokenValidAfter(Instant.now());
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
     }
