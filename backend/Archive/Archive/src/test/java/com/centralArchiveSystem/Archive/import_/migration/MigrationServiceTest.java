@@ -82,6 +82,46 @@ class MigrationServiceTest {
         verify(batches, never()).save(any());
     }
 
+
+    @Test
+    void deleteSourceRejectsRunningBatches() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID sourceId = UUID.randomUUID();
+        when(sources.existsById(sourceId)).thenReturn(true);
+        when(batches.countByMigrationSourceIdAndStatus(
+                sourceId,
+                MigrationBatch.Status.RUNNING
+        )).thenReturn(1L);
+
+        MigrationService service = new MigrationService(sources, batches, execution);
+
+        assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
+        verify(sources, never()).deleteById(any());
+    }
+
+    @Test
+    void deleteSourcePreservesCompletedBatchHistory() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID sourceId = UUID.randomUUID();
+        when(sources.existsById(sourceId)).thenReturn(true);
+        when(batches.countByMigrationSourceIdAndStatus(
+                sourceId,
+                MigrationBatch.Status.RUNNING
+        )).thenReturn(0L);
+        when(batches.countByMigrationSourceId(sourceId)).thenReturn(2L);
+
+        MigrationService service = new MigrationService(sources, batches, execution);
+
+        assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
+        verify(sources, never()).deleteById(any());
+    }
+
     @Test
     void completeBatchAcceptsOnlyTerminalStatuses() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
