@@ -36,6 +36,9 @@ public class MigrationRunner {
     @Value("${legacy.migration.enabled:false}")
     private boolean enabled;
 
+    @Value("${legacy.migration.schedule-enabled:false}")
+    private boolean scheduleEnabled;
+
     @Value("${legacy.migration.source-name:ARC2}")
     private String sourceName;
 
@@ -48,11 +51,12 @@ public class MigrationRunner {
     }
 
     /**
-     * Automatic trigger. Runs every 60 seconds; no-op unless migration is enabled.
+     * Optional automatic trigger. It remains disabled unless both migration
+     * execution and scheduling are explicitly enabled.
      */
     @Scheduled(fixedDelayString = "60000")
     public void scheduledTick() {
-        if (!enabled) {
+        if (!enabled || !scheduleEnabled) {
             return;
         }
         runOnce();
