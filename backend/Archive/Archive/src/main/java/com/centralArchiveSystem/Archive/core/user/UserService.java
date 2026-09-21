@@ -10,6 +10,9 @@ import com.centralArchiveSystem.Archive.core.role.RoleRepository;
 import com.centralArchiveSystem.Archive.core.user.dto.ChangePasswordRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserResponse;
+import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperationRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -26,42 +29,34 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final ImportOperationRepository importOperationRepository;
     private final PasswordEncoder passwordEncoder;
 
     public UserService(UserRepository userRepository,
                        RoleRepository roleRepository,
+                       ImportOperationRepository importOperationRepository,
                        PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.importOperationRepository = importOperationRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
-    public PagedResponse<UserResponse> list(String search, UUID organizationId, User.UserStatus status, PageRequest pageRequest) {
+    public PagedResponse<UserResponse> list(String search, UUID organizationId, User.UserStatus status,
+                                            String roleCode, PageRequest pageRequest) {
         Pageable pageable = org.springframework.data.domain.PageRequest.of(
             pageRequest.getPage() - 1,
             pageRequest.getLimit(),
             Sort.by(Sort.Direction.fromString(pageRequest.getOrder()), pageRequest.getSort())
         );
 
-        Page<User> page;
-
-        if (search != null && !search.isBlank()) {
-            page = userRepository.searchByUsernameFullNameEmail(search, pageable);
-        } else if (organizationId != null) {
-            List<User> users = userRepository.findByOrganizationId(organizationId);
-            int start = (int) pageable.getOffset();
-            int end = Math.min((start + pageable.getPageSize()), users.size());
-            List<User> sublist = start < users.size() ? users.subList(start, end) : List.of();
-            page = new org.springframework.data.domain.PageImpl<>(sublist, pageable, users.size());
-        } else if (status != null) {
-            List<User> users = userRepository.findByStatus(status);
-            int start = (int) pageable.getOffset();
-            int end = Math.min((start + pageable.getPageSize()), users.size());
-            List<User> sublist = start < users.size() ? users.subList(start, end) : List.of();
-            page = new org.springframework.data.domain.PageImpl<>(sublist, pageable, users.size());
-        } else {
-            page = userRepository.findAll(pageable);
-        }
+        Page<User> page = userRepository.searchFiltered(
+                search,
+                organizationId,
+                status,
+                roleCode,
+                pageable
+        );
 
         List<UserResponse> content = page.getContent().stream()
             .map(this::toResponse)
@@ -80,6 +75,10 @@ public class UserService {
         if (userRepository.existsByUsername(request.username())) {
             throw new ConflictException("User", "username", request.username());
         }
+        if (request.email() != null && !request.email().isBlank()
+                && userRepository.existsByEmail(request.email())) {
+            throw new ConflictException("User", "email", request.email());
+        }
 
         User user = new User();
         user.setUsername(request.username());
@@ -91,8 +90,7 @@ public class UserService {
         user.setStatus(User.UserStatus.ACTIVE);
 
         if (request.roleIds() != null && !request.roleIds().isEmpty()) {
-            Set<Role> roles = new HashSet<>(roleRepository.findAllById(request.roleIds()));
-            user.setRoles(roles);
+            user.setRoles(resolveRoles(request.roleIds()));
         }
 
         user = userRepository.save(user);
@@ -100,26 +98,18 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponse update(UUID id, UserRequest request) {
+    public UserResponse update(UUID id, UserUpdateRequest request) {
         User user = findUserOrThrow(id);
 
-        if (request.username() != null && !request.username().equals(user.getUsername())) {
-            if (userRepository.existsByUsernameAndIdNot(request.username(), id)) {
-                throw new ConflictException("User", "username", request.username());
-            }
-            user.setUsername(request.username());
-        }
-
-        if (request.password() != null && !request.password().isBlank()) {
-            user.setPasswordHash(passwordEncoder.encode(request.password()));
-        }
-
-        if (request.fullName() != null) {
+        if (request.fullName() != null && !request.fullName().isBlank()) {
             user.setFullName(request.fullName());
         }
 
         if (request.email() != null) {
-            user.setEmail(request.email());
+            if (!request.email().isBlank() && userRepository.existsByEmailAndIdNot(request.email(), id)) {
+                throw new ConflictException("User", "email", request.email());
+            }
+            user.setEmail(request.email().isBlank() ? null : request.email());
         }
 
         if (request.organizationId() != null) {
@@ -130,9 +120,8 @@ public class UserService {
             user.setMaxConfidentialityLevelId(request.maxConfidentialityLevelId());
         }
 
-        if (request.roleIds() != null) {
-            Set<Role> roles = new HashSet<>(roleRepository.findAllById(request.roleIds()));
-            user.setRoles(roles);
+        if (request.status() != null) {
+            user.setStatus(request.status());
         }
 
         user = userRepository.save(user);
@@ -142,6 +131,14 @@ public class UserService {
     @Transactional
     public void delete(UUID id) {
         User user = findUserOrThrow(id);
+        long activeImports = importOperationRepository.countByImportedByAndStatus(
+                id,
+                ImportOperation.Status.STARTED
+        );
+        if (activeImports > 0) {
+            throw new BusinessRuleException(
+                    "Cannot disable user while active import operations are running");
+        }
         user.setStatus(User.UserStatus.DISABLED);
         userRepository.save(user);
     }
@@ -151,6 +148,7 @@ public class UserService {
         return user.getRoles().stream()
             .map(role -> new UserResponse.RoleSummary(
                 role.getId(),
+                role.getCode(),
                 role.getName(),
                 role.getDescription()
             ))
@@ -187,6 +185,17 @@ public class UserService {
         userRepository.save(user);
     }
 
+    private Set<Role> resolveRoles(Set<UUID> roleIds) {
+        List<Role> found = roleRepository.findAllById(roleIds);
+        if (found.size() != roleIds.size()) {
+            throw new ResourceNotFoundException("Role", "id", "one or more requested role IDs");
+        }
+        if (found.stream().anyMatch(role -> !Boolean.TRUE.equals(role.getIsActive()))) {
+            throw new BusinessRuleException("Cannot assign inactive roles");
+        }
+        return new HashSet<>(found);
+    }
+
     private User findUserOrThrow(UUID id) {
         return userRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("User", "id", id));
@@ -205,6 +214,7 @@ public class UserService {
         Set<UserResponse.RoleSummary> roleSummaries = user.getRoles().stream()
             .map(role -> new UserResponse.RoleSummary(
                 role.getId(),
+                role.getCode(),
                 role.getName(),
                 role.getDescription()
             ))
