@@ -52,7 +52,7 @@ public class ProjectService {
         return ProjectResponse.fromEntity(project);
     }
 
-    public ProjectResponse create(ProjectRequest request, String createdBy) {
+    public ProjectResponse create(ProjectRequest request, UUID createdBy) {
         Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
                 request.projectNumber(), request.organizationId(), request.year());
 
@@ -196,7 +196,7 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse approve(UUID id, String approvedBy) {
+    public ProjectResponse approve(UUID id, UUID approvedBy) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
