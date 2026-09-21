@@ -132,6 +132,7 @@ class ObjectAuthorizationHttpIntegrationTest {
         highFile.setExtension("txt");
         highFile.setMimeType("text/plain");
         highFile.setSizeBytes(10L);
+        highFile.setSourceType("MANUAL");
         highFile.setStatus("ACTIVE");
         highFile = fileRepository.save(highFile);
         highFileId = highFile.getId();
