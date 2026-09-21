@@ -297,18 +297,36 @@ public class BranchPackageService {
                               PackageImportRequest request,
                               UUID importedBy,
                               UUID operationId) {
-        BranchPackage pkg = findPackage(id);
-        if (pkg.getStatus() != BranchPackage.PackageStatus.VERIFIED) {
-            log.warn("Package {} is not verified; import cancelled", id);
-            return;
-        }
-
         ImportOperation operation = importOperationService.getById(operationId);
-        if (!operation.getPackageId().equals(id)
-                || !operation.getImportedBy().equals(importedBy)
+        if (!java.util.Objects.equals(operation.getPackageId(), id)
+                || !java.util.Objects.equals(operation.getImportedBy(), importedBy)
                 || operation.getStatus() != ImportOperation.Status.STARTED) {
             throw new IllegalStateException(
                     "Import operation does not match package/import actor or is not active");
+        }
+
+        BranchPackage pkg;
+        try {
+            pkg = findPackage(id);
+        } catch (Exception e) {
+            importOperationService.updateStatus(
+                    operationId,
+                    ImportOperation.Status.FAILED,
+                    e.getMessage()
+            );
+            throw e;
+        }
+
+        if (pkg.getStatus() != BranchPackage.PackageStatus.VERIFIED) {
+            String error = "Package must remain VERIFIED until import starts; current status: "
+                    + pkg.getStatus();
+            log.warn("Package {} import cancelled: {}", id, error);
+            importOperationService.updateStatus(
+                    operationId,
+                    ImportOperation.Status.FAILED,
+                    error
+            );
+            return;
         }
 
         int importedProjects = 0;
