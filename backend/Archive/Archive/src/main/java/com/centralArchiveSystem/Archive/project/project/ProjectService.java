@@ -91,30 +91,60 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse update(UUID id, ProjectRequest request) {
+    public ProjectResponse update(UUID id, ProjectUpdateRequest request) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED ||
             project.getStatus() == Project.ProjectStatus.ARCHIVED) {
             throw new IllegalStateException(
-                    "Cannot update project in " + project.getStatus() + " status");
+                    "Cannot update project in " + project.getStatus() + " status; create a new version instead");
         }
 
-        if (!project.getProjectNumber().equals(request.projectNumber()) ||
-            !project.getYear().equals(request.year()) ||
-            !project.getOrganizationId().equals(request.organizationId())) {
+        if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW) {
+            if (hasRestrictedReviewChanges(request)) {
+                throw new IllegalStateException(
+                        "UNDER_REVIEW projects only allow description and notes changes");
+            }
+            if (request.description() != null) {
+                project.setDescription(request.description());
+            }
+            if (request.notes() != null) {
+                project.setNotes(request.notes());
+            }
+            return ProjectResponse.fromEntity(projectRepository.save(project));
+        }
 
+        String effectiveProjectNumber = request.projectNumber() != null
+                ? request.projectNumber()
+                : project.getProjectNumber();
+        Integer effectiveYear = request.year() != null
+                ? request.year()
+                : project.getYear();
+        UUID effectiveOrganizationId = request.organizationId() != null
+                ? request.organizationId()
+                : project.getOrganizationId();
+
+        boolean identityChanged =
+                !project.getProjectNumber().equals(effectiveProjectNumber)
+                || !project.getYear().equals(effectiveYear)
+                || !project.getOrganizationId().equals(effectiveOrganizationId);
+
+        if (identityChanged) {
             Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
-                    request.projectNumber(), request.organizationId(), request.year());
+                    effectiveProjectNumber,
+                    effectiveOrganizationId,
+                    effectiveYear
+            );
 
             if (existing.isPresent() && !existing.get().getId().equals(id)) {
                 throw new IllegalArgumentException(
-                        "Project number '" + request.projectNumber() + "' already exists for this organization and year");
+                        "Project number '" + effectiveProjectNumber
+                                + "' already exists for this organization and year");
             }
         }
 
-        applyRequestToEntity(project, request);
+        applyUpdateToEntity(project, request);
         Project saved = projectRepository.save(project);
         return ProjectResponse.fromEntity(saved);
     }
@@ -300,6 +330,66 @@ public class ProjectService {
 
         return new ProjectStatsResponse(totalProjects, projectsByStatus, projectsByYear,
                 latestVersionCount, archivedCount);
+    }
+
+    private boolean hasRestrictedReviewChanges(ProjectUpdateRequest request) {
+        return request.organizationId() != null
+                || request.projectTypeId() != null
+                || request.confidentialityLevelId() != null
+                || request.projectNumber() != null
+                || request.projectCode() != null
+                || request.name() != null
+                || request.year() != null
+                || request.executingEntity() != null
+                || request.supervisorName() != null
+                || request.tableOfContents() != null
+                || request.keywords() != null
+                || request.dataCompletionStatus() != null;
+    }
+
+    private void applyUpdateToEntity(Project project, ProjectUpdateRequest request) {
+        if (request.organizationId() != null) {
+            project.setOrganizationId(request.organizationId());
+        }
+        if (request.projectTypeId() != null) {
+            project.setProjectTypeId(request.projectTypeId());
+        }
+        if (request.confidentialityLevelId() != null) {
+            project.setConfidentialityLevelId(request.confidentialityLevelId());
+        }
+        if (request.projectNumber() != null) {
+            project.setProjectNumber(request.projectNumber());
+        }
+        if (request.projectCode() != null) {
+            project.setProjectCode(request.projectCode());
+        }
+        if (request.name() != null) {
+            project.setName(request.name());
+        }
+        if (request.year() != null) {
+            project.setYear(request.year());
+        }
+        if (request.executingEntity() != null) {
+            project.setExecutingEntity(request.executingEntity());
+        }
+        if (request.supervisorName() != null) {
+            project.setSupervisorName(request.supervisorName());
+        }
+        if (request.description() != null) {
+            project.setDescription(request.description());
+        }
+        if (request.notes() != null) {
+            project.setNotes(request.notes());
+        }
+        if (request.tableOfContents() != null) {
+            project.setTableOfContents(request.tableOfContents());
+        }
+        if (request.keywords() != null) {
+            project.setKeywords(request.keywords());
+        }
+        if (request.dataCompletionStatus() != null) {
+            project.setDataCompletionStatus(request.dataCompletionStatus());
+        }
     }
 
     private void applyRequestToEntity(Project project, ProjectRequest request) {
