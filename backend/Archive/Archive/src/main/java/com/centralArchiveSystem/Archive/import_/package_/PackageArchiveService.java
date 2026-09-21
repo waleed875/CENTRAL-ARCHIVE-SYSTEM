@@ -174,6 +174,15 @@ public class PackageArchiveService {
                                 spoolOutput.write(buffer, 0, read);
                             }
                         }
+                    } catch (Exception e) {
+                        if (zipSpool != null) {
+                            try {
+                                Files.deleteIfExists(zipSpool);
+                            } catch (IOException cleanupError) {
+                                e.addSuppressed(cleanupError);
+                            }
+                        }
+                        throw e;
                     } finally {
                         if (spoolOutput != null) {
                             spoolOutput.close();
