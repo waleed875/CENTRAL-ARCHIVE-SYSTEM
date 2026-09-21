@@ -1,6 +1,6 @@
 package com.centralArchiveSystem.Archive.project.project;
 
-import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;\nimport com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,7 +45,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new project")
     public ResponseEntity<ApiResponse<ProjectResponse>> create(@Valid @RequestBody ProjectRequest request) {
-        ProjectResponse response = projectService.create(request);
+        ProjectResponse response = projectService.create(request, currentUserService.username());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Project created successfully"));
     }
