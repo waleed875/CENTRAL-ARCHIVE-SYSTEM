@@ -293,7 +293,8 @@ public class LegacyMigrationService {
                     String originalName = resultSet.getString("filename");
                     String suffix = resultSet.getString("filesuffix");
 
-                    try (InputStream encodedBase64 = resultSet.getBinaryStream("filebinary")) {
+                    InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
+                    try {
                         migrateOneFile(
                                 idfile,
                                 sourceKey,
@@ -303,6 +304,18 @@ public class LegacyMigrationService {
                                 encodedBase64,
                                 summary
                         );
+                    } finally {
+                        if (encodedBase64 != null) {
+                            try {
+                                encodedBase64.close();
+                            } catch (Exception closeError) {
+                                log.warn(
+                                        "Failed to close legacy file stream for id={}",
+                                        idfile,
+                                        closeError
+                                );
+                            }
+                        }
                     }
                 }
         );
