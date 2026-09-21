@@ -13,5 +13,6 @@ public record MigrationSourceResponse(
     @Schema(description = "Database name") String databaseName,
     @Schema(description = "Office name") String officeName,
     @Schema(description = "Description") String description,
+    @Schema(description = "Number of migration batches") Long batchesCount,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt
 ) {}
