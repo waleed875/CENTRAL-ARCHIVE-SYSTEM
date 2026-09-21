@@ -19,7 +19,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -42,6 +48,7 @@ public class FileService {
     private final MinioConfig minioConfig;
     private final ProjectRepository projectRepository;
     private final ConfidentialityAccessService confidentialityAccessService;
+    private final TransactionTemplate batchUploadTransaction;
 
     public FileService(FileRepository fileRepository,
                        FileCategoryRepository fileCategoryRepository,
@@ -49,7 +56,8 @@ public class FileService {
                        MinioService minioService,
                        MinioConfig minioConfig,
                        ProjectRepository projectRepository,
-                       ConfidentialityAccessService confidentialityAccessService) {
+                       ConfidentialityAccessService confidentialityAccessService,
+                       PlatformTransactionManager transactionManager) {
         this.fileRepository = fileRepository;
         this.fileCategoryRepository = fileCategoryRepository;
         this.fileTypeRepository = fileTypeRepository;
@@ -57,6 +65,9 @@ public class FileService {
         this.minioConfig = minioConfig;
         this.projectRepository = projectRepository;
         this.confidentialityAccessService = confidentialityAccessService;
+        this.batchUploadTransaction = new TransactionTemplate(transactionManager);
+        this.batchUploadTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public Page<FileResponse> listProjectFiles(UUID projectId, UUID categoryId, UUID typeId,
@@ -145,6 +156,7 @@ public class FileService {
         try {
             minioService.uploadFile(multipartFile, bucketName, objectKey);
             uploadedToObjectStorage = true;
+            registerRollbackCleanup(bucketName, objectKey);
 
             FileEntity fileEntity = new FileEntity();
             fileEntity.setProjectId(projectId);
@@ -164,7 +176,7 @@ public class FileService {
             fileEntity.setSourceType(sourceType);
             fileEntity.setSourceReference(null);
 
-            FileEntity saved = fileRepository.save(fileEntity);
+            FileEntity saved = fileRepository.saveAndFlush(fileEntity);
             log.info("File uploaded successfully: id={}, originalName={}", saved.getId(), originalName);
             return toResponse(saved);
 
@@ -182,7 +194,7 @@ public class FileService {
         }
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public FileBatchResponse uploadBatch(UUID projectId, List<MultipartFile> files,
                                          FileUploadRequest request, UUID uploadedBy) {
         List<FileResponse> successFiles = new ArrayList<>();
@@ -190,7 +202,11 @@ public class FileService {
 
         for (MultipartFile file : files) {
             try {
-                FileResponse response = uploadFile(projectId, file, request, uploadedBy);
+                FileResponse response = batchUploadTransaction.execute(status ->
+                        uploadFile(projectId, file, request, uploadedBy));
+                if (response == null) {
+                    throw new IllegalStateException("File upload transaction returned no result");
+                }
                 successFiles.add(response);
             } catch (Exception e) {
                 errors.add(new FileBatchResponse.BatchError(
@@ -317,6 +333,32 @@ public class FileService {
         FileEntity saved = fileRepository.save(file);
         log.info("File restored: id={}", id);
         return toResponse(saved);
+    }
+
+    private void registerRollbackCleanup(String bucketName, String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status != TransactionSynchronization.STATUS_ROLLED_BACK) {
+                            return;
+                        }
+                        try {
+                            minioService.deleteFile(bucketName, objectKey);
+                        } catch (Exception cleanupError) {
+                            log.error(
+                                    "Failed to remove MinIO object after transaction rollback: {}",
+                                    objectKey,
+                                    cleanupError
+                            );
+                        }
+                    }
+                }
+        );
     }
 
     private Project requireMutableProject(UUID projectId) {
