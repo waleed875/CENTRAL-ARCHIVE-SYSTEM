@@ -236,7 +236,7 @@ public class PackageArchiveService {
             }
     
             Map<String, ExpectedFile> expectedFiles = expectedFiles(manifest, errors);
-            boolean filesValid = true;
+            boolean filesValid = errors.isEmpty();
             long verifiedFileBytes = 0L;
     
             for (Map.Entry<String, ExpectedFile> expectedEntry : expectedFiles.entrySet()) {
