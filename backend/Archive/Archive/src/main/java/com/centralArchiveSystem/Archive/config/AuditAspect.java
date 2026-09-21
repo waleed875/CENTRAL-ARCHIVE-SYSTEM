@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.config;
 
 import com.centralArchiveSystem.Archive.audit.AuditLogService;
+import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +17,7 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -163,24 +165,9 @@ public class AuditAspect {
     }
 
     private String determineEntityType(ProceedingJoinPoint joinPoint) {
-        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
-        Method method = signature.getMethod();
-        Parameter[] parameters = method.getParameters();
-
-        for (Parameter parameter : parameters) {
-            String paramName = parameter.getName().toLowerCase();
-            if (!paramName.equals("request") && !paramName.equals("response") && !paramName.equals("authentication")) {
-                String typeName = parameter.getType().getSimpleName();
-                if (!typeName.equals("String") && !typeName.equals("Long") && !typeName.equals("Integer")
-                        && !typeName.equals("Boolean") && !typeName.equals("Pageable")) {
-                    return typeName;
-                }
-            }
-        }
-
         String className = joinPoint.getSignature().getDeclaringType().getSimpleName();
         if (className.endsWith("Controller")) {
-            return className.replace("Controller", "");
+            return className.substring(0, className.length() - "Controller".length());
         }
         return className;
     }
@@ -191,25 +178,59 @@ public class AuditAspect {
         Parameter[] parameters = method.getParameters();
         Object[] args = joinPoint.getArgs();
 
+        // Prefer an exact entity id path parameter for direct entity operations.
         for (int i = 0; i < parameters.length; i++) {
-            String paramName = parameters[i].getName().toLowerCase();
-            if (paramName.contains("id") && args[i] != null) {
+            if ("id".equalsIgnoreCase(parameters[i].getName()) && args[i] != null) {
                 return args[i].toString();
             }
         }
 
-        if (result != null) {
-            try {
-                Method getIdMethod = result.getClass().getMethod("getId");
-                Object id = getIdMethod.invoke(result);
-                if (id != null) {
-                    return id.toString();
-                }
-            } catch (Exception ignored) {
+        // For create/upload operations, prefer the id of the entity returned by
+        // the controller instead of incorrectly attributing the parent project id.
+        String resultId = extractEntityId(result);
+        if (resultId != null) {
+            return resultId;
+        }
+
+        // Fall back to parent/resource identifiers for list or nested operations.
+        for (int i = 0; i < parameters.length; i++) {
+            String paramName = parameters[i].getName().toLowerCase(Locale.ROOT);
+            if (paramName.endsWith("id") && args[i] != null) {
+                return args[i].toString();
             }
         }
 
         return null;
+    }
+
+    private String extractEntityId(Object result) {
+        Object candidate = unwrapAuditValue(result);
+        if (candidate == null) {
+            return null;
+        }
+
+        for (String accessor : List.of("getId", "id")) {
+            try {
+                Method idMethod = candidate.getClass().getMethod(accessor);
+                Object id = idMethod.invoke(candidate);
+                if (id != null) {
+                    return id.toString();
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // Try the next common id accessor.
+            }
+        }
+        return null;
+    }
+
+    private Object unwrapAuditValue(Object value) {
+        if (value instanceof ResponseEntity<?> responseEntity) {
+            return unwrapAuditValue(responseEntity.getBody());
+        }
+        if (value instanceof ApiResponse<?> apiResponse) {
+            return unwrapAuditValue(apiResponse.getData());
+        }
+        return value;
     }
 
     private String determineOldValues(String entityType, String entityId) {
@@ -252,11 +273,12 @@ public class AuditAspect {
     }
 
     private String determineNewValues(Object result) {
-        if (result == null) {
+        Object auditValue = unwrapAuditValue(result);
+        if (auditValue == null) {
             return null;
         }
         try {
-            return serializeForAudit(result);
+            return serializeForAudit(auditValue);
         } catch (Exception e) {
             return null;
         }
