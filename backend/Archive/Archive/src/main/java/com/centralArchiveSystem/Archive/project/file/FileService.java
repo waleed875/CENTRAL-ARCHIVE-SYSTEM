@@ -61,26 +61,25 @@ public class FileService {
 
     public Page<FileResponse> listProjectFiles(UUID projectId, UUID categoryId, UUID typeId,
                                                String search, int page, int size) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        Page<FileEntity> files;
 
-        if (search != null && !search.isBlank()) {
-            files = fileRepository.searchByProjectAndQuery(projectId, search, pageable);
-        } else if (categoryId != null) {
-            files = fileRepository.findByProjectAndCategory(projectId, categoryId, pageable);
-        } else if (typeId != null) {
-            files = fileRepository.findByProjectAndType(projectId, typeId, pageable);
-        } else {
-            files = fileRepository.findByProjectIdAndDeletedAtIsNull(projectId, pageable);
-        }
-
-        return files.map(this::toResponse);
+        return fileRepository.searchAccessibleProjectFiles(
+                projectId,
+                categoryId,
+                typeId,
+                search,
+                maxLevelOrder,
+                pageable
+        ).map(this::toResponse);
     }
 
     public FileResponse getFileMetadata(UUID id) {
-        FileEntity file = fileRepository.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
-        return toResponse(file);
+        return toResponse(getAccessibleFile(id));
     }
 
     @Transactional
