@@ -79,7 +79,7 @@ public class MigrationController {
     @Operation(summary = "Create a batch for a migration source")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> createBatch(
             @Parameter(description = "Source UUID") @PathVariable UUID id,
-            @Valid @RequestBody MigrationBatchRequest request) {
+            @Valid @RequestBody MigrationBatchCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(migrationService.createBatch(id, request), "Migration batch created"));
     }
@@ -96,7 +96,7 @@ public class MigrationController {
     @Operation(summary = "Update a migration batch")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> updateBatch(
             @Parameter(description = "Batch UUID") @PathVariable UUID id,
-            @Valid @RequestBody MigrationBatchRequest request) {
+            @Valid @RequestBody MigrationBatchUpdateRequest request) {
         return ResponseEntity.ok(
                 ApiResponse.success(migrationService.updateBatch(id, request), "Migration batch updated"));
     }
@@ -119,11 +119,9 @@ public class MigrationController {
     @Operation(summary = "Mark a migration batch as completed")
     public ResponseEntity<ApiResponse<MigrationBatchResponse>> completeBatch(
             @Parameter(description = "Batch UUID") @PathVariable UUID id,
-            @RequestParam(defaultValue = "0") int projectsCount,
-            @RequestParam(defaultValue = "0") int filesCount,
-            @RequestParam(defaultValue = "SUCCESS") String status) {
+            @Valid @RequestBody MigrationBatchCompleteRequest request) {
         return ResponseEntity.ok(ApiResponse.success(
-                migrationService.completeBatch(id, projectsCount, filesCount, status),
+                migrationService.completeBatch(id, request),
                 "Migration batch completed"));
     }
 }
