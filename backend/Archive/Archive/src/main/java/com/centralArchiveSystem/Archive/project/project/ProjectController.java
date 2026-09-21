@@ -23,9 +23,11 @@ import java.util.UUID;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final CurrentUserService currentUserService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, CurrentUserService currentUserService) {
         this.projectService = projectService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -107,8 +109,7 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectResponse>> approve(
             @PathVariable UUID id,
             @RequestBody(required = false) Map<String, String> body) {
-        String approvedBy = body != null ? body.get("approvedBy") : null;
-        ProjectResponse response = projectService.approve(id, approvedBy);
+        ProjectResponse response = projectService.approve(id, currentUserService.username());
         return ResponseEntity.ok(ApiResponse.success(response, "Project approved"));
     }
 
