@@ -26,7 +26,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -54,6 +57,7 @@ public class BranchPackageService {
     private final MinioConfig minioConfig;
     private final PackageArchiveService packageArchiveService;
     private final ImportOperationService importOperationService;
+    private final TransactionTemplate projectImportTransaction;
 
     public BranchPackageService(BranchPackageRepository branchPackageRepository,
                                 PackageProjectRepository packageProjectRepository,
@@ -64,7 +68,8 @@ public class BranchPackageService {
                                 MinioService minioService,
                                 MinioConfig minioConfig,
                                 PackageArchiveService packageArchiveService,
-                                ImportOperationService importOperationService) {
+                                ImportOperationService importOperationService,
+                                PlatformTransactionManager transactionManager) {
         this.branchPackageRepository = branchPackageRepository;
         this.packageProjectRepository = packageProjectRepository;
         this.objectMapper = objectMapper;
@@ -75,6 +80,9 @@ public class BranchPackageService {
         this.minioConfig = minioConfig;
         this.packageArchiveService = packageArchiveService;
         this.importOperationService = importOperationService;
+        this.projectImportTransaction = new TransactionTemplate(transactionManager);
+        this.projectImportTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Transactional(readOnly = true)
@@ -344,8 +352,25 @@ public class BranchPackageService {
             pkg.setTargetOrganizationId(targetOrgId);
 
             for (JsonNode projectNode : projects) {
+                List<StoredObject> projectObjects = new ArrayList<>();
                 try {
-                    ImportProjectResult result = importProject(projectNode, pkg, request, importedBy);
+                    ImportProjectResult result = projectImportTransaction.execute(status -> {
+                        try {
+                            return importProject(
+                                    projectNode,
+                                    pkg,
+                                    request,
+                                    importedBy,
+                                    projectObjects
+                            );
+                        } catch (Exception e) {
+                            throw new ProjectImportException(e);
+                        }
+                    });
+
+                    if (result == null) {
+                        throw new IllegalStateException("Project import transaction returned no result");
+                    }
                     if (result.imported()) {
                         importedProjects++;
                     }
@@ -354,6 +379,7 @@ public class BranchPackageService {
                     }
                 } catch (Exception e) {
                     failedProjects++;
+                    cleanupImportedObjects(projectObjects);
                     log.error("Failed to import project from package {}", id, e);
                 }
             }
@@ -402,7 +428,8 @@ public class BranchPackageService {
     private ImportProjectResult importProject(JsonNode projectNode,
                                               BranchPackage pkg,
                                               PackageImportRequest request,
-                                              UUID importedBy) throws Exception {
+                                              UUID importedBy,
+                                              List<StoredObject> projectObjects) throws Exception {
         UUID sourceProjectUuid = requiredUuid(projectNode, "project_id");
         String projectNumber = requiredText(projectNode, "project_number");
         int year = projectNode.path("year").asInt(0);
@@ -457,7 +484,13 @@ public class BranchPackageService {
             for (JsonNode fileNode : files) {
                 totalFiles++;
                 try {
-                    importFile(fileNode, savedProject.getId(), pkg, importedBy);
+                    StoredObject storedObject = importFile(
+                            fileNode,
+                            savedProject.getId(),
+                            pkg,
+                            importedBy
+                    );
+                    projectObjects.add(storedObject);
                     importedFiles++;
                 } catch (Exception e) {
                     failedFiles++;
@@ -548,10 +581,10 @@ public class BranchPackageService {
         }
     }
 
-    private void importFile(JsonNode fileNode,
-                            UUID projectId,
-                            BranchPackage pkg,
-                            UUID uploadedBy) throws Exception {
+    private StoredObject importFile(JsonNode fileNode,
+                                    UUID projectId,
+                                    BranchPackage pkg,
+                                    UUID uploadedBy) throws Exception {
         String originalName = fileNode.path("original_name").asText(
                 fileNode.path("name").asText("file"));
         String extension = optionalText(fileNode, "extension");
@@ -606,6 +639,7 @@ public class BranchPackageService {
             file.setSourceType("BRANCH_PACKAGE");
             file.setSourceReference(pkg.getPackageUuid().toString());
             fileRepository.save(file);
+            return new StoredObject(bucket, objectKey);
         } catch (Exception e) {
             if (uploadedToObjectStorage) {
                 try {
@@ -615,6 +649,21 @@ public class BranchPackageService {
                 }
             }
             throw e;
+        }
+    }
+
+    private void cleanupImportedObjects(List<StoredObject> objects) {
+        for (int i = objects.size() - 1; i >= 0; i--) {
+            StoredObject object = objects.get(i);
+            try {
+                minioService.deleteFile(object.bucket(), object.objectKey());
+            } catch (Exception cleanupError) {
+                log.error(
+                        "Failed to remove MinIO object after project import rollback: {}",
+                        object.objectKey(),
+                        cleanupError
+                );
+            }
         }
     }
 
@@ -783,6 +832,14 @@ public class BranchPackageService {
         }
         String value = node.path(field).asText();
         return value.isBlank() ? null : value;
+    }
+
+    private record StoredObject(String bucket, String objectKey) {}
+
+    private static final class ProjectImportException extends RuntimeException {
+        private ProjectImportException(Throwable cause) {
+            super(cause);
+        }
     }
 
     private record ImportProjectResult(
