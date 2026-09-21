@@ -62,11 +62,15 @@ Set-Location backend/Archive/Archive
 
 ## تهيئة قاعدة البيانات
 
-في أول تشغيل فقط، ينشئ PostgreSQL قاعدة `central_archive` ويشغّل ملف [central_platform_mvp_postgresql.sql](Central_Platform_ERD/central_platform_mvp_postgresql.sql). ينشئ هذا الملف إضافة `pgcrypto` والمخططات `core` و`project` و`import` و`audit` والجداول والفهارس الأساسية.
+أصبح **Flyway** هو المسؤول الوحيد عن إنشاء وتحديث مخطط PostgreSQL. توجد migrations القابلة للتنفيذ داخل:
 
-بعد ذلك يكمل Hibernate الجداول أو الأعمدة التي ظهرت في الكود ولم تكن ضمن مخطط MVP، لأن قيمة `JPA_DDL_AUTO` الافتراضية هي `update`. لا تستخدم `update` كبديل لترحيلات إصدار الإنتاج؛ استخدم أداة ترحيل مثل Flyway أو Liquibase قبل النشر الفعلي.
+`backend/Archive/Archive/src/main/resources/db/migration`
 
-> سكربتات `docker-entrypoint-initdb.d` لا تعمل إلا عندما يكون مجلد بيانات PostgreSQL فارغاً. لذلك لا يُعاد تطبيق ملف SQL عند إعادة تشغيل الحاوية مع نفس الـvolume.
+عند تشغيل قاعدة جديدة يطبق Flyway `V1` ثم جميع الإصدارات اللاحقة. بعد ذلك يعمل Hibernate بوضع `validate` فقط للتحقق من مطابقة الـEntities للمخطط، ولا يعدّل قاعدة البيانات تلقائياً.
+
+بالنسبة لقاعدة قديمة أُنشئت قبل Flyway، يمكن تفعيل `FLYWAY_BASELINE_ON_MIGRATE=true` حتى تُسجل كـV1 ثم تطبق migrations التوافقية من V2 فصاعداً. يجب أخذ نسخة احتياطية موثوقة قبل أول ترقية من هذا النوع.
+
+ملف `Central_Platform_ERD/central_platform_mvp_postgresql.sql` يبقى مرجع تصميم، لكنه لم يعد آلية التهيئة التشغيلية في Docker أو الإنتاج.
 
 للتحقق من المخططات:
 
@@ -78,7 +82,7 @@ docker compose exec postgres psql -U archive_user -d central_archive -c "\dn"
 
 ```powershell
 docker compose down -v
-docker compose up -d
+docker compose --profile bundled-postgres --profile bundled-minio up -d
 ```
 
 ## MinIO والملفات
@@ -125,6 +129,8 @@ docker compose down
 - لا تستخدم قيم `.env.example` في بيئة مشتركة أو إنتاجية. استبدل كلمات مرور PostgreSQL وMinIO، ومفتاح `JWT_SECRET`، وكلمة مرور المدير قبل التشغيل الأول.
 - `JWT_SECRET` يجب أن يكون Base64 لمفتاح عشوائي طوله 32 بايت على الأقل. مثال: `openssl rand -base64 32`.
 - الترحيل من قاعدة البيانات القديمة معطّل افتراضياً عبر `legacy.migration.enabled=false`. لا تضبط `LEGACY_DB_*` أو تفعّله إلا عند تجهيز قاعدة staging مستقلة ونسخة احتياطية موثوقة.
+
+للنشر الإنتاجي والنسخ الاحتياطي والاستعادة راجع [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## هيكل backend
 
