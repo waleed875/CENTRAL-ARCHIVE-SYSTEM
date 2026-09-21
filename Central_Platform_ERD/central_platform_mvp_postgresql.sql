@@ -113,7 +113,8 @@ CREATE TABLE project.project_members (
     person_name VARCHAR(200) NOT NULL,
     organization_name VARCHAR(200),
     role_name VARCHAR(120),
-    notes TEXT
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE project.file_categories (
