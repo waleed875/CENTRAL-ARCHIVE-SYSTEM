@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.config;
 
 import com.centralArchiveSystem.Archive.audit.AuditLogService;
+import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -34,13 +35,17 @@ public class AuditAspect {
 
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
+    private final UserRepository userRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public AuditAspect(AuditLogService auditLogService, ObjectMapper objectMapper) {
+    public AuditAspect(AuditLogService auditLogService,
+                       ObjectMapper objectMapper,
+                       UserRepository userRepository) {
         this.auditLogService = auditLogService;
         this.objectMapper = objectMapper;
+        this.userRepository = userRepository;
     }
 
     @Pointcut("execution(* com.centralArchiveSystem.Archive..*Controller.*(..)) && " +
@@ -74,25 +79,46 @@ public class AuditAspect {
                 if (entityId == null) {
                     entityId = determineEntityId(joinPoint, result);
                 }
-                String user = getCurrentUser();
+                Actor actor = getCurrentActor();
                 String newValues = determineNewValues(result);
                 long executionTime = System.currentTimeMillis() - startTime;
                 String status = exception == null ? "SUCCESS" : "FAILURE";
                 String errorMessage = exception != null ? exception.getMessage() : null;
 
-                auditLogService.log(user, action, entityType, entityId, oldValues, newValues, executionTime, status, errorMessage);
+                auditLogService.log(
+                        actor.userId(),
+                        actor.username(),
+                        action,
+                        entityType,
+                        entityId,
+                        oldValues,
+                        newValues,
+                        executionTime,
+                        status,
+                        errorMessage
+                );
             } catch (Exception e) {
                 logger.error("Failed to create audit log", e);
             }
         }
     }
 
-    private String getCurrentUser() {
+    private Actor getCurrentActor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            return authentication.getName();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return new Actor(null, "anonymous");
         }
-        return "anonymous";
+
+        String username = authentication.getName();
+        if (username == null || username.isBlank() || "anonymousUser".equals(username)) {
+            return new Actor(null, "anonymous");
+        }
+
+        UUID userId = userRepository.findByUsername(username)
+                .map(user -> user.getId())
+                .orElse(null);
+
+        return new Actor(userId, username);
     }
 
     private String determineAction(ProceedingJoinPoint joinPoint) {
@@ -254,6 +280,8 @@ public class AuditAspect {
             }
         }
     }
+
+    private record Actor(UUID userId, String username) {}
 
     private boolean isSensitiveField(String fieldName) {
         String normalized = fieldName.toLowerCase(Locale.ROOT);
