@@ -39,7 +39,13 @@ class ProjectServiceTest {
 
         ProjectService service = new ProjectService(repository, memberService, confidentiality);
 
-        ProjectResponse response = service.newVersion(originalId, currentUserId);
+        ProjectUpdateRequest overrides = new ProjectUpdateRequest(
+                null, null, null, null, null, "Revised Project", null,
+                null, null, "Revised description", null,
+                null, null, null
+        );
+
+        ProjectResponse response = service.newVersion(originalId, currentUserId, overrides);
 
         assertEquals(projectUid, response.projectUid());
         assertEquals(4, response.versionNo());
@@ -48,6 +54,8 @@ class ProjectServiceTest {
         assertEquals(Project.ProjectStatus.DRAFT, response.status());
         assertFalse(original.getIsLatestVersion());
         assertEquals(currentUserId, response.createdBy());
+        assertEquals("Revised Project", response.name());
+        assertEquals("Revised description", response.description());
 
         verify(repository, times(2)).save(any(Project.class));
         verify(memberService).copyMembers(eq(originalId), any(UUID.class));
@@ -67,7 +75,7 @@ class ProjectServiceTest {
         ProjectService service = new ProjectService(repository, memberService, confidentiality);
 
         assertThrows(IllegalStateException.class,
-                () -> service.newVersion(project.getId(), UUID.randomUUID()));
+                () -> service.newVersion(project.getId(), UUID.randomUUID(), null));
         verify(repository, never()).findMaxVersionNoByProjectUid(any());
         verify(memberService, never()).copyMembers(any(), any());
     }
