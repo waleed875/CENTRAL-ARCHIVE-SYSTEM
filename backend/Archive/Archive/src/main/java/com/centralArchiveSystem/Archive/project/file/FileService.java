@@ -101,10 +101,12 @@ public class FileService {
         String bucketName = minioConfig.getBucket();
         String objectKey = "projects/" + projectId + "/" + storedName;
 
+        boolean uploadedToObjectStorage = false;
         try {
             String checksum = calculateChecksum(multipartFile);
 
             minioService.uploadFile(multipartFile, bucketName, objectKey);
+            uploadedToObjectStorage = true;
 
             FileEntity fileEntity = new FileEntity();
             fileEntity.setProjectId(projectId);
@@ -129,6 +131,14 @@ public class FileService {
             return toResponse(saved);
 
         } catch (Exception e) {
+            if (uploadedToObjectStorage) {
+                try {
+                    minioService.deleteFile(bucketName, objectKey);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to remove orphan object after database failure: {}", objectKey, cleanupError);
+                }
+            }
+
             log.error("Failed to upload file: {}", originalName, e);
             throw new RuntimeException("Failed to upload file: " + e.getMessage(), e);
         }
