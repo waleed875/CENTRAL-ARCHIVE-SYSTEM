@@ -18,9 +18,35 @@ permissions:
 jobs:
   compile-and-unit-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: central_archive
+          POSTGRES_USER: archive_user
+          POSTGRES_PASSWORD: archive_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U archive_user -d central_archive"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     defaults:
       run:
         working-directory: backend/Archive/Archive
+
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      DB_USERNAME: archive_user
+      DB_PASSWORD: archive_password
+      LEGACY_DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      LEGACY_DB_USERNAME: archive_user
+      LEGACY_DB_PASSWORD: archive_password
+      BOOTSTRAP_ADMIN_ENABLED: "false"
+      ARCHIVE_INSTANCE_UUID: 00000000-0000-0000-0000-000000000001
 
     steps:
       - name: Checkout
@@ -39,3 +65,6 @@ jobs:
 
       - name: Run focused unit tests
         run: bash mvnw -B -Dtest=PackageArchiveServiceTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,ProjectServiceTest,FileServiceTest test
+
+      - name: Verify Flyway migrations and Hibernate schema
+        run: bash mvnw -B -Dtest=ArchiveApplicationTests test
