@@ -76,11 +76,8 @@ public class ProjectService {
         project.setStatus(Project.ProjectStatus.DRAFT);
         applyRequestToEntity(project, request);
 
-        if (request.sourceType() != null) {
-            project.setSourceType(request.sourceType());
-        } else {
-            project.setSourceType(Project.SourceType.MANUAL);
-        }
+        project.setSourceType(Project.SourceType.MANUAL);
+        project.setSourceReference(null);
 
         if (request.dataCompletionStatus() != null) {
             project.setDataCompletionStatus(request.dataCompletionStatus());
@@ -439,12 +436,5 @@ public class ProjectService {
 
         if (request.dataCompletionStatus() != null) {
             project.setDataCompletionStatus(request.dataCompletionStatus());
-        }
-        if (request.sourceType() != null) {
-            project.setSourceType(request.sourceType());
-        }
-        if (request.sourceReference() != null) {
-            project.setSourceReference(request.sourceReference());
-        }
-    }
+        }    }
 }
