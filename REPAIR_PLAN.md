@@ -25,7 +25,7 @@ Move the current backend from MVP-level implementation toward a safe, testable p
 
 ## Phase 1 - Security and Runtime Foundation
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 - [x] Enable Spring asynchronous execution.
 - [x] Return refresh tokens to clients.
@@ -37,7 +37,7 @@ Status: IN PROGRESS
 - [x] Redact password/token/authorization/secret fields from audit payloads.
 - [x] Resolve the authenticated user centrally instead of trusting client-supplied usernames.
 - [x] Populate uploaded_by/deleted_by and operation actor fields from authenticated identity; database UUID alignment for remaining actor columns continues in Phase 2.
-- [ ] Add broader role and object-level integration tests (confidentiality unit coverage is in place).
+- [x] Add broader role and object-level integration tests, including real HTTP confidentiality/IDOR coverage for direct project/file access and filtered project lists.
 - [x] Add confidentiality enforcement for project/file read paths; organization visibility remains intentionally global for central users per the documented MVP workflow.
 
 ## Phase 2 - Database and Entity Alignment
