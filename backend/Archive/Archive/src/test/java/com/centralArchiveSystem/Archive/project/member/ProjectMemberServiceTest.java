@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.project.member;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.project.project.Project;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,7 @@ class ProjectMemberServiceTest {
                 confidentiality
         );
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(BusinessRuleException.class,
                 () -> service.delete(projectId, UUID.randomUUID()));
 
         verify(memberRepository, never()).delete(any());
@@ -66,8 +67,8 @@ class ProjectMemberServiceTest {
                 org.springframework.security.access.AccessDeniedException.class,
                 () -> service.create(
                         projectId,
-                        new com.centralArchiveSystem.Archive.project.member.dto.MemberRequest(
-                                projectId, "Restricted Member", null, null, null
+                        new com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest(
+                                "Restricted Member", null, null, null
                         )
                 )
         );
