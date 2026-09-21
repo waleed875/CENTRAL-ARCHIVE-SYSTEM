@@ -140,13 +140,34 @@ public class ProjectController {
             @Parameter(description = "Organization ID") @RequestParam(required = false) UUID organizationId,
             @Parameter(description = "Status") @RequestParam(required = false) Project.ProjectStatus status,
             @Parameter(description = "Year") @RequestParam(required = false) Integer year,
+            @Parameter(description = "Project type ID") @RequestParam(required = false) UUID projectTypeId,
+            @Parameter(description = "Confidentiality level ID") @RequestParam(required = false) UUID confidentialityLevelId,
+            @Parameter(description = "Source type") @RequestParam(required = false) Project.SourceType sourceType,
+            @Parameter(description = "Project UID") @RequestParam(required = false) UUID projectUid,
+            @Parameter(description = "Created by user ID") @RequestParam(required = false) UUID createdBy,
+            @Parameter(description = "Approved by user ID") @RequestParam(required = false) UUID approvedBy,
+            @Parameter(description = "Latest version only") @RequestParam(defaultValue = "true") Boolean isLatestVersion,
             @Parameter(description = "Page number (1-based)") @RequestParam(defaultValue = "1") int page,
             @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size,
             @Parameter(description = "Sort by field") @RequestParam(defaultValue = "createdAt") String sortBy,
             @Parameter(description = "Sort direction") @RequestParam(defaultValue = "desc") String sortDirection) {
 
         ProjectSearchRequest searchRequest = new ProjectSearchRequest(
-                searchTerm, organizationId, status, year, null, null, sortBy, sortDirection
+                searchTerm,
+                organizationId,
+                status,
+                year,
+                projectTypeId,
+                confidentialityLevelId,
+                sourceType,
+                projectUid,
+                createdBy,
+                approvedBy,
+                isLatestVersion,
+                null,
+                null,
+                sortBy,
+                sortDirection
         );
 
         Page<ProjectResponse> results = projectService.search(searchRequest, page - 1, size);
