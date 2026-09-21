@@ -159,6 +159,27 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             @Param("organizationId") UUID organizationId,
             @Param("maxLevelOrder") Integer maxLevelOrder);
 
+    @Query("""
+           SELECT p.sourceType, COUNT(p) FROM Project p
+           WHERE p.isLatestVersion = true
+             AND (:organizationId IS NULL OR p.organizationId = :organizationId)
+             AND (
+                 p.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = p.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+           GROUP BY p.sourceType
+           """)
+    List<Object[]> countAccessibleBySource(
+            @Param("organizationId") UUID organizationId,
+            @Param("maxLevelOrder") Integer maxLevelOrder);
+
     @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.isLatestVersion = true")
     long countByOrganizationId(@Param("organizationId") UUID organizationId);
 
