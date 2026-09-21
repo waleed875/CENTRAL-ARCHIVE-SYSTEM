@@ -31,11 +31,13 @@ class AuthHttpIntegrationTest {
     @Autowired PasswordEncoder passwordEncoder;
 
     private final String username = "auth_integration_user";
+    private final String adminUsername = "auth_integration_admin";
     private final String password = "StrongIntegrationPassword123!";
 
     @BeforeEach
     void setupUser() {
         userRepository.findByUsername(username).ifPresent(userRepository::delete);
+        userRepository.findByUsername(adminUsername).ifPresent(userRepository::delete);
 
         Role role = roleRepository.findByCode("read_only").orElseGet(() -> {
             Role created = new Role();
@@ -52,6 +54,22 @@ class AuthHttpIntegrationTest {
         user.setStatus(User.UserStatus.ACTIVE);
         user.setRoles(Set.of(role));
         userRepository.save(user);
+
+        Role adminRole = roleRepository.findByCode("system_admin").orElseGet(() -> {
+            Role created = new Role();
+            created.setCode("system_admin");
+            created.setName("System Admin");
+            created.setIsActive(true);
+            return roleRepository.save(created);
+        });
+
+        User admin = new User();
+        admin.setUsername(adminUsername);
+        admin.setPasswordHash(passwordEncoder.encode(password));
+        admin.setFullName("Auth Integration Admin");
+        admin.setStatus(User.UserStatus.ACTIVE);
+        admin.setRoles(Set.of(adminRole));
+        userRepository.save(admin);
     }
 
     @Test
@@ -92,6 +110,51 @@ class AuthHttpIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(refreshJson))
                 .andExpect(status().isBadRequest());
+    }
+
+
+    @Test
+    void methodSecurityEnforcesAdministrativeRoles() throws Exception {
+        String readOnlyToken = loginAndGetAccessToken(username);
+        String adminToken = loginAndGetAccessToken(adminUsername);
+
+        String code = "HTTP-AUTH-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String organizationJson = """
+                {
+                  "name":"HTTP Authorization Company",
+                  "code":"%s",
+                  "type":"COMPANY",
+                  "description":"integration authorization test"
+                }
+                """.formatted(code);
+
+        mockMvc.perform(post("/api/v1/organizations")
+                        .header("Authorization", "Bearer " + readOnlyToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(organizationJson))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/organizations")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(organizationJson))
+                .andExpect(status().isCreated());
+    }
+
+    private String loginAndGetAccessToken(String loginUsername) throws Exception {
+        String loginJson = """
+                {"username":"%s","password":"%s"}
+                """.formatted(loginUsername, password);
+
+        String response = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        return objectMapper.readTree(response).path("data").path("token").asText();
     }
 
     @Test
