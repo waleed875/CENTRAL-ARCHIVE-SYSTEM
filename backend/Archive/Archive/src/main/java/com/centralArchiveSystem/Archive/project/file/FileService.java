@@ -93,20 +93,30 @@ public class FileService {
             throw new IllegalStateException("File category is inactive");
         }
 
-        FileType fileType = fileTypeRepository.findById(request.typeId())
-                .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + request.typeId()));
-        if (!Boolean.TRUE.equals(fileType.getIsActive())) {
-            throw new IllegalStateException("File type is inactive");
-        }
-        if (!request.categoryId().equals(fileType.getCategoryId())) {
-            throw new IllegalArgumentException("Selected file type does not belong to selected category");
+        FileType fileType = null;
+        if (request.typeId() != null) {
+            fileType = fileTypeRepository.findById(request.typeId())
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "File type not found with id: " + request.typeId()));
+            if (!Boolean.TRUE.equals(fileType.getIsActive())) {
+                throw new IllegalStateException("File type is inactive");
+            }
+            if (!request.categoryId().equals(fileType.getCategoryId())) {
+                throw new IllegalArgumentException(
+                        "Selected file type does not belong to selected category");
+            }
         }
 
         String originalName = multipartFile.getOriginalFilename();
         String extension = extractExtension(originalName);
+        String expectedExtension = fileType != null
+                && fileType.getDefaultExtension() != null
+                && !fileType.getDefaultExtension().isBlank()
+                        ? fileType.getDefaultExtension()
+                        : extension;
         String detectedMimeType = FileContentInspector.validateMultipart(
                 multipartFile,
-                fileType.getDefaultExtension()
+                expectedExtension
         );
         String storedName = UUID.randomUUID() + (extension != null ? "." + extension : "");
         String bucketName = minioConfig.getBucket();
@@ -192,15 +202,39 @@ public class FileService {
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
         requireMutableProject(file.getProjectId());
 
+        UUID targetCategoryId = request.categoryId() != null
+                ? request.categoryId()
+                : file.getCategoryId();
+        UUID targetTypeId = request.typeId() != null
+                ? request.typeId()
+                : file.getTypeId();
+
         if (request.categoryId() != null) {
-            fileCategoryRepository.findById(request.categoryId())
-                    .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
-            file.setCategoryId(request.categoryId());
+            FileCategory targetCategory = fileCategoryRepository.findById(request.categoryId())
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "File category not found with id: " + request.categoryId()));
+            if (!Boolean.TRUE.equals(targetCategory.getIsActive())) {
+                throw new IllegalStateException("File category is inactive");
+            }
         }
 
+        if (targetTypeId != null) {
+            FileType targetType = fileTypeRepository.findById(targetTypeId)
+                    .orElseThrow(() -> new EntityNotFoundException(
+                            "File type not found with id: " + targetTypeId));
+            if (!Boolean.TRUE.equals(targetType.getIsActive())) {
+                throw new IllegalStateException("File type is inactive");
+            }
+            if (!targetCategoryId.equals(targetType.getCategoryId())) {
+                throw new IllegalArgumentException(
+                        "Selected file type does not belong to selected category");
+            }
+        }
+
+        if (request.categoryId() != null) {
+            file.setCategoryId(request.categoryId());
+        }
         if (request.typeId() != null) {
-            fileTypeRepository.findById(request.typeId())
-                    .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + request.typeId()));
             file.setTypeId(request.typeId());
         }
 
@@ -320,7 +354,9 @@ public class FileService {
 
     private FileResponse toResponse(FileEntity file) {
         FileCategory category = fileCategoryRepository.findById(file.getCategoryId()).orElse(null);
-        FileType fileType = fileTypeRepository.findById(file.getTypeId()).orElse(null);
+        FileType fileType = file.getTypeId() != null
+                ? fileTypeRepository.findById(file.getTypeId()).orElse(null)
+                : null;
 
         return new FileResponse(
                 file.getId(),
