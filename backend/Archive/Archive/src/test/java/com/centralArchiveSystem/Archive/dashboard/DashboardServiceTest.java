@@ -36,14 +36,14 @@ class DashboardServiceTest {
         when(users.findAll()).thenReturn(List.of());
 
         when(projects.countAccessibleLatest(null, 2)).thenReturn(2L);
-        when(projects.countAccessibleByStatus(null, 2)).thenReturn(List.of(
+        when(projects.countAccessibleByStatus(null, 2)).thenReturn(List.<Object[]>of(
                 new Object[]{Project.ProjectStatus.UNDER_REVIEW, 1L},
                 new Object[]{Project.ProjectStatus.APPROVED, 1L}
         ));
-        when(projects.countAccessibleByYear(null, 2)).thenReturn(List.of(
+        when(projects.countAccessibleByYear(null, 2)).thenReturn(List.<Object[]>of(
                 new Object[]{2026, 2L}
         ));
-        when(projects.countAccessibleBySource(null, 2)).thenReturn(List.of(
+        when(projects.countAccessibleBySource(null, 2)).thenReturn(List.<Object[]>of(
                 new Object[]{Project.SourceType.MANUAL, 2L}
         ));
 
