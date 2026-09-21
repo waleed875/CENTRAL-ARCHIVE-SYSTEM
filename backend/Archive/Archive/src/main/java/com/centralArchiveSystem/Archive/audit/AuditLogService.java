@@ -51,7 +51,8 @@ public class AuditLogService {
 
     public AuditLogResponse log(UUID userId, String user, String action, String entityType,
                                  String entityId, String oldValues, String newValues,
-                                 long executionTime, String status, String errorMessage) {
+                                 long executionTime, String status, String errorMessage,
+                                 String ipAddress) {
         AuditLog auditLog = new AuditLog();
         auditLog.setUserId(userId);
         auditLog.setAction(action);
@@ -72,6 +73,7 @@ public class AuditLogService {
 
         auditLog.setOldValues(oldValues);
         auditLog.setNewValues(newValues);
+        auditLog.setIpAddress(ipAddress);
 
         AuditLog saved = auditLogRepository.save(auditLog);
         logger.info("Audit log created: userId={}, action={}, entityType={}, entityId={}",
