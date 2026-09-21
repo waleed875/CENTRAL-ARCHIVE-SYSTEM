@@ -67,7 +67,7 @@ class ProjectMemberServiceTest {
                 () -> service.create(
                         projectId,
                         new com.centralArchiveSystem.Archive.project.member.dto.MemberRequest(
-                                "Restricted Member", null, null, null
+                                projectId, "Restricted Member", null, null, null
                         )
                 )
         );
