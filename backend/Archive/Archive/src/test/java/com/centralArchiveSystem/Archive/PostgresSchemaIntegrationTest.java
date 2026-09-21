@@ -22,16 +22,16 @@ class PostgresSchemaIntegrationTest {
         assertNotNull(version);
         assertTrue(version.startsWith("PostgreSQL"));
 
-        Integer v7 = jdbcTemplate.queryForObject(
+        Integer latestMigration = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '7'
+                 WHERE version = '8'
                    AND success = true
                 """,
                 Integer.class
         );
-        assertEquals(1, v7);
+        assertEquals(1, latestMigration);
     }
 
     @Test
@@ -71,6 +71,25 @@ class PostgresSchemaIntegrationTest {
                 String.class
         );
         assertEquals("timestamp with time zone", tokenCutoffType);
+    }
+
+    @Test
+    void auditLogImmutabilityTriggerExists() {
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_trigger tg
+                  JOIN pg_class t ON t.oid = tg.tgrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'audit'
+                   AND t.relname = 'audit_logs'
+                   AND tg.tgname = 'trg_audit_logs_immutable'
+                   AND NOT tg.tgisinternal
+                """,
+                Integer.class
+        );
+
+        assertEquals(1, count);
     }
 
     @Test
