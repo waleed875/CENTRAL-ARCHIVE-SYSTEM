@@ -9,7 +9,14 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "project.projects")
+@Table(
+    name = "projects",
+    schema = "project",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_projects_project_uid_version",
+        columnNames = {"project_uid", "version_no"}
+    )
+)
 @Schema(name = "project.projects")
 public class Project {
 
@@ -117,7 +124,7 @@ public class Project {
 
     public Project() {}
 
-    public Project(UUID id, String projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, String createdBy, String approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
+    public Project(UUID id, UUID projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, String createdBy, String approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.projectUid = projectUid;
         this.versionNo = versionNo;
