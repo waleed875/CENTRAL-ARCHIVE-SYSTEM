@@ -93,7 +93,7 @@ CREATE TABLE project.projects (
     notes TEXT,
     table_of_contents TEXT,
     keywords TEXT,
-    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','IMPORTED','UNDER_REVIEW','NEEDS_CORRECTION','APPROVED','ARCHIVED')),
+    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','IMPORTED','UNDER_REVIEW','NEEDS_CORRECTION','REJECTED','APPROVED','ARCHIVED')),
     data_completion_status VARCHAR(40) CHECK (data_completion_status IS NULL OR data_completion_status IN ('COMPLETE','INCOMPLETE')),
     review_notes TEXT,
     source_type VARCHAR(40) NOT NULL DEFAULT 'MANUAL' CHECK (source_type IN ('MANUAL','BRANCH_PACKAGE','MIGRATION')),
