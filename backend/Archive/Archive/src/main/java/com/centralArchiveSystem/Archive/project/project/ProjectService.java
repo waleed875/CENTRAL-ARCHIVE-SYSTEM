@@ -156,7 +156,7 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse newVersion(UUID id, UUID createdBy) {
+    public ProjectResponse newVersion(UUID id, UUID createdBy, ProjectUpdateRequest overrides) {
         Project original = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
@@ -194,6 +194,10 @@ public class ProjectService {
         newVersionProject.setSourceType(original.getSourceType());
         newVersionProject.setSourceReference(original.getSourceReference());
         newVersionProject.setCreatedBy(createdBy);
+
+        if (overrides != null) {
+            applyUpdateToEntity(newVersionProject, overrides);
+        }
 
         Project saved = projectRepository.save(newVersionProject);
         projectMemberService.copyMembers(original.getId(), saved.getId());
