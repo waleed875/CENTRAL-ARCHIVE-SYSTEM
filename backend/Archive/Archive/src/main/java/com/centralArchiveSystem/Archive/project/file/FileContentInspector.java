@@ -67,7 +67,7 @@ public final class FileContentInspector {
     private FileContentInspector() {
     }
 
-    public static String validateMultipart(MultipartFile file, String expectedExtension) throws IOException {
+    public static String validateMultipart(MultipartFile file, String expectedExtension) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Uploaded file is empty");
         }
@@ -86,6 +86,8 @@ public final class FileContentInspector {
         try (InputStream input = file.getInputStream();
              PushbackInputStream pushback = new PushbackInputStream(input, SNIFF_BYTES)) {
             return validateAndPreserve(pushback, expected);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to inspect uploaded file content", e);
         }
     }
 
