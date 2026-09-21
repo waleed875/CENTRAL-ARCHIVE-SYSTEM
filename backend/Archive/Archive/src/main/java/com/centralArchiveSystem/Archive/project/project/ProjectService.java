@@ -61,6 +61,8 @@ public class ProjectService {
     }
 
     public ProjectResponse create(ProjectRequest request, UUID createdBy) {
+        confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
+
         Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
                 request.projectNumber(), request.organizationId(), request.year());
 
@@ -97,8 +99,10 @@ public class ProjectService {
     }
 
     public ProjectResponse update(UUID id, ProjectUpdateRequest request) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
+        if (request.confidentialityLevelId() != null) {
+            confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
+        }
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED ||
             project.getStatus() == Project.ProjectStatus.ARCHIVED) {
@@ -155,8 +159,10 @@ public class ProjectService {
     }
 
     public ProjectResponse newVersion(UUID id, UUID createdBy, ProjectUpdateRequest overrides) {
-        Project original = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project original = requireAccessibleProject(id);
+        if (overrides != null && overrides.confidentialityLevelId() != null) {
+            confidentialityAccessService.requireReadAccess(overrides.confidentialityLevelId());
+        }
 
         if (original.getStatus() != Project.ProjectStatus.APPROVED
                 && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
@@ -215,8 +221,7 @@ public class ProjectService {
     }
 
     public ProjectResponse submitForReview(UUID id) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.DRAFT
                 && project.getStatus() != Project.ProjectStatus.IMPORTED
@@ -236,8 +241,7 @@ public class ProjectService {
             throw new IllegalArgumentException("review_notes is required");
         }
 
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
             throw new BusinessRuleException("Can only request correction for UNDER_REVIEW projects");
@@ -250,8 +254,7 @@ public class ProjectService {
     }
 
     public ProjectResponse approve(UUID id, UUID approvedBy) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
             throw new BusinessRuleException("Can only approve UNDER_REVIEW projects");
@@ -269,8 +272,7 @@ public class ProjectService {
             throw new IllegalArgumentException("rejection_reason is required");
         }
 
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
             throw new BusinessRuleException("Can only reject UNDER_REVIEW projects");
@@ -283,8 +285,7 @@ public class ProjectService {
     }
 
     public ProjectResponse archive(UUID id) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.APPROVED) {
             throw new BusinessRuleException("Can only archive APPROVED projects");
@@ -357,6 +358,13 @@ public class ProjectService {
                 totalProjects,
                 archivedCount
         );
+    }
+
+    private Project requireAccessibleProject(UUID id) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+        return project;
     }
 
     private boolean hasRestrictedReviewChanges(ProjectUpdateRequest request) {
