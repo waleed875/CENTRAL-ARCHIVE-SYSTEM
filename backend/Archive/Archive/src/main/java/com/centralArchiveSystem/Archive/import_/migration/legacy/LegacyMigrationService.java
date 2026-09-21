@@ -546,9 +546,11 @@ public class LegacyMigrationService {
     }
 
     private static String normalizeLegacyExtension(String suffix, String originalName) {
+        String nameExtension = FileContentInspector.extensionFromName(originalName);
         String candidate = suffix;
+
         if (candidate == null || candidate.isBlank()) {
-            candidate = FileContentInspector.extensionFromName(originalName);
+            candidate = nameExtension;
         }
 
         if (candidate == null || candidate.isBlank()) {
@@ -564,6 +566,12 @@ public class LegacyMigrationService {
         if (normalized.isBlank()) {
             throw new IllegalArgumentException(
                     "Legacy file has no resolvable extension: " + originalName);
+        }
+
+        if (nameExtension != null
+                && !FileContentInspector.extensionsEquivalent(normalized, nameExtension)) {
+            throw new IllegalArgumentException(
+                    "Legacy file suffix does not match original filename: " + originalName);
         }
 
         return normalized;
