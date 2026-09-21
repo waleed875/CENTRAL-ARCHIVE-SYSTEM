@@ -31,7 +31,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '8'
+                 WHERE version = '9'
                    AND success = true
                 """,
                 Integer.class
@@ -76,6 +76,36 @@ class PostgresSchemaIntegrationTest {
                 String.class
         );
         assertEquals("timestamp with time zone", tokenCutoffType);
+    }
+
+    @Test
+    void migrationBatchNumberUsesStringTypeAndPerSourceUniqueness() {
+        String batchNumberType = jdbcTemplate.queryForObject(
+                """
+                SELECT data_type
+                  FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'migration_batches'
+                   AND column_name = 'batch_number'
+                """,
+                String.class
+        );
+        assertEquals("character varying", batchNumberType);
+
+        Integer constraintCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'migration_batches'
+                   AND c.conname = 'uk_migration_batches_source_batch_number'
+                   AND c.contype = 'u'
+                """,
+                Integer.class
+        );
+        assertEquals(1, constraintCount);
     }
 
     @Test
