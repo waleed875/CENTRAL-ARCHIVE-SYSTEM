@@ -48,7 +48,7 @@ Status: IN PROGRESS
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V7 are committed and PostgreSQL/Flyway/Hibernate validation is green in CI.
+- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V8 are committed. V1-V7 and schema integration are green; final V8 validation is in progress.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
@@ -87,7 +87,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 - [x] Stream SHA-256 calculation for uploads.
 - [x] Configure environment-driven maximum package upload/request sizes.
-- [ ] Validate allowed file types using content inspection, not filename only.
+- [~] Validate allowed file types using content inspection, not filename only; direct uploads now enforce active category/type consistency, expected extensions, magic/content signatures, executable rejection, and Office ZIP structure. Equivalent streaming validation for files inside imported `.pkg` archives remains pending.
 - [x] Use UTF-8-safe `Content-Disposition` generation for downloads.
 - [x] Ensure soft-deleted files cannot be downloaded through direct IDs.
 - [x] Remove newly uploaded MinIO objects when subsequent database persistence fails for both manual uploads and package imports; broader reconciliation job remains future work.
@@ -99,18 +99,18 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Capture request IP from the servlet request and make forwarded-header trust an explicit production setting.
 - [x] Make audit serialization bounded to avoid huge payloads.
 - [x] Ensure audit logging redacts credentials, token/secret fields, embedded file/package byte fields, and manifest payload fields.
-- [ ] Define retention and immutability strategy.
+- [~] Define retention and immutability strategy; V8 installs an append-only PostgreSQL trigger with explicit controlled retention-purge mode, and `DEPLOYMENT.md` documents the purge procedure. Final V8 CI validation is in progress.
 
 ## Phase 7 - Tests and CI
 
 - [x] Add unit tests for JWT access/refresh token separation and tamper rejection.
 - [x] Add authentication/authorization integration tests covering real HTTP login/logout/revocation and method-role enforcement (`read_only` forbidden vs `system_admin` allowed).
 - [x] Add project versioning, PATCH-state, and confidentiality-aware statistics tests.
-- [ ] Add PostgreSQL integration tests with Testcontainers.
+- [x] Add PostgreSQL integration tests against the real PostgreSQL 17 CI service, including Flyway version, critical column types, project-version uniqueness, and audit-trigger validation.
 - [x] Add MinIO integration tests with a real MinIO service covering upload, download, presigned URL generation, and delete.
 - [x] Add package verification and export/import round-trip integrity tests.
 - [x] Add GitHub Actions for backend compile and focused unit tests.
-- [ ] Add dependency/security scanning.
+- [x] Add Trivy dependency, secret, and misconfiguration scanning; it identified CVE-2025-59952 in MinIO 8.5.12, which was upgraded to MinIO SDK 8.6.0. Current security scan is green.
 
 ### Additional completed API alignment
 
@@ -119,6 +119,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Correct audit entity attribution/unwrapping for controller responses.
 - [x] Align project search with documented filters for type, confidentiality, source, project UID, creator, approver, and latest-version selection.
 - [x] Enforce organization hierarchy rules, safe deactivation, correct project counts, partial PATCH semantics, and database-level pagination filtering.
+- [x] Align file category/type PATCH, filtering, and DELETE semantics with the API contract: immutable codes/category links, database-side filters, and soft deactivation guarded by active-file usage.
 
 - [x] Make file metadata PATCH partial with a dedicated update DTO.
 - [x] Make project PATCH partial as documented.
@@ -134,7 +135,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Make CORS origins environment-configurable.
 - [x] Disable Swagger/API docs by default in the production profile.
 - [x] Disable bootstrap admin by default in production.
-- [ ] Add structured logging; health/readiness endpoints are now exposed through Actuator with details hidden.
+- [x] Add structured production JSON logging (Logstash format) with sanitized `X-Request-ID` correlation IDs; health/readiness endpoints remain exposed through Actuator with details hidden.
 - [x] Add deployment documentation and PostgreSQL/MinIO backup and restore procedures in `DEPLOYMENT.md`.
 
 ## Delivery rule
