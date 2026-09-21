@@ -28,11 +28,4 @@ public class ImportOperationController {
         return ResponseEntity.ok(ApiResponse.success(service.getByPackageId(packageId)));
     }
 
-    @GetMapping("/operations/{id}")
-    @Operation(summary = "Get an import operation by ID")
-    public ResponseEntity<ApiResponse<ImportOperation>> getById(
-            @Parameter(description = "Operation UUID") @PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success(service.getById(id)));
-    }
-
 }
