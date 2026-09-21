@@ -15,7 +15,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -104,18 +103,15 @@ public class ProjectController {
     @Operation(summary = "Request correction on a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> requestCorrection(
             @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String reviewNotes = body != null ? body.get("reviewNotes") : null;
-        ProjectResponse response = projectService.requestCorrection(id, reviewNotes);
+            @Valid @RequestBody ProjectCorrectionRequest request) {
+        ProjectResponse response = projectService.requestCorrection(id, request.reviewNotes());
         return ResponseEntity.ok(ApiResponse.success(response, "Correction requested"));
     }
 
     @PatchMapping("/{id}/approve")
     @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Approve a project under review")
-    public ResponseEntity<ApiResponse<ProjectResponse>> approve(
-            @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
+    public ResponseEntity<ApiResponse<ProjectResponse>> approve(@PathVariable UUID id) {
         ProjectResponse response = projectService.approve(id, currentUserService.userId());
         return ResponseEntity.ok(ApiResponse.success(response, "Project approved"));
     }
@@ -125,9 +121,8 @@ public class ProjectController {
     @Operation(summary = "Reject a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> reject(
             @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String rejectionReason = body != null ? body.get("rejectionReason") : null;
-        ProjectResponse response = projectService.reject(id, rejectionReason);
+            @Valid @RequestBody ProjectRejectionRequest request) {
+        ProjectResponse response = projectService.reject(id, request.rejectionReason());
         return ResponseEntity.ok(ApiResponse.success(response, "Project rejected"));
     }
 
