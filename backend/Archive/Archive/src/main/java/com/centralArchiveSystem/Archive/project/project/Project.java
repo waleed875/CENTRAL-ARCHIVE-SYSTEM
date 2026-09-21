@@ -24,8 +24,8 @@ public class Project {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "project_uid", nullable = false, unique = true)
-    private String projectUid;
+    @Column(name = "project_uid", nullable = false)
+    private UUID projectUid;
 
     @Column(name = "version_no", nullable = false)
     private Integer versionNo = 1;
@@ -158,8 +158,8 @@ public class Project {
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
-    public String getProjectUid() { return projectUid; }
-    public void setProjectUid(String projectUid) { this.projectUid = projectUid; }
+    public UUID getProjectUid() { return projectUid; }
+    public void setProjectUid(UUID projectUid) { this.projectUid = projectUid; }
 
     public Integer getVersionNo() { return versionNo; }
     public void setVersionNo(Integer versionNo) { this.versionNo = versionNo; }
