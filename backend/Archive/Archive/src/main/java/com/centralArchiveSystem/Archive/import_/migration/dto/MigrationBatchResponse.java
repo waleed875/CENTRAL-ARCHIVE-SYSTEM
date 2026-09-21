@@ -9,7 +9,7 @@ import java.util.UUID;
 public record MigrationBatchResponse(
     @Schema(description = "Unique identifier") UUID id,
     @Schema(description = "Migration source ID") UUID migrationSourceId,
-    @Schema(description = "Batch number") Integer batchNumber,
+    @Schema(description = "Batch number") String batchNumber,
     @Schema(description = "Start timestamp") LocalDateTime startedAt,
     @Schema(description = "Completion timestamp") LocalDateTime completedAt,
     @Schema(description = "Batch status") String status,
