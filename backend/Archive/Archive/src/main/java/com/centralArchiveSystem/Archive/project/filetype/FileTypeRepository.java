@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -18,6 +19,8 @@ public interface FileTypeRepository extends JpaRepository<FileType, UUID> {
     List<FileType> findByIsActive(Boolean isActive);
 
     List<FileType> findByCategoryIdAndIsActive(UUID categoryId, Boolean isActive);
+
+    Optional<FileType> findByCode(String code);
 
     boolean existsByCode(String code);
 
