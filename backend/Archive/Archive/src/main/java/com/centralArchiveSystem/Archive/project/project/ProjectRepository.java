@@ -14,7 +14,7 @@ import java.util.UUID;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
-    Optional<Project> findByProjectUid(String projectUid);
+    Optional<Project> findByProjectUid(UUID projectUid);
 
     List<Project> findByOrganizationIdAndYear(UUID organizationId, Integer year);
 
