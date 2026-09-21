@@ -87,7 +87,7 @@ public class AuthService implements UserDetailsService {
         SecurityContextHolder.clearContext();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponse refreshToken(String refreshToken) {
         if (!tokenProvider.validateRefreshToken(refreshToken)) {
             throw new IllegalArgumentException("Invalid refresh token");
