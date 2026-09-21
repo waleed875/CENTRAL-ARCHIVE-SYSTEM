@@ -100,9 +100,9 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 ## Phase 7 - Tests and CI
 
-- [ ] Add unit tests for JWT token types and refresh behavior.
+- [x] Add unit tests for JWT access/refresh token separation and tamper rejection.
 - [ ] Add authentication/authorization integration tests.
-- [ ] Add project workflow/versioning tests.
+- [x] Add project versioning, PATCH-state, and confidentiality-aware statistics tests.
 - [ ] Add PostgreSQL integration tests with Testcontainers.
 - [ ] Add MinIO integration tests.
 - [x] Add package verification and export/import round-trip integrity tests.
@@ -121,11 +121,11 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 ## Phase 8 - Production Configuration
 
-- [ ] Require JWT/DB/MinIO/bootstrap secrets outside local development.
-- [ ] Make CORS origins environment-configurable.
-- [ ] Disable or protect Swagger in production.
-- [ ] Disable bootstrap admin after provisioning.
-- [ ] Add structured logging and health/readiness endpoints.
+- [x] Add a production profile that requires DB/JWT/MinIO/CORS/archive-instance configuration without development fallbacks; bootstrap admin is disabled by default.
+- [x] Make CORS origins environment-configurable.
+- [x] Disable Swagger/API docs by default in the production profile.
+- [x] Disable bootstrap admin by default in production.
+- [ ] Add structured logging; health/readiness endpoints are now exposed through Actuator with details hidden.
 - [ ] Add deployment documentation and backup/restore procedures.
 
 ## Delivery rule
