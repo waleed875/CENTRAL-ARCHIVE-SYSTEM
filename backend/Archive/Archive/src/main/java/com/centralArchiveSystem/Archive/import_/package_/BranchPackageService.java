@@ -771,7 +771,13 @@ public class BranchPackageService {
     @Transactional(readOnly = true)
     public List<PackageProject> getProjects(UUID packageId) {
         findPackage(packageId);
-        return packageProjectRepository.findByPackageId(packageId);
+
+        return packageProjectRepository.findByPackageId(packageId).stream()
+                .filter(link -> projectRepository.findById(link.getProjectId())
+                        .map(project -> confidentialityAccessService.canRead(
+                                project.getConfidentialityLevelId()))
+                        .orElse(false))
+                .toList();
     }
 
     @Transactional(readOnly = true)
