@@ -47,8 +47,8 @@ Status: IN PROGRESS
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [ ] Replace schema drift via `ddl-auto=update` with versioned migrations.
-- [ ] Set production Hibernate mode to `validate`.
+- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1/V2 are committed and PostgreSQL CI validation is running.
+- [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
 
@@ -58,7 +58,7 @@ Status: IN PROGRESS
 - [x] Apply confidentiality filtering in PostgreSQL list/search queries and direct get/download checks.
 - [x] Review organization visibility rules; do not enforce source-organization isolation for central users in the current MVP.
 - [x] Allow `read_only` users to view/download permitted data while retaining no write permissions.
-- [ ] Add direct-object-reference tests for project and file access.
+- [x] Add direct-object-reference tests for project and file access.
 
 ## Phase 4 - Documented Offline Package Workflow
 
@@ -94,8 +94,8 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Redact common sensitive fields from serialized audit results.
 - [x] Store the real authenticated user UUID in AOP-generated audit records.
 - [ ] Capture request IP safely behind configured proxies.
-- [ ] Make audit serialization bounded to avoid huge payloads.
-- [ ] Ensure audit logging cannot recursively expose credentials or file contents.
+- [x] Make audit serialization bounded to avoid huge payloads.
+- [x] Ensure audit logging redacts credentials, token/secret fields, embedded file/package byte fields, and manifest payload fields.
 - [ ] Define retention and immutability strategy.
 
 ## Phase 7 - Tests and CI
