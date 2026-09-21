@@ -31,9 +31,11 @@ public class AuditLog {
     private String description;
 
     @Column(name = "old_values", columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String oldValues;
 
     @Column(name = "new_values", columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String newValues;
 
     @Column(name = "ip_address", columnDefinition = "inet")
