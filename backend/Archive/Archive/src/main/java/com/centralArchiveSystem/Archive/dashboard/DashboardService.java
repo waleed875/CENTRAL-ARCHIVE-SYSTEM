@@ -106,7 +106,7 @@ public class DashboardService {
         for (Project project : recentProjects) {
             activities.add(new ActivityResponse(
                     getProjectAction(project.getStatus()),
-                    resolveUser(project.getCreatedBy()),
+                    resolveUserById(project.getCreatedBy()),
                     buildProjectDescription(project),
                     "PROJECT",
                     project.getId(),
