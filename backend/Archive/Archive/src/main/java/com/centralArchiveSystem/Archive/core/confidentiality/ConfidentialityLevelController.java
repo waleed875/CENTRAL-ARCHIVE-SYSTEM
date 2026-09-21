@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelRequest;
 import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelResponse;
+import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelUpdateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -55,15 +56,15 @@ public class ConfidentialityLevelController {
     @Operation(summary = "Update a confidentiality level")
     public ResponseEntity<ApiResponse<ConfidentialityLevelResponse>> update(
             @PathVariable UUID id,
-            @Valid @RequestBody ConfidentialityLevelRequest request) {
+            @Valid @RequestBody ConfidentialityLevelUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(confidentialityLevelService.update(id, request), "Confidentiality level updated"));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Delete a confidentiality level")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
         confidentialityLevelService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "Confidentiality level deleted"));
+        return ResponseEntity.noContent().build();
     }
 }
