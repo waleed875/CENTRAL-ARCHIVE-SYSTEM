@@ -9,10 +9,15 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Enumeration;
 import java.util.Set;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 public final class FileContentInspector {
@@ -89,7 +94,13 @@ public final class FileContentInspector {
              PushbackInputStream pushback = new PushbackInputStream(input, SNIFF_BYTES)) {
             String mimeType = validateAndPreserve(pushback, expected);
             if (ZIP_EXTENSIONS.contains(expected) && !"zip".equals(expected)) {
-                validateZipContainer(file, expected);
+                Path temp = Files.createTempFile("central-archive-content-", ".zip");
+                try (InputStream fullInput = file.getInputStream()) {
+                    Files.copy(fullInput, temp, StandardCopyOption.REPLACE_EXISTING);
+                    validateZipContainer(temp, expected);
+                } finally {
+                    Files.deleteIfExists(temp);
+                }
             }
             return mimeType;
         } catch (IOException e) {
@@ -109,6 +120,10 @@ public final class FileContentInspector {
         }
         input.unread(prefix);
 
+        return validatePrefix(prefix, expected);
+    }
+
+    private static String validatePrefix(byte[] prefix, String expected) {
         rejectExecutableContent(prefix);
 
         boolean valid = switch (expected) {
@@ -153,18 +168,19 @@ public final class FileContentInspector {
         return MIME_TYPES.getOrDefault(expected, "application/octet-stream");
     }
 
-    private static void validateZipContainer(MultipartFile file, String expected) throws IOException {
+    private static void validateZipContainer(Path zipPath, String expected) throws IOException {
         boolean contentTypes = false;
         boolean expectedRoot = false;
         boolean openDocumentManifest = false;
         String openDocumentMime = null;
 
-        try (ZipInputStream zip = new ZipInputStream(file.getInputStream())) {
-            ZipEntry entry;
-            int entries = 0;
+        try (ZipFile zip = new ZipFile(zipPath.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            int entryCount = 0;
 
-            while ((entry = zip.getNextEntry()) != null) {
-                if (++entries > 512) {
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (++entryCount > 2048) {
                     throw new IllegalArgumentException("Archive contains too many entries");
                 }
 
@@ -185,8 +201,10 @@ public final class FileContentInspector {
                     openDocumentManifest = true;
                 }
                 if ("mimetype".equals(name) && !entry.isDirectory()) {
-                    byte[] mimeBytes = zip.readNBytes(256);
-                    openDocumentMime = new String(mimeBytes, StandardCharsets.US_ASCII).trim();
+                    try (InputStream input = zip.getInputStream(entry)) {
+                        byte[] mimeBytes = input.readNBytes(256);
+                        openDocumentMime = new String(mimeBytes, StandardCharsets.US_ASCII).trim();
+                    }
                 }
             }
         }
