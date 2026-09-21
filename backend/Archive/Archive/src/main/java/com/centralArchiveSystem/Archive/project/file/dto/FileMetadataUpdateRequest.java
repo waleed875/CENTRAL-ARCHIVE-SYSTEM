@@ -5,7 +5,5 @@ import java.util.UUID;
 public record FileMetadataUpdateRequest(
     UUID categoryId,
     UUID typeId,
-    UUID confidentialityLevelId,
-    String sourceType,
-    String sourceReference
+    UUID confidentialityLevelId
 ) {}
