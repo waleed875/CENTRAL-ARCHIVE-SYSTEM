@@ -265,6 +265,69 @@ class ProjectServiceTest {
 
 
     @Test
+    void projectWorkflowMutationRejectsProjectAboveUserClearance() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        UUID levelId = UUID.randomUUID();
+        project.setConfidentialityLevelId(levelId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(levelId);
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.submitForReview(project.getId())
+        );
+        verify(repository, never()).save(any(Project.class));
+    }
+
+    @Test
+    void projectCreateRejectsConfidentialityAboveUserClearance() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID levelId = UUID.randomUUID();
+
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(levelId);
+
+        ProjectRequest request = new ProjectRequest(
+                organizationId,
+                null,
+                levelId,
+                "PRJ-HIGH",
+                null,
+                "High Project",
+                2026,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.create(request, UUID.randomUUID())
+        );
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void directProjectAccessRejectsProjectAboveUserClearance() {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);
