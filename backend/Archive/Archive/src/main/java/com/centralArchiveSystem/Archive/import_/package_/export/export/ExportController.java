@@ -1,6 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.package_.export.export;
 
-import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;\nimport com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,7 +29,7 @@ public class ExportController {
     @Operation(summary = "Create an export package from selected projects")
     public ResponseEntity<ApiResponse<ProjectExport>> create(@Valid @RequestBody ExportRequest request) {
         ProjectExport export = exportService.createExport(
-                request.projectIds(), request.sourceOrganizationId(), request.exportedBy());
+                request.projectIds(), request.sourceOrganizationId(), currentUserService.username());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(export, "Export package created"));
     }
