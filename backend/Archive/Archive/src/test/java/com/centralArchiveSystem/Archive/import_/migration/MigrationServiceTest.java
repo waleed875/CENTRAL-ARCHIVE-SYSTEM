@@ -36,7 +36,7 @@ class MigrationServiceTest {
         when(batches.save(batch)).thenReturn(batch);
         when(sources.findById(batch.getMigrationSourceId())).thenReturn(Optional.of(source));
 
-        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL);
+        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
 
         var response = service.runBatch(
                 id,
@@ -75,7 +75,7 @@ class MigrationServiceTest {
         when(batches.findById(id)).thenReturn(Optional.of(batch));
         when(sources.findById(batch.getMigrationSourceId())).thenReturn(Optional.of(source));
 
-        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL);
+        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(
                 IllegalStateException.class,
@@ -94,6 +94,46 @@ class MigrationServiceTest {
         verify(batches, never()).save(any());
     }
 
+
+    @Test
+    void runBatchRejectsExecutionWhenLegacyMigrationIsDisabled() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-DISABLED");
+        batch.setStatus(MigrationBatch.Status.PLANNED);
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, LEGACY_URL, false);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.runBatch(
+                        id,
+                        new MigrationRunRequest(
+                                LEGACY_URL,
+                                null,
+                                "LEGACY_DB",
+                                Map.of()
+                        )
+                )
+        );
+
+        assertTrue(error.getMessage().contains("disabled"));
+        assertEquals(MigrationBatch.Status.PLANNED, batch.getStatus());
+        verify(sources, never()).findById(any());
+        verify(batches, never()).save(any());
+        verify(execution, never()).execute(any());
+    }
 
     @Test
     void runBatchRejectsDynamicConnectionInsteadOfIgnoringIt() {
@@ -118,7 +158,7 @@ class MigrationServiceTest {
         when(sources.findById(sourceId)).thenReturn(Optional.of(source));
 
         MigrationService service = new MigrationService(
-                sources, batches, execution, LEGACY_URL);
+                sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -160,7 +200,7 @@ class MigrationServiceTest {
         when(sources.findById(sourceId)).thenReturn(Optional.of(source));
 
         MigrationService service = new MigrationService(
-                sources, batches, execution, LEGACY_URL);
+                sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -205,7 +245,7 @@ class MigrationServiceTest {
                 MigrationBatch.Status.RUNNING
         )).thenReturn(1L);
 
-        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL);
+        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
         verify(sources, never()).deleteById(any());
@@ -225,7 +265,7 @@ class MigrationServiceTest {
         )).thenReturn(0L);
         when(batches.countByMigrationSourceId(sourceId)).thenReturn(2L);
 
-        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL);
+        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
         verify(sources, never()).deleteById(any());
@@ -246,7 +286,7 @@ class MigrationServiceTest {
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
 
-        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL);
+        MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
 
         assertThrows(
                 IllegalArgumentException.class,
