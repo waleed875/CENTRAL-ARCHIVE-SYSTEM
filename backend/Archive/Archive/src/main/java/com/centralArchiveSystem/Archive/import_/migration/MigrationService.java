@@ -24,15 +24,18 @@ public class MigrationService {
     private final MigrationBatchRepository batchRepository;
     private final MigrationExecutionService migrationExecutionService;
     private final String configuredLegacyJdbcUrl;
+    private final boolean legacyMigrationEnabled;
 
     public MigrationService(MigrationSourceRepository sourceRepository,
                             MigrationBatchRepository batchRepository,
                             MigrationExecutionService migrationExecutionService,
-                            @Value("${legacy.datasource.url}") String configuredLegacyJdbcUrl) {
+                            @Value("${legacy.datasource.url}") String configuredLegacyJdbcUrl,
+                            @Value("${legacy.migration.enabled:false}") boolean legacyMigrationEnabled) {
         this.sourceRepository = sourceRepository;
         this.batchRepository = batchRepository;
         this.migrationExecutionService = migrationExecutionService;
         this.configuredLegacyJdbcUrl = configuredLegacyJdbcUrl;
+        this.legacyMigrationEnabled = legacyMigrationEnabled;
     }
 
     @Transactional(readOnly = true)
@@ -194,6 +197,11 @@ public class MigrationService {
     private void validateSupportedRunConfiguration(
             MigrationBatch batch,
             MigrationRunRequest runRequest) {
+        if (!legacyMigrationEnabled) {
+            throw new IllegalStateException(
+                    "Legacy migration is disabled. Set LEGACY_MIGRATION_ENABLED=true only during a controlled migration window");
+        }
+
         MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
                 .orElseThrow(() -> new RuntimeException(
                         "Migration source not found: " + batch.getMigrationSourceId()));
