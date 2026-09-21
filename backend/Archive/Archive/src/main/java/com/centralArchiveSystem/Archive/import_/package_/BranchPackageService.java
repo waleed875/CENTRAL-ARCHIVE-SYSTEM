@@ -38,6 +38,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -164,6 +166,7 @@ public class BranchPackageService {
         try {
             minioService.uploadFile(packageFile, bucket, packageObjectKey);
             packageStored = true;
+            registerRollbackObjectCleanup(bucket, packageObjectKey);
 
             BranchPackage pkg = new BranchPackage();
             pkg.setPackageUuid(packageUuid);
@@ -771,6 +774,32 @@ public class BranchPackageService {
             }
             throw e;
         }
+    }
+
+    private void registerRollbackObjectCleanup(String bucket, String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status != TransactionSynchronization.STATUS_ROLLED_BACK) {
+                            return;
+                        }
+                        try {
+                            minioService.deleteFile(bucket, objectKey);
+                        } catch (Exception cleanupError) {
+                            log.error(
+                                    "Failed to remove MinIO object after transaction rollback: {}",
+                                    objectKey,
+                                    cleanupError
+                            );
+                        }
+                    }
+                }
+        );
     }
 
     private void cleanupImportedObjects(List<StoredObject> objects) {
