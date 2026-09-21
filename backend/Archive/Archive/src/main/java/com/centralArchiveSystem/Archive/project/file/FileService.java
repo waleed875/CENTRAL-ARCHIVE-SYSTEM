@@ -87,6 +87,7 @@ public class FileService {
     public FileResponse uploadFile(UUID projectId, MultipartFile multipartFile,
                                    FileUploadRequest request, UUID uploadedBy) {
         requireMutableProject(projectId);
+        confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
 
         FileCategory category = fileCategoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
@@ -213,6 +214,10 @@ public class FileService {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
         requireMutableProject(file.getProjectId());
+        confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
+        if (request.confidentialityLevelId() != null) {
+            confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
+        }
 
         UUID targetCategoryId = request.categoryId() != null
                 ? request.categoryId()
@@ -263,6 +268,7 @@ public class FileService {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
         requireMutableProject(file.getProjectId());
+        confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
 
         file.setStatus("DELETED");
         file.setDeletedAt(LocalDateTime.now());
@@ -297,6 +303,7 @@ public class FileService {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
         requireMutableProject(file.getProjectId());
+        confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
 
         if (file.getDeletedAt() == null) {
             throw new IllegalStateException("File is not deleted and cannot be restored");
@@ -315,6 +322,7 @@ public class FileService {
     private Project requireMutableProject(UUID projectId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
