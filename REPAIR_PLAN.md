@@ -104,7 +104,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 ## Phase 7 - Tests and CI
 
 - [x] Add unit tests for JWT access/refresh token separation and tamper rejection.
-- [ ] Add authentication/authorization integration tests.
+- [~] Add authentication/authorization integration tests; real HTTP login/logout/revocation coverage is in place, while broader role/authorization integration coverage remains pending.
 - [x] Add project versioning, PATCH-state, and confidentiality-aware statistics tests.
 - [ ] Add PostgreSQL integration tests with Testcontainers.
 - [ ] Add MinIO integration tests.
