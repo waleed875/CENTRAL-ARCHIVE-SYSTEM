@@ -59,7 +59,8 @@ public class LegacyMigrationService {
     private static final Logger log = LoggerFactory.getLogger(LegacyMigrationService.class);
 
     private static final String LEGACY_DB_SCHEMA = "public";
-    private static final String DEFAULT_MIME = "application/octet-stream";
+    private static final String LEGACY_CATEGORY_CODE = "LEGACY";
+    private static final String LEGACY_TYPE_CODE = "LEGACY-FILE";
 
     private final JdbcTemplate legacyJdbc;
     private final MinioService minioService;
@@ -81,6 +82,9 @@ public class LegacyMigrationService {
 
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
+
+    @Value("${legacy.migration.default-confidentiality-code:}")
+    private String defaultConfidentialityCode;
 
     public LegacyMigrationService(
             Environment env,
@@ -242,6 +246,10 @@ public class LegacyMigrationService {
     public LegacyFileSummary migrateFiles(ExecutorService pool) {
         LegacyFileSummary summary = new LegacyFileSummary();
 
+        UUID defaultCategoryId = resolveDefaultCategoryId();
+        UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
+        UUID defaultConfidentialityId = resolveDefaultConfidentialityId();
+
         List<Map<String, Object>> projects = legacyJdbc.queryForList(
                 "SELECT idproject FROM " + LEGACY_DB_SCHEMA + ".tbl_project");
 
@@ -249,7 +257,15 @@ public class LegacyMigrationService {
         for (Map<String, Object> projectRow : projects) {
             int legacyProjectId = ((Number) projectRow.get("idproject")).intValue();
             CompletableFuture<Void> future = CompletableFuture.runAsync(
-                    () -> migrateFilesForProject(legacyProjectId, summary), pool);
+                    () -> migrateFilesForProject(
+                            legacyProjectId,
+                            summary,
+                            defaultCategoryId,
+                            defaultTypeId,
+                            defaultConfidentialityId
+                    ),
+                    pool
+            );
             futures.add(future);
         }
 
@@ -267,7 +283,11 @@ public class LegacyMigrationService {
         return summary;
     }
 
-    private void migrateFilesForProject(int legacyProjectId, LegacyFileSummary summary) {
+    private void migrateFilesForProject(int legacyProjectId,
+                                        LegacyFileSummary summary,
+                                        UUID defaultCategoryId,
+                                        UUID defaultTypeId,
+                                        UUID defaultConfidentialityId) {
         String projectSourceKey = "PROJECT-" + legacyProjectId;
         UUID targetProjectId = itemRepository.findByKindAndSourceKey(
                         LegacyMigrationItem.Kind.PROJECT,
@@ -313,7 +333,10 @@ public class LegacyMigrationService {
                                 originalName,
                                 suffix,
                                 encodedBase64,
-                                summary
+                                summary,
+                                defaultCategoryId,
+                                defaultTypeId,
+                                defaultConfidentialityId
                         );
                     } finally {
                         if (encodedBase64 != null) {
@@ -338,7 +361,10 @@ public class LegacyMigrationService {
                                 String originalName,
                                 String suffix,
                                 InputStream encodedBase64,
-                                LegacyFileSummary summary) {
+                                LegacyFileSummary summary,
+                                UUID defaultCategoryId,
+                                UUID defaultTypeId,
+                                UUID defaultConfidentialityId) {
         LegacyMigrationItem item = trackingItem(
                 LegacyMigrationItem.Kind.FILE,
                 sourceKey,
@@ -378,9 +404,9 @@ public class LegacyMigrationService {
 
             FileEntity file = new FileEntity();
             file.setProjectId(targetProjectId);
-            file.setCategoryId(resolveDefaultCategoryId());
-            file.setTypeId(resolveDefaultTypeId());
-            file.setConfidentialityLevelId(resolveDefaultConfidentialityId());
+            file.setCategoryId(defaultCategoryId);
+            file.setTypeId(defaultTypeId);
+            file.setConfidentialityLevelId(defaultConfidentialityId);
             file.setOriginalName(
                     originalName != null && !originalName.isBlank()
                             ? originalName
@@ -589,33 +615,36 @@ public class LegacyMigrationService {
     }
 
     private UUID resolveDefaultCategoryId() {
-        return fileCategoryRepository.findAll().stream()
-                .findFirst()
+        return fileCategoryRepository.findByCode(LEGACY_CATEGORY_CODE)
                 .map(FileCategory::getId)
                 .orElseGet(this::createDefaultCategory);
     }
 
     private UUID createDefaultCategory() {
         FileCategory category = new FileCategory();
-        category.setCode("LEGACY");
+        category.setCode(LEGACY_CATEGORY_CODE);
         category.setName("Legacy Migration");
         category.setDescription("Default category for files migrated from the legacy system");
         category.setIsActive(true);
         return fileCategoryRepository.save(category).getId();
     }
 
-    private UUID resolveDefaultTypeId() {
-        return fileTypeRepository.findAll().stream()
-                .findFirst()
-                .map(FileType::getId)
-                .orElseGet(this::createDefaultType);
+    private UUID resolveDefaultTypeId(UUID categoryId) {
+        return fileTypeRepository.findByCode(LEGACY_TYPE_CODE)
+                .map(existing -> {
+                    if (!categoryId.equals(existing.getCategoryId())) {
+                        throw new IllegalStateException(
+                                "Existing LEGACY-FILE type is linked to an unexpected category");
+                    }
+                    return existing.getId();
+                })
+                .orElseGet(() -> createDefaultType(categoryId));
     }
 
-    private UUID createDefaultType() {
-        UUID categoryId = resolveDefaultCategoryId();
+    private UUID createDefaultType(UUID categoryId) {
         FileType type = new FileType();
         type.setCategoryId(categoryId);
-        type.setCode("LEGACY-FILE");
+        type.setCode(LEGACY_TYPE_CODE);
         type.setName("Legacy File");
         type.setDefaultExtension("*");
         type.setDescription("Default type for files migrated from the legacy system");
@@ -624,10 +653,16 @@ public class LegacyMigrationService {
     }
 
     private UUID resolveDefaultConfidentialityId() {
-        return confidentialityLevelRepository.findAllByOrderByLevelOrderAsc().stream()
-                .findFirst()
+        if (defaultConfidentialityCode == null || defaultConfidentialityCode.isBlank()) {
+            throw new IllegalStateException(
+                    "LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE must be configured before migrating files");
+        }
+
+        return confidentialityLevelRepository.findByCode(defaultConfidentialityCode.trim())
                 .map(ConfidentialityLevel::getId)
-                .orElse(null);
+                .orElseThrow(() -> new IllegalStateException(
+                        "Configured legacy migration confidentiality code does not exist: "
+                                + defaultConfidentialityCode));
     }
 
     private int parseYearSanitized(Object rawYear) {
