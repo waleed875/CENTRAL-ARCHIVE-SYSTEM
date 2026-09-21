@@ -12,6 +12,12 @@ import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportReques
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
 import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
+import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
+import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
+import com.centralArchiveSystem.Archive.project.filetype.FileType;
+import com.centralArchiveSystem.Archive.project.filetype.FileTypeRepository;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
 import com.centralArchiveSystem.Archive.project.file.FileEntity;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
@@ -61,6 +67,9 @@ public class BranchPackageService {
     private final PackageArchiveService packageArchiveService;
     private final ImportOperationService importOperationService;
     private final OrganizationRepository organizationRepository;
+    private final ProjectTypeRepository projectTypeRepository;
+    private final FileCategoryRepository fileCategoryRepository;
+    private final FileTypeRepository fileTypeRepository;
     private final ConfidentialityAccessService confidentialityAccessService;
     private final TransactionTemplate projectImportTransaction;
 
@@ -75,6 +84,9 @@ public class BranchPackageService {
                                 PackageArchiveService packageArchiveService,
                                 ImportOperationService importOperationService,
                                 OrganizationRepository organizationRepository,
+                                ProjectTypeRepository projectTypeRepository,
+                                FileCategoryRepository fileCategoryRepository,
+                                FileTypeRepository fileTypeRepository,
                                 ConfidentialityAccessService confidentialityAccessService,
                                 PlatformTransactionManager transactionManager) {
         this.branchPackageRepository = branchPackageRepository;
@@ -88,6 +100,9 @@ public class BranchPackageService {
         this.packageArchiveService = packageArchiveService;
         this.importOperationService = importOperationService;
         this.organizationRepository = organizationRepository;
+        this.projectTypeRepository = projectTypeRepository;
+        this.fileCategoryRepository = fileCategoryRepository;
+        this.fileTypeRepository = fileTypeRepository;
         this.confidentialityAccessService = confidentialityAccessService;
         this.projectImportTransaction = new TransactionTemplate(transactionManager);
         this.projectImportTransaction.setPropagationBehavior(
@@ -343,6 +358,17 @@ public class BranchPackageService {
                             "Target organization is inactive: " + targetOrgId);
                 }
 
+                UUID projectTypeId = optionalUuid(projectNode, "project_type_id");
+                if (projectTypeId != null) {
+                    ProjectType projectType = projectTypeRepository.findById(projectTypeId)
+                            .orElseThrow(() -> new IllegalArgumentException(
+                                    "Project type does not exist: " + projectTypeId));
+                    if (!Boolean.TRUE.equals(projectType.getIsActive())) {
+                        throw new IllegalArgumentException(
+                                "Project type is inactive: " + projectTypeId);
+                    }
+                }
+
                 UUID projectLevelId = optionalUuid(projectNode, "confidentiality_level_id");
                 if (projectLevelId == null) {
                     projectLevelId = request.confidentialityLevelId();
@@ -352,6 +378,37 @@ public class BranchPackageService {
                 JsonNode files = projectNode.path("files");
                 if (files.isArray()) {
                     for (JsonNode fileNode : files) {
+                        UUID categoryId = optionalUuid(fileNode, "category_id");
+                        FileCategory category = null;
+                        if (categoryId != null) {
+                            category = fileCategoryRepository.findById(categoryId)
+                                    .orElseThrow(() -> new IllegalArgumentException(
+                                            "File category does not exist: " + categoryId));
+                            if (!Boolean.TRUE.equals(category.getIsActive())) {
+                                throw new IllegalArgumentException(
+                                        "File category is inactive: " + categoryId);
+                            }
+                        }
+
+                        UUID typeId = optionalUuid(fileNode, "type_id");
+                        if (typeId != null) {
+                            FileType fileType = fileTypeRepository.findById(typeId)
+                                    .orElseThrow(() -> new IllegalArgumentException(
+                                            "File type does not exist: " + typeId));
+                            if (!Boolean.TRUE.equals(fileType.getIsActive())) {
+                                throw new IllegalArgumentException(
+                                        "File type is inactive: " + typeId);
+                            }
+                            if (categoryId == null) {
+                                throw new IllegalArgumentException(
+                                        "File type requires category_id: " + typeId);
+                            }
+                            if (!categoryId.equals(fileType.getCategoryId())) {
+                                throw new IllegalArgumentException(
+                                        "File type does not belong to category: " + typeId);
+                            }
+                        }
+
                         UUID fileLevelId = optionalUuid(fileNode, "confidentiality_level_id");
                         if (fileLevelId == null) {
                             fileLevelId = projectLevelId;
