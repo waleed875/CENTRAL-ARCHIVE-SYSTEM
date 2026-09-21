@@ -73,6 +73,23 @@ class LegacyMigrationServiceFilePreparationTest {
     }
 
     @Test
+    void rejectsLegacySuffixThatDisagreesWithOriginalFilename() {
+        byte[] content = "%PDF-1.7\nlegacy archive\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] encoded = Base64.getEncoder().encode(content);
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> LegacyMigrationService.prepareLegacyFile(
+                        new ByteArrayInputStream(encoded),
+                        "document.pdf",
+                        ".txt"
+                )
+        );
+
+        assertTrue(error.getMessage().contains("does not match"));
+    }
+
+    @Test
     void countersRemainAccurateUnderConcurrentUpdates() {
         LegacyMigrationService.LegacyFileSummary summary =
                 new LegacyMigrationService.LegacyFileSummary();
