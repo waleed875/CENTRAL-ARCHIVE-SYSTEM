@@ -48,7 +48,7 @@ Status: COMPLETE
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V8 are committed and PostgreSQL/Flyway/Hibernate validation is green in CI.
+- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V10 are committed. V9 normalizes migration batch identifiers and V10 prevents parallel package imports; final CI validation for the latest migrations is in progress.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
@@ -128,6 +128,14 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Create real streamed export .pkg archives and make them downloadable.
 - [x] Validate project/file confidentiality before package export.
 - [x] Add stable archive instance UUID configuration for package manifests.
+
+## Pre-merge blocker discovered during final API audit
+
+- [ ] Align `POST /migration-batches/:id/run` with the documented migration contract. The current legacy runner uses the configured staging datasource (`LEGACY_DB_*`) and does not consume the dynamic `connection_string`, `file_path`, or mapping values accepted by `MigrationRunRequest`. Do not represent dynamic PostgreSQL/File migration adapters as implemented until real adapters and validation exist.
+- [x] Align migration batch lifecycle DTOs and controller/service signatures.
+- [x] Normalize `migration_batches.batch_number` to `VARCHAR(80)` and enforce uniqueness per source.
+- [x] Prevent deleting migration sources while running or historical batches exist.
+- [x] Make migration source PATCH partial.
 
 ## Phase 8 - Production Configuration
 
