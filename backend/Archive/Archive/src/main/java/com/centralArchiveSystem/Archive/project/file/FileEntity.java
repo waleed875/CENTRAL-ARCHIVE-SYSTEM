@@ -49,7 +49,7 @@ public class FileEntity {
     @Column(name = "size_bytes", nullable = false)
     private Long sizeBytes;
 
-    @Column(name = "checksum_sha256")
+    @Column(name = "checksum_sha256", length = 64, columnDefinition = "char(64)")
     private String checksumSha256;
 
     @Column(name = "status", nullable = false)
