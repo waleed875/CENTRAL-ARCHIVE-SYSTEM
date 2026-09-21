@@ -164,112 +164,106 @@ public class PackageArchiveService {
             }
         }
 
-        if (manifestBytes == null) {
-            errors.add("manifest.json was not found in the package");
-            return new Verification(false, false, false, null, 0, 0, 0L, errors, warnings, null);
-        }
-
-        String actualManifestHash = sha256(manifestBytes);
-        boolean manifestHashValid = actualManifestHash.equalsIgnoreCase(expectedManifestHash);
-        if (!manifestHashValid) {
-            errors.add("Manifest hash mismatch");
-        }
-
-        JsonNode manifest = objectMapper.readTree(manifestBytes);
-        String schemaVersion = manifest.path("schema_version").asText("");
-        boolean schemaVersionValid = !schemaVersion.isBlank()
-                && schemaVersion.equals(expectedSchemaVersion)
-                && isSchemaSupported(schemaVersion);
-        if (!schemaVersionValid) {
-            errors.add("Unsupported or inconsistent schema_version: " + schemaVersion);
-        }
-
-        Map<String, ExpectedFile> expectedFiles = expectedFiles(manifest, errors);
-        boolean filesValid = true;
-        long verifiedFileBytes = 0L;
-
-        for (Map.Entry<String, ExpectedFile> expectedEntry : expectedFiles.entrySet()) {
-            String path = expectedEntry.getKey();
-            ExpectedFile expected = expectedEntry.getValue();
-            EntryScan actual = actualEntries.get(path);
-
-            if (actual == null) {
-                errors.add("Missing package file: " + path);
-                filesValid = false;
-                continue;
+        try {
+            if (manifestBytes == null) {
+                errors.add("manifest.json was not found in the package");
+                return new Verification(false, false, false, null, 0, 0, 0L, errors, warnings, null);
             }
-
-            verifiedFileBytes += actual.size();
-
-            if (expected.checksum() == null || expected.checksum().isBlank()) {
-                errors.add("Missing SHA-256 checksum in manifest for: " + path);
-                filesValid = false;
-            } else if (!expected.checksum().equalsIgnoreCase(actual.sha256())) {
-                errors.add("Checksum mismatch for: " + path);
-                filesValid = false;
+    
+            String actualManifestHash = sha256(manifestBytes);
+            boolean manifestHashValid = actualManifestHash.equalsIgnoreCase(expectedManifestHash);
+            if (!manifestHashValid) {
+                errors.add("Manifest hash mismatch");
             }
-
-            if (expected.sizeBytes() != null
-                    && expected.sizeBytes() >= 0
-                    && expected.sizeBytes() != actual.size()) {
-                errors.add("Size mismatch for: " + path);
-                filesValid = false;
+    
+            JsonNode manifest = objectMapper.readTree(manifestBytes);
+            String schemaVersion = manifest.path("schema_version").asText("");
+            boolean schemaVersionValid = !schemaVersion.isBlank()
+                    && schemaVersion.equals(expectedSchemaVersion)
+                    && isSchemaSupported(schemaVersion);
+            if (!schemaVersionValid) {
+                errors.add("Unsupported or inconsistent schema_version: " + schemaVersion);
             }
-
-            String expectedExtension = expected.extension();
-            if (expectedExtension == null) {
-                expectedExtension = extensionFromPath(path);
-            }
-
-            if (expectedExtension == null) {
-                errors.add("Missing file extension for content inspection: " + path);
-                filesValid = false;
-            } else {
-                try {
-                    FileContentInspector.validatePackageEntry(
-                            actual.prefix(),
-                            expectedExtension,
-                            actual.zipSpool()
-                    );
-                } catch (Exception e) {
-                    errors.add("Content type mismatch for " + path + ": " + e.getMessage());
+    
+            Map<String, ExpectedFile> expectedFiles = expectedFiles(manifest, errors);
+            boolean filesValid = true;
+            long verifiedFileBytes = 0L;
+    
+            for (Map.Entry<String, ExpectedFile> expectedEntry : expectedFiles.entrySet()) {
+                String path = expectedEntry.getKey();
+                ExpectedFile expected = expectedEntry.getValue();
+                EntryScan actual = actualEntries.get(path);
+    
+                if (actual == null) {
+                    errors.add("Missing package file: " + path);
+                    filesValid = false;
+                    continue;
+                }
+    
+                verifiedFileBytes += actual.size();
+    
+                if (expected.checksum() == null || expected.checksum().isBlank()) {
+                    errors.add("Missing SHA-256 checksum in manifest for: " + path);
+                    filesValid = false;
+                } else if (!expected.checksum().equalsIgnoreCase(actual.sha256())) {
+                    errors.add("Checksum mismatch for: " + path);
                     filesValid = false;
                 }
-            }
-        }
-
-        Set<String> expectedEntryNames = new HashSet<>(expectedFiles.keySet());
-        for (String actualName : actualEntries.keySet()) {
-            if (!isManifestEntry(actualName) && !expectedEntryNames.contains(actualName)) {
-                warnings.add("Unexpected package entry: " + actualName);
-            }
-        }
-
-        int projectsCount = manifest.path("projects").isArray() ? manifest.path("projects").size() : 0;
-        int filesCount = expectedFiles.size();
-
-        for (EntryScan scan : actualEntries.values()) {
-            if (scan.zipSpool() != null) {
-                try {
-                    Files.deleteIfExists(scan.zipSpool());
-                } catch (IOException cleanupError) {
-                    warnings.add("Unable to remove temporary inspection file");
+    
+                if (expected.sizeBytes() != null
+                        && expected.sizeBytes() >= 0
+                        && expected.sizeBytes() != actual.size()) {
+                    errors.add("Size mismatch for: " + path);
+                    filesValid = false;
+                }
+    
+                String expectedExtension = expected.extension();
+                if (expectedExtension == null) {
+                    expectedExtension = extensionFromPath(path);
+                }
+    
+                if (expectedExtension == null) {
+                    errors.add("Missing file extension for content inspection: " + path);
+                    filesValid = false;
+                } else {
+                    try {
+                        FileContentInspector.validatePackageEntry(
+                                actual.prefix(),
+                                expectedExtension,
+                                actual.zipSpool()
+                        );
+                    } catch (Exception e) {
+                        errors.add("Content type mismatch for " + path + ": " + e.getMessage());
+                        filesValid = false;
+                    }
                 }
             }
+    
+            Set<String> expectedEntryNames = new HashSet<>(expectedFiles.keySet());
+            for (String actualName : actualEntries.keySet()) {
+                if (!isManifestEntry(actualName) && !expectedEntryNames.contains(actualName)) {
+                    warnings.add("Unexpected package entry: " + actualName);
+                }
+            }
+    
+            int projectsCount = manifest.path("projects").isArray() ? manifest.path("projects").size() : 0;
+            int filesCount = expectedFiles.size();
+    
+            return new Verification(
+                    manifestHashValid,
+                    schemaVersionValid,
+                    filesValid,
+                    schemaVersion,
+                    projectsCount,
+                    filesCount,
+                    verifiedFileBytes,
+                    errors,
+                    warnings,
+                    manifest
+            );
+            } finally {
+            cleanupEntrySpools(actualEntries, warnings);
         }
-
-        return new Verification(
-                manifestHashValid,
-                schemaVersionValid,
-                filesValid,
-                schemaVersion,
-                projectsCount,
-                filesCount,
-                verifiedFileBytes,
-                errors,
-                warnings,
-                manifest
-        );
     }
 
     public void withEntry(InputStream packageInput,
@@ -476,6 +470,20 @@ public class PackageArchiveService {
             List<String> warnings,
             JsonNode manifest
     ) {}
+
+    private void cleanupEntrySpools(Map<String, EntryScan> actualEntries,
+                                    List<String> warnings) {
+        for (EntryScan scan : actualEntries.values()) {
+            if (scan.zipSpool() == null) {
+                continue;
+            }
+            try {
+                Files.deleteIfExists(scan.zipSpool());
+            } catch (IOException cleanupError) {
+                warnings.add("Unable to remove temporary inspection file");
+            }
+        }
+    }
 
     private byte[] firstBytes(byte[] data, int maxBytes) {
         int length = Math.min(data.length, maxBytes);
