@@ -533,6 +533,7 @@ Response: 204 No Content (soft deactivation)
 | PATCH | `/projects/:id/submit-for-review` | Submit for review | central_data_entry+ |
 | PATCH | `/projects/:id/request-correction` | Request correction | auditor+ |
 | PATCH | `/projects/:id/approve` | Approve project | auditor+ |
+| PATCH | `/projects/:id/reject` | Reject project | auditor+ |
 | PATCH | `/projects/:id/archive` | Archive project | system_admin, archive_officer |
 | GET | `/projects/search` | Full-text search | Yes |
 | GET | `/projects/stats` | Dashboard statistics | Yes |
@@ -756,6 +757,14 @@ Response: 200 OK {
   approved_by: { current user },
   approved_at: "now"
 }
+Errors: 422 if current status is not UNDER_REVIEW
+```
+
+### PATCH /projects/:id/reject
+
+```
+Request: { "rejection_reason": "string (required)" }
+Response: 200 OK { status: "REJECTED", review_notes: "..." }
 Errors: 422 if current status is not UNDER_REVIEW
 ```
 
