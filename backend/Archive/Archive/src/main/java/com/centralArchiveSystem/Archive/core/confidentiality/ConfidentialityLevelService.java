@@ -105,7 +105,7 @@ public class ConfidentialityLevelService {
                     "Cannot delete confidentiality level that is referenced by " + projectsCount + " project(s)");
         }
 
-        long filesCount = fileRepository.countByConfidentialityLevelIdAndDeletedAtIsNull(id);
+        long filesCount = fileRepository.countByConfidentialityLevelId(id);
         if (filesCount > 0) {
             throw new IllegalStateException(
                     "Cannot delete confidentiality level that is referenced by " + filesCount + " file(s)");
@@ -122,7 +122,7 @@ public class ConfidentialityLevelService {
 
     private ConfidentialityLevelResponse toResponse(ConfidentialityLevel level) {
         long projectsCount = projectRepository.countByConfidentialityLevelId(level.getId());
-        long filesCount = fileRepository.countByConfidentialityLevelIdAndDeletedAtIsNull(level.getId());
+        long filesCount = fileRepository.countByConfidentialityLevelId(level.getId());
         long usersCount = userRepository.countByMaxConfidentialityLevelId(level.getId());
 
         return new ConfidentialityLevelResponse(
