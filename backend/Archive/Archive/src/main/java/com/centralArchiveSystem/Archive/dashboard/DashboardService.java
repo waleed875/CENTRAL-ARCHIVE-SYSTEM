@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.dashboard;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.core.user.User;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
@@ -28,17 +29,20 @@ public class DashboardService {
     private final ProjectRepository projectRepository;
     private final FileRepository fileRepository;
     private final BranchPackageRepository branchPackageRepository;
+    private final ConfidentialityAccessService confidentialityAccessService;
 
     public DashboardService(OrganizationRepository organizationRepository,
                             UserRepository userRepository,
                             ProjectRepository projectRepository,
                             FileRepository fileRepository,
-                            BranchPackageRepository branchPackageRepository) {
+                            BranchPackageRepository branchPackageRepository,
+                            ConfidentialityAccessService confidentialityAccessService) {
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
         this.projectRepository = projectRepository;
         this.fileRepository = fileRepository;
         this.branchPackageRepository = branchPackageRepository;
+        this.confidentialityAccessService = confidentialityAccessService;
     }
 
     public DashboardStatsResponse getStats() {
@@ -50,38 +54,21 @@ public class DashboardService {
                 .filter(u -> u.getStatus() == User.UserStatus.ACTIVE)
                 .count();
 
-        List<Project> latestProjects = projectRepository.findByIsLatestVersion(true);
-        long totalProjects = latestProjects.size();
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
-        Map<String, Long> projectsByStatus = latestProjects.stream()
-                .collect(Collectors.groupingBy(
-                        p -> p.getStatus().name(),
-                        LinkedHashMap::new,
-                        Collectors.counting()));
+        long totalProjects = projectRepository.countAccessibleLatest(null, maxLevelOrder);
+        Map<String, Long> projectsByStatus = toStatusCounts(
+                projectRepository.countAccessibleByStatus(null, maxLevelOrder));
+        Map<Integer, Long> projectsByYear = toYearCounts(
+                projectRepository.countAccessibleByYear(null, maxLevelOrder));
+        Map<String, Long> projectsBySource = toSourceCounts(
+                projectRepository.countAccessibleBySource(null, maxLevelOrder));
 
-        Map<Integer, Long> projectsByYear = latestProjects.stream()
-                .collect(Collectors.groupingBy(
-                        Project::getYear,
-                        LinkedHashMap::new,
-                        Collectors.counting()));
+        long pendingReviewCount = projectsByStatus.getOrDefault(
+                Project.ProjectStatus.UNDER_REVIEW.name(), 0L);
 
-        Map<String, Long> projectsBySource = latestProjects.stream()
-                .collect(Collectors.groupingBy(
-                        p -> p.getSourceType() != null ? p.getSourceType().name() : "UNKNOWN",
-                        LinkedHashMap::new,
-                        Collectors.counting()));
-
-        long pendingReviewCount = latestProjects.stream()
-                .filter(p -> p.getStatus() == Project.ProjectStatus.UNDER_REVIEW)
-                .count();
-
-        List<FileEntity> activeFiles = fileRepository.findAll().stream()
-                .filter(f -> f.getDeletedAt() == null)
-                .collect(Collectors.toList());
-        long totalFiles = activeFiles.size();
-        Long totalSizeBytes = activeFiles.stream()
-                .mapToLong(FileEntity::getSizeBytes)
-                .sum();
+        long totalFiles = fileRepository.countAccessibleActive(maxLevelOrder);
+        Long totalSizeBytes = fileRepository.sumAccessibleActiveSize(maxLevelOrder);
 
         long receivedPackages = branchPackageRepository.count();
         long pendingImportPackages = branchPackageRepository.findByStatus(BranchPackage.PackageStatus.RECEIVED).size()
@@ -100,9 +87,14 @@ public class DashboardService {
     public List<ActivityResponse> getRecentActivity(int limit) {
         List<ActivityResponse> activities = new ArrayList<>();
 
-        PageRequest pageRequest = PageRequest.of(0, Math.min(limit, 50), Sort.by(Sort.Direction.DESC, "createdAt"));
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        PageRequest pageRequest = PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
-        List<Project> recentProjects = projectRepository.findAll(pageRequest).getContent();
+        List<Project> recentProjects = projectRepository.searchAccessible(
+                null, null, null, null, null, null, null, null, null, null,
+                true, maxLevelOrder, pageRequest
+        ).getContent();
         for (Project project : recentProjects) {
             activities.add(new ActivityResponse(
                     getProjectAction(project.getStatus()),
@@ -114,7 +106,9 @@ public class DashboardService {
             ));
         }
 
-        List<FileEntity> recentFiles = fileRepository.findAll(pageRequest).getContent();
+        List<FileEntity> recentFiles = fileRepository
+                .findAccessibleRecent(maxLevelOrder, pageRequest)
+                .getContent();
         for (FileEntity file : recentFiles) {
             activities.add(new ActivityResponse(
                     "FILE_UPLOADED",
@@ -127,7 +121,7 @@ public class DashboardService {
         }
 
         List<BranchPackage> recentPackages = branchPackageRepository
-                .findAll(PageRequest.of(0, Math.min(limit, 50), Sort.by(Sort.Direction.DESC, "createdAt")))
+                .findAll(PageRequest.of(0, safeLimit, Sort.by(Sort.Direction.DESC, "createdAt")))
                 .getContent();
         for (BranchPackage pkg : recentPackages) {
             activities.add(new ActivityResponse(
@@ -143,8 +137,37 @@ public class DashboardService {
         activities.sort(Comparator.comparing(ActivityResponse::createdAt).reversed());
 
         return activities.stream()
-                .limit(limit)
+                .limit(safeLimit)
                 .collect(Collectors.toList());
+    }
+
+    private Map<String, Long> toStatusCounts(List<Object[]> rows) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            Project.ProjectStatus status = (Project.ProjectStatus) row[0];
+            counts.put(status.name(), ((Number) row[1]).longValue());
+        }
+        return counts;
+    }
+
+    private Map<Integer, Long> toYearCounts(List<Object[]> rows) {
+        Map<Integer, Long> counts = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            counts.put((Integer) row[0], ((Number) row[1]).longValue());
+        }
+        return counts;
+    }
+
+    private Map<String, Long> toSourceCounts(List<Object[]> rows) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            Project.SourceType sourceType = (Project.SourceType) row[0];
+            counts.put(
+                    sourceType != null ? sourceType.name() : "UNKNOWN",
+                    ((Number) row[1]).longValue()
+            );
+        }
+        return counts;
     }
 
     private String getProjectAction(Project.ProjectStatus status) {
