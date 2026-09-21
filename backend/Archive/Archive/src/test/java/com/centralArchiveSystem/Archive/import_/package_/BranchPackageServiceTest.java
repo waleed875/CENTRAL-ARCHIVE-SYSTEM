@@ -30,6 +30,69 @@ import static org.mockito.Mockito.*;
 class BranchPackageServiceTest {
 
     @Test
+    void packageProjectHistoryHidesProjectsAboveUserClearance() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID visibleProjectId = UUID.randomUUID();
+        UUID hiddenProjectId = UUID.randomUUID();
+        UUID visibleLevel = UUID.randomUUID();
+        UUID hiddenLevel = UUID.randomUUID();
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+
+        PackageProject visibleLink = new PackageProject();
+        visibleLink.setPackageId(packageId);
+        visibleLink.setProjectId(visibleProjectId);
+        visibleLink.setLocalProjectUuid(UUID.randomUUID());
+
+        PackageProject hiddenLink = new PackageProject();
+        hiddenLink.setPackageId(packageId);
+        hiddenLink.setProjectId(hiddenProjectId);
+        hiddenLink.setLocalProjectUuid(UUID.randomUUID());
+
+        Project visibleProject = new Project();
+        visibleProject.setId(visibleProjectId);
+        visibleProject.setConfidentialityLevelId(visibleLevel);
+
+        Project hiddenProject = new Project();
+        hiddenProject.setId(hiddenProjectId);
+        hiddenProject.setConfidentialityLevelId(hiddenLevel);
+
+        when(packageProjects.findByPackageId(packageId))
+                .thenReturn(java.util.List.of(visibleLink, hiddenLink));
+        when(projects.findById(visibleProjectId)).thenReturn(Optional.of(visibleProject));
+        when(projects.findById(hiddenProjectId)).thenReturn(Optional.of(hiddenProject));
+        when(confidentiality.canRead(visibleLevel)).thenReturn(true);
+        when(confidentiality.canRead(hiddenLevel)).thenReturn(false);
+
+        BranchPackageService service = new BranchPackageService(
+                packages, packageProjects, objectMapper, projects, members, files,
+                minio, minioConfig, archive, operations, organizations,
+                confidentiality, transactionManager
+        );
+
+        var result = service.getProjects(packageId);
+
+        assertEquals(1, result.size());
+        assertEquals(visibleProjectId, result.get(0).getProjectId());
+    }
+
+    @Test
     void importOperationFailsIfPackageIsNoLongerVerified() {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
