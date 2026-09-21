@@ -102,18 +102,27 @@ class PostgresSchemaIntegrationTest {
         AuditLog auditLog = new AuditLog();
         auditLog.setAction("INTEGRATION_TEST");
         auditLog.setEntityType("AuditLog");
-        auditLog.setDescription("PostgreSQL inet mapping verification");
+        auditLog.setDescription("PostgreSQL inet/jsonb mapping verification");
         auditLog.setIpAddress("127.0.0.1");
+        auditLog.setOldValues("{\"status\":\"OLD\"}");
+        auditLog.setNewValues("{\"status\":\"NEW\"}");
 
         AuditLog saved = auditLogRepository.saveAndFlush(auditLog);
 
-        String storedIp = jdbcTemplate.queryForObject(
-                "SELECT host(ip_address) FROM audit.audit_logs WHERE id = ?",
-                String.class,
+        var stored = jdbcTemplate.queryForMap(
+                """
+                SELECT host(ip_address) AS ip,
+                       old_values ->> 'status' AS old_status,
+                       new_values ->> 'status' AS new_status
+                  FROM audit.audit_logs
+                 WHERE id = ?
+                """,
                 saved.getId()
         );
 
-        assertEquals("127.0.0.1", storedIp);
+        assertEquals("127.0.0.1", stored.get("ip"));
+        assertEquals("OLD", stored.get("old_status"));
+        assertEquals("NEW", stored.get("new_status"));
     }
 
     @Test
