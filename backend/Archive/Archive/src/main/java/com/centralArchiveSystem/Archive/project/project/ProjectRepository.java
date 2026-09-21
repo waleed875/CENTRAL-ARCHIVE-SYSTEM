@@ -16,6 +16,9 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     Optional<Project> findByProjectUid(UUID projectUid);
 
+    @Query("SELECT COALESCE(MAX(p.versionNo), 0) FROM Project p WHERE p.projectUid = :projectUid")
+    int findMaxVersionNoByProjectUid(@Param("projectUid") UUID projectUid);
+
     List<Project> findByOrganizationIdAndYear(UUID organizationId, Integer year);
 
     List<Project> findByStatus(Project.ProjectStatus status);
