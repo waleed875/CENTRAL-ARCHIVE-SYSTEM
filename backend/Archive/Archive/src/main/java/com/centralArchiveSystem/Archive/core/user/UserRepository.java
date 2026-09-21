@@ -24,6 +24,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByStatus(User.UserStatus status);
 
+    @Query("""
+           SELECT COUNT(u) FROM User u
+           JOIN u.roles r
+           WHERE r.id = :roleId
+             AND u.status = com.centralArchiveSystem.Archive.core.user.User.UserStatus.ACTIVE
+           """)
+    long countActiveUsersByRoleId(@Param("roleId") UUID roleId);
+
     @Query("SELECT u FROM User u WHERE " +
            "LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
            "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
