@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.import_.migration.dto.*;
 import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -22,13 +23,16 @@ public class MigrationService {
     private final MigrationSourceRepository sourceRepository;
     private final MigrationBatchRepository batchRepository;
     private final MigrationExecutionService migrationExecutionService;
+    private final String configuredLegacyJdbcUrl;
 
     public MigrationService(MigrationSourceRepository sourceRepository,
                             MigrationBatchRepository batchRepository,
-                            MigrationExecutionService migrationExecutionService) {
+                            MigrationExecutionService migrationExecutionService,
+                            @Value("${legacy.datasource.url}") String configuredLegacyJdbcUrl) {
         this.sourceRepository = sourceRepository;
         this.batchRepository = batchRepository;
         this.migrationExecutionService = migrationExecutionService;
+        this.configuredLegacyJdbcUrl = configuredLegacyJdbcUrl;
     }
 
     @Transactional(readOnly = true)
@@ -155,6 +159,8 @@ public class MigrationService {
         MigrationBatch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new RuntimeException("Migration batch not found: " + batchId));
 
+        validateSupportedRunConfiguration(batch, runRequest);
+
         if (batch.getStatus() != MigrationBatch.Status.PLANNED
                 && batch.getStatus() != MigrationBatch.Status.FAILED) {
             throw new IllegalStateException(
@@ -183,6 +189,43 @@ public class MigrationService {
         }
 
         return toBatchResponse(saved);
+    }
+
+    private void validateSupportedRunConfiguration(
+            MigrationBatch batch,
+            MigrationRunRequest runRequest) {
+        MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
+                .orElseThrow(() -> new RuntimeException(
+                        "Migration source not found: " + batch.getMigrationSourceId()));
+
+        if (!"LEGACY_DB".equalsIgnoreCase(runRequest.type())) {
+            throw new IllegalArgumentException(
+                    "Unsupported migration type. Current MVP supports only LEGACY_DB staging migrations");
+        }
+
+        if (!configuredLegacyJdbcUrl.equals(runRequest.connection_string())) {
+            throw new IllegalArgumentException(
+                    "Dynamic migration connections are not enabled. Use the configured legacy staging datasource");
+        }
+
+        if (runRequest.file_path() != null && !runRequest.file_path().isBlank()) {
+            throw new IllegalArgumentException(
+                    "File-based migration adapter is not implemented in the current MVP");
+        }
+
+        if (runRequest.type_mapping() != null && !runRequest.type_mapping().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Dynamic migration mappings are not implemented in the current MVP");
+        }
+
+        String sourceType = source.getSourceType();
+        if (sourceType != null
+                && !sourceType.isBlank()
+                && !"POSTGRESQL".equalsIgnoreCase(sourceType)
+                && !"LEGACY_DB".equalsIgnoreCase(sourceType)) {
+            throw new IllegalArgumentException(
+                    "Migration source type is not supported by the legacy staging runner: " + sourceType);
+        }
     }
 
     public MigrationBatchResponse completeBatch(
