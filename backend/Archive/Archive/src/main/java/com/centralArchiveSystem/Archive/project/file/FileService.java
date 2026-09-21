@@ -134,7 +134,11 @@ public class FileService {
             fileEntity.setChecksumSha256(checksum);
             fileEntity.setStatus("ACTIVE");
             fileEntity.setUploadedBy(uploadedBy);
-            fileEntity.setSourceType(request.sourceType());
+            fileEntity.setSourceType(
+                    request.sourceType() != null && !request.sourceType().isBlank()
+                            ? request.sourceType()
+                            : "MANUAL"
+            );
             fileEntity.setSourceReference(request.sourceReference());
 
             FileEntity saved = fileRepository.save(fileEntity);
