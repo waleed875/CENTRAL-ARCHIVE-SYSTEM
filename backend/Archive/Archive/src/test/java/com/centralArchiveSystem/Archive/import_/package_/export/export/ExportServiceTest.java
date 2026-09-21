@@ -121,7 +121,6 @@ class ExportServiceTest {
 
         ProjectExport result = service.createExport(
                 List.of(projectId),
-                organizationId,
                 exportedBy,
                 "export-user"
         );
@@ -132,6 +131,10 @@ class ExportServiceTest {
         assertNotNull(uploadedPackage.get());
 
         JsonNode manifest = objectMapper.readTree(result.getManifestData());
+        assertEquals(
+                organizationId.toString(),
+                manifest.path("source_organization_id").asText()
+        );
         JsonNode manifestFile = manifest.path("projects").get(0).path("files").get(0);
         assertFalse(manifestFile.has("content_base64"));
         assertEquals(fileId.toString(), manifestFile.path("file_id").asText());
