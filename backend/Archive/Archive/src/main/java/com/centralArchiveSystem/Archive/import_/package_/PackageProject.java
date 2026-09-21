@@ -8,7 +8,14 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "import.package_projects")
+@Table(
+    name = "package_projects",
+    schema = "import",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_package_projects_package_project",
+        columnNames = {"package_id", "project_id"}
+    )
+)
 @Schema(name = "import.package_projects")
 public class PackageProject {
 
@@ -20,9 +27,9 @@ public class PackageProject {
     private UUID packageId;
 
     @Column(name = "project_id", nullable = false)
-    private String projectId;
+    private UUID projectId;
 
-    @Column(name = "local_project_uuid")
+    @Column(name = "local_project_uuid", nullable = false)
     private UUID localProjectUuid;
 
     @Column(name = "source_project_number")
@@ -60,30 +67,14 @@ public class PackageProject {
 
     public PackageProject() {}
 
-    public PackageProject(UUID id, UUID packageId, String projectId, UUID localProjectUuid, String sourceProjectNumber, String projectName, Integer projectYear, ImportStatus importStatus, String importError, Integer filesCount, Integer filesImported, Integer filesFailed, LocalDateTime createdAt) {
-        this.id = id;
-        this.packageId = packageId;
-        this.projectId = projectId;
-        this.localProjectUuid = localProjectUuid;
-        this.sourceProjectNumber = sourceProjectNumber;
-        this.projectName = projectName;
-        this.projectYear = projectYear;
-        this.importStatus = importStatus;
-        this.importError = importError;
-        this.filesCount = filesCount;
-        this.filesImported = filesImported;
-        this.filesFailed = filesFailed;
-        this.createdAt = createdAt;
-    }
-
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
     public UUID getPackageId() { return packageId; }
     public void setPackageId(UUID packageId) { this.packageId = packageId; }
 
-    public String getProjectId() { return projectId; }
-    public void setProjectId(String projectId) { this.projectId = projectId; }
+    public UUID getProjectId() { return projectId; }
+    public void setProjectId(UUID projectId) { this.projectId = projectId; }
 
     public UUID getLocalProjectUuid() { return localProjectUuid; }
     public void setLocalProjectUuid(UUID localProjectUuid) { this.localProjectUuid = localProjectUuid; }
