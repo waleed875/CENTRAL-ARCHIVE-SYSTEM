@@ -31,6 +31,11 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
 
     long countByTypeIdAndDeletedAtIsNull(UUID typeId);
 
+    boolean existsByProjectIdAndChecksumSha256AndDeletedAtIsNull(
+            UUID projectId,
+            String checksumSha256
+    );
+
     @Query("""
            SELECT f FROM FileEntity f
            WHERE f.projectId = :projectId
