@@ -91,6 +91,7 @@ class BranchPackageServiceTest {
         BranchPackageService service = new BranchPackageService(
                 packages, packageProjects, objectMapper, projects, members, files,
                 minio, minioConfig, archive, operations, organizations,
+                projectTypes, fileCategories, fileTypes,
                 confidentiality, transactionManager
         );
 
