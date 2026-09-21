@@ -149,6 +149,14 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.isLatestVersion = true")
     long countByOrganizationId(@Param("organizationId") UUID organizationId);
 
+    @Query("""
+           SELECT COUNT(p) FROM Project p
+           WHERE p.organizationId = :organizationId
+             AND p.isLatestVersion = true
+             AND p.status <> com.centralArchiveSystem.Archive.project.project.Project.ProjectStatus.ARCHIVED
+           """)
+    long countActiveProjectsByOrganizationId(@Param("organizationId") UUID organizationId);
+
     @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.status = :status AND p.isLatestVersion = true")
     long countByOrganizationIdAndStatus(
             @Param("organizationId") UUID organizationId,
