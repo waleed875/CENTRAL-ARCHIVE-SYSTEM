@@ -152,6 +152,10 @@ class AuthHttpIntegrationTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isMethodNotAllowed());
 
+        mockMvc.perform(get("/api/v1/operations/" + operationId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+
         mockMvc.perform(patch("/api/v1/operations/" + operationId + "/status")
                         .header("Authorization", "Bearer " + adminToken)
                         .param("status", "SUCCESS"))
