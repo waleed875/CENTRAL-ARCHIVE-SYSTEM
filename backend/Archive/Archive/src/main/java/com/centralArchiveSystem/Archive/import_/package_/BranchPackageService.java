@@ -358,7 +358,7 @@ public class BranchPackageService {
 
     private Project buildProject(JsonNode projectNode, PackageProject pp, UUID orgId, BranchPackage pkg) {
         Project project = new Project();
-        project.setProjectUid(UUID.randomUUID().toString());
+        project.setProjectUid(UUID.randomUUID());
         project.setVersionNo(1);
         project.setIsLatestVersion(true);
         project.setOrganizationId(orgId);
