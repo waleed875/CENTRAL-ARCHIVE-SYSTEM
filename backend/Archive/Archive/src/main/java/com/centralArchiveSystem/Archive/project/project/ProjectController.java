@@ -48,7 +48,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new project")
     public ResponseEntity<ApiResponse<ProjectResponse>> create(@Valid @RequestBody ProjectRequest request) {
-        ProjectResponse response = projectService.create(request, currentUserService.username());
+        ProjectResponse response = projectService.create(request, currentUserService.userId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Project created successfully"));
     }
@@ -110,7 +110,7 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectResponse>> approve(
             @PathVariable UUID id,
             @RequestBody(required = false) Map<String, String> body) {
-        ProjectResponse response = projectService.approve(id, currentUserService.username());
+        ProjectResponse response = projectService.approve(id, currentUserService.userId());
         return ResponseEntity.ok(ApiResponse.success(response, "Project approved"));
     }
 
