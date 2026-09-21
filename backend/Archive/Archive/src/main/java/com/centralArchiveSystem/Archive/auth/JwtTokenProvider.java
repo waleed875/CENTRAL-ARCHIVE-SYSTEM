@@ -11,6 +11,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,6 +22,7 @@ public class JwtTokenProvider {
     private static final String TOKEN_TYPE_CLAIM = "token_type";
     private static final String ACCESS_TOKEN_TYPE = "access";
     private static final String REFRESH_TOKEN_TYPE = "refresh";
+    private static final String ISSUED_AT_MS_CLAIM = "issued_at_ms";
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -48,6 +50,7 @@ public class JwtTokenProvider {
                 .subject(userDetails.getUsername())
                 .claim("roles", roles)
                 .claim(TOKEN_TYPE_CLAIM, ACCESS_TOKEN_TYPE)
+                .claim(ISSUED_AT_MS_CLAIM, now.getTime())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -61,6 +64,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim(TOKEN_TYPE_CLAIM, REFRESH_TOKEN_TYPE)
+                .claim(ISSUED_AT_MS_CLAIM, now.getTime())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -94,6 +98,20 @@ public class JwtTokenProvider {
 
     public String getUsernameFromToken(String token) {
         return parseClaims(token).getSubject();
+    }
+
+    public Instant getIssuedAtInstant(String token) {
+        Claims claims = parseClaims(token);
+        Number issuedAtMs = claims.get(ISSUED_AT_MS_CLAIM, Number.class);
+        if (issuedAtMs != null) {
+            return Instant.ofEpochMilli(issuedAtMs.longValue());
+        }
+        Date issuedAt = claims.getIssuedAt();
+        return issuedAt != null ? issuedAt.toInstant() : Instant.EPOCH;
+    }
+
+    public boolean isIssuedOnOrAfter(String token, Instant cutoff) {
+        return cutoff == null || !getIssuedAtInstant(token).isBefore(cutoff);
     }
 
     public List<String> getRolesFromToken(String token) {
