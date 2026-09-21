@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public final class FileContentInspector {
 
@@ -85,7 +87,11 @@ public final class FileContentInspector {
 
         try (InputStream input = file.getInputStream();
              PushbackInputStream pushback = new PushbackInputStream(input, SNIFF_BYTES)) {
-            return validateAndPreserve(pushback, expected);
+            String mimeType = validateAndPreserve(pushback, expected);
+            if (ZIP_EXTENSIONS.contains(expected) && !"zip".equals(expected)) {
+                validateZipContainer(file, expected);
+            }
+            return mimeType;
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to inspect uploaded file content", e);
         }
@@ -145,6 +151,66 @@ public final class FileContentInspector {
         }
 
         return MIME_TYPES.getOrDefault(expected, "application/octet-stream");
+    }
+
+    private static void validateZipContainer(MultipartFile file, String expected) throws IOException {
+        boolean contentTypes = false;
+        boolean expectedRoot = false;
+        boolean openDocumentManifest = false;
+        String openDocumentMime = null;
+
+        try (ZipInputStream zip = new ZipInputStream(file.getInputStream())) {
+            ZipEntry entry;
+            int entries = 0;
+
+            while ((entry = zip.getNextEntry()) != null) {
+                if (++entries > 512) {
+                    throw new IllegalArgumentException("Archive contains too many entries");
+                }
+
+                String name = entry.getName();
+                if ("[Content_Types].xml".equals(name)) {
+                    contentTypes = true;
+                }
+                if (name.startsWith("word/")) {
+                    expectedRoot |= "docx".equals(expected);
+                }
+                if (name.startsWith("xl/")) {
+                    expectedRoot |= "xlsx".equals(expected);
+                }
+                if (name.startsWith("ppt/")) {
+                    expectedRoot |= "pptx".equals(expected);
+                }
+                if ("META-INF/manifest.xml".equals(name)) {
+                    openDocumentManifest = true;
+                }
+                if ("mimetype".equals(name) && !entry.isDirectory()) {
+                    byte[] mimeBytes = zip.readNBytes(256);
+                    openDocumentMime = new String(mimeBytes, StandardCharsets.US_ASCII).trim();
+                }
+            }
+        }
+
+        if (Set.of("docx", "xlsx", "pptx").contains(expected)) {
+            if (!contentTypes || !expectedRoot) {
+                throw new IllegalArgumentException(
+                        "ZIP container does not match expected Office document type (." + expected + ")");
+            }
+            return;
+        }
+
+        String expectedMime = switch (expected) {
+            case "odt" -> "application/vnd.oasis.opendocument.text";
+            case "ods" -> "application/vnd.oasis.opendocument.spreadsheet";
+            case "odp" -> "application/vnd.oasis.opendocument.presentation";
+            default -> null;
+        };
+
+        if (expectedMime != null
+                && (!openDocumentManifest || !expectedMime.equals(openDocumentMime))) {
+            throw new IllegalArgumentException(
+                    "ZIP container does not match expected OpenDocument type (." + expected + ")");
+        }
     }
 
     public static boolean extensionsEquivalent(String first, String second) {
