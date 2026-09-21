@@ -192,4 +192,11 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     @Query("SELECT COUNT(p) FROM Project p WHERE p.confidentialityLevelId = :confidentialityLevelId")
     long countByConfidentialityLevelId(@Param("confidentialityLevelId") UUID confidentialityLevelId);
+
+    @Query("""
+           SELECT COUNT(p) FROM Project p
+           WHERE p.projectTypeId = :projectTypeId
+             AND p.isLatestVersion = true
+           """)
+    long countLatestByProjectTypeId(@Param("projectTypeId") UUID projectTypeId);
 }
