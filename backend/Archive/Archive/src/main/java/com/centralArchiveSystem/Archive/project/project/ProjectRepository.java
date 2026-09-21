@@ -39,7 +39,13 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
              AND (:organizationId IS NULL OR p.organizationId = :organizationId)
              AND (:status IS NULL OR p.status = :status)
              AND (:year IS NULL OR p.year = :year)
-             AND p.isLatestVersion = true
+             AND (:projectTypeId IS NULL OR p.projectTypeId = :projectTypeId)
+             AND (:confidentialityLevelId IS NULL OR p.confidentialityLevelId = :confidentialityLevelId)
+             AND (:sourceType IS NULL OR p.sourceType = :sourceType)
+             AND (:projectUid IS NULL OR p.projectUid = :projectUid)
+             AND (:createdBy IS NULL OR p.createdBy = :createdBy)
+             AND (:approvedBy IS NULL OR p.approvedBy = :approvedBy)
+             AND (:isLatestVersion IS NULL OR p.isLatestVersion = :isLatestVersion)
              AND (
                  p.confidentialityLevelId IS NULL
                  OR (
@@ -58,6 +64,13 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             @Param("organizationId") UUID organizationId,
             @Param("status") Project.ProjectStatus status,
             @Param("year") Integer year,
+            @Param("projectTypeId") UUID projectTypeId,
+            @Param("confidentialityLevelId") UUID confidentialityLevelId,
+            @Param("sourceType") Project.SourceType sourceType,
+            @Param("projectUid") UUID projectUid,
+            @Param("createdBy") UUID createdBy,
+            @Param("approvedBy") UUID approvedBy,
+            @Param("isLatestVersion") Boolean isLatestVersion,
             @Param("maxLevelOrder") Integer maxLevelOrder,
             Pageable pageable);
 
