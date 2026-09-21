@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Automatic scheduling is gated by legacy.migration.enabled so the scheduler is
  * a no-op until explicitly turned on (prevents unwanted DB access/impact in
- * tests or during normal application operation). Manual triggers via
- * MigrationController.runBatch always attempt a run.
+ * tests or during normal application operation). Manual triggers are also
+ * rejected while migration is disabled.
  */
 @Component
 public class MigrationRunner {
@@ -63,11 +63,13 @@ public class MigrationRunner {
      * run was (re)started by this call.
      */
     public boolean runOnce() {
+        ensureEnabled();
         MigrationBatch batch = findOrCreateRunningBatch();
         return runBatch(batch.getId());
     }
 
     public boolean runBatch(UUID batchId) {
+        ensureEnabled();
         if (!running.compareAndSet(false, true)) {
             log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
@@ -114,6 +116,13 @@ public class MigrationRunner {
             return true;
         } finally {
             running.set(false);
+        }
+    }
+
+    private void ensureEnabled() {
+        if (!enabled) {
+            throw new IllegalStateException(
+                    "Legacy migration is disabled. Enable it only during a controlled migration window");
         }
     }
 
