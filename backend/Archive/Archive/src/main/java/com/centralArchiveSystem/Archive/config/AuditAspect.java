@@ -1,7 +1,9 @@
 package com.centralArchiveSystem.Archive.config;
 
 import com.centralArchiveSystem.Archive.audit.AuditLogService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.metamodel.EntityType;
@@ -18,6 +20,9 @@ import org.springframework.stereotype.Component;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Aspect
@@ -25,6 +30,7 @@ import java.util.UUID;
 public class AuditAspect {
 
     private static final Logger logger = LoggerFactory.getLogger(AuditAspect.class);
+    private static final String REDACTED = "***REDACTED***";
 
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
@@ -69,7 +75,7 @@ public class AuditAspect {
                     entityId = determineEntityId(joinPoint, result);
                 }
                 String user = getCurrentUser();
-                String newValues = determineNewValues(joinPoint, result);
+                String newValues = determineNewValues(result);
                 long executionTime = System.currentTimeMillis() - startTime;
                 String status = exception == null ? "SUCCESS" : "FAILURE";
                 String errorMessage = exception != null ? exception.getMessage() : null;
@@ -185,7 +191,7 @@ public class AuditAspect {
         try {
             Object entity = entityManager.find(entityClass, id);
             if (entity != null) {
-                return objectMapper.writeValueAsString(entity);
+                return serializeForAudit(entity);
             }
         } catch (Exception e) {
             logger.debug("Failed to load old values for entityType={}, id={}", entityType, entityId, e);
@@ -205,14 +211,55 @@ public class AuditAspect {
         return null;
     }
 
-    private String determineNewValues(ProceedingJoinPoint joinPoint, Object result) {
+    private String determineNewValues(Object result) {
         if (result == null) {
             return null;
         }
         try {
-            return objectMapper.writeValueAsString(result);
+            return serializeForAudit(result);
         } catch (Exception e) {
-            return result.toString();
+            return null;
         }
+    }
+
+    private String serializeForAudit(Object value) throws Exception {
+        JsonNode root = objectMapper.valueToTree(value);
+        redactSensitiveFields(root);
+        return objectMapper.writeValueAsString(root);
+    }
+
+    private void redactSensitiveFields(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+
+        if (node.isObject()) {
+            ObjectNode objectNode = (ObjectNode) node;
+            List<String> fieldNames = new ArrayList<>();
+            objectNode.fieldNames().forEachRemaining(fieldNames::add);
+
+            for (String fieldName : fieldNames) {
+                if (isSensitiveField(fieldName)) {
+                    objectNode.put(fieldName, REDACTED);
+                } else {
+                    redactSensitiveFields(objectNode.get(fieldName));
+                }
+            }
+            return;
+        }
+
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                redactSensitiveFields(child);
+            }
+        }
+    }
+
+    private boolean isSensitiveField(String fieldName) {
+        String normalized = fieldName.toLowerCase(Locale.ROOT);
+        return normalized.contains("password")
+                || normalized.contains("token")
+                || normalized.contains("authorization")
+                || normalized.contains("secret");
     }
 }
