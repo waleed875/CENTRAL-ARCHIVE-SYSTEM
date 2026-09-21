@@ -237,16 +237,21 @@ public class ExportService {
     }
 
     public ProjectExport getById(UUID id) {
-        return exportRepository.findById(id)
+        ProjectExport export = exportRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ProjectExport", "id", id));
+        validateManifestClearance(export.getManifestData());
+        return export;
     }
 
     public List<ProjectExport> list(UUID sourceOrganizationId) {
-        if (sourceOrganizationId != null) {
-            return exportRepository.findBySourceOrganizationIdOrderByCreatedAtDesc(sourceOrganizationId);
-        }
-        return exportRepository.findAll().stream()
-                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+        List<ProjectExport> exports = sourceOrganizationId != null
+                ? exportRepository.findBySourceOrganizationIdOrderByCreatedAtDesc(sourceOrganizationId)
+                : exportRepository.findAll().stream()
+                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                        .toList();
+
+        return exports.stream()
+                .filter(this::canReadExportManifest)
                 .toList();
     }
 
@@ -265,6 +270,18 @@ public class ExportService {
             );
         } catch (Exception e) {
             throw new RuntimeException("Failed to download export package: " + e.getMessage(), e);
+        }
+    }
+
+    private boolean canReadExportManifest(ProjectExport export) {
+        try {
+            validateManifestClearance(export.getManifestData());
+            return true;
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            return false;
+        } catch (RuntimeException e) {
+            log.warn("Excluding export {} with unreadable manifest", export.getId(), e);
+            return false;
         }
     }
 
