@@ -29,6 +29,7 @@ import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -247,7 +248,10 @@ public class ExportService {
         List<ProjectExport> exports = sourceOrganizationId != null
                 ? exportRepository.findBySourceOrganizationIdOrderByCreatedAtDesc(sourceOrganizationId)
                 : exportRepository.findAll().stream()
-                        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                        .sorted(Comparator.comparing(
+                                ProjectExport::getCreatedAt,
+                                Comparator.nullsFirst(Comparator.naturalOrder())
+                        ).reversed())
                         .toList();
 
         return exports.stream()
