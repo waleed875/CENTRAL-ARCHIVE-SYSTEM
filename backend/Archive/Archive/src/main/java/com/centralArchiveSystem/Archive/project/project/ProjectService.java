@@ -234,6 +234,10 @@ public class ProjectService {
     }
 
     public ProjectResponse requestCorrection(UUID id, String reviewNotes) {
+        if (reviewNotes == null || reviewNotes.isBlank()) {
+            throw new IllegalArgumentException("review_notes is required");
+        }
+
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
@@ -263,6 +267,10 @@ public class ProjectService {
     }
 
     public ProjectResponse reject(UUID id, String rejectionReason) {
+        if (rejectionReason == null || rejectionReason.isBlank()) {
+            throw new IllegalArgumentException("rejection_reason is required");
+        }
+
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
