@@ -154,6 +154,150 @@ class FileServiceTest {
     }
 
     @Test
+    void uploadWithoutFileTypeUsesFilenameExtensionForContentInspection() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory category =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setCode("DOCS");
+        category.setName("Documents");
+        category.setIsActive(true);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(fileRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        MockMultipartFile multipart = new MockMultipartFile(
+                "file",
+                "report.pdf",
+                "application/octet-stream",
+                "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII)
+        );
+
+        com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest request =
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
+                        categoryId,
+                        null,
+                        null,
+                        null,
+                        null
+                );
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        FileResponse response = service.uploadFile(
+                projectId,
+                multipart,
+                request,
+                UUID.randomUUID()
+        );
+
+        assertEquals(null, response.typeId());
+        assertEquals("application/pdf", response.mimeType());
+        verifyNoInteractions(typeRepository);
+    }
+
+    @Test
+    void metadataUpdateRejectsCategoryTypeMismatch() {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID fileId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID originalCategoryId = UUID.randomUUID();
+        UUID newCategoryId = UUID.randomUUID();
+        UUID typeId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        FileEntity file = new FileEntity();
+        file.setId(fileId);
+        file.setProjectId(projectId);
+        file.setCategoryId(originalCategoryId);
+        file.setTypeId(typeId);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory newCategory =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        newCategory.setId(newCategoryId);
+        newCategory.setCode("NEW");
+        newCategory.setName("New");
+        newCategory.setIsActive(true);
+
+        com.centralArchiveSystem.Archive.project.filetype.FileType type =
+                new com.centralArchiveSystem.Archive.project.filetype.FileType();
+        type.setId(typeId);
+        type.setCategoryId(originalCategoryId);
+        type.setCode("TXT");
+        type.setName("Text");
+        type.setIsActive(true);
+
+        when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(newCategoryId)).thenReturn(Optional.of(newCategory));
+        when(typeRepository.findById(typeId)).thenReturn(Optional.of(type));
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.updateFileMetadata(
+                        fileId,
+                        new com.centralArchiveSystem.Archive.project.file.dto.FileMetadataUpdateRequest(
+                                newCategoryId,
+                                null,
+                                null,
+                                null,
+                                null
+                        )
+                )
+        );
+
+        verify(fileRepository, never()).save(any());
+    }
+
+    @Test
     void manualUploadDefaultsSourceTypeWhenMetadataOmitsIt() throws Exception {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
