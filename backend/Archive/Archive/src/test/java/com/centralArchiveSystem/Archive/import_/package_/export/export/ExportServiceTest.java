@@ -153,6 +153,94 @@ class ExportServiceTest {
         verify(confidentialityAccessService).requireReadAccess(file.getConfidentialityLevelId());
     }
 
+    @Test
+    void exportMetadataAndManifestRespectConfidentiality() throws Exception {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
+        FileRepository fileRepository = mock(FileRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        ProjectExportRepository exportRepository = mock(ProjectExportRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        PackageArchiveService archiveService = new PackageArchiveService(objectMapper, "1.0");
+
+        MinioConfig minioConfig = new MinioConfig();
+        minioConfig.setBucket("test-bucket");
+
+        UUID visibleLevel = UUID.randomUUID();
+        UUID hiddenLevel = UUID.randomUUID();
+
+        ProjectExport visible = new ProjectExport();
+        visible.setId(UUID.randomUUID());
+        visible.setPackageUuid(UUID.randomUUID());
+        visible.setPackageName("visible.pkg");
+        visible.setSchemaVersion("1.0");
+        visible.setProjectsCount(1);
+        visible.setFilesCount(0);
+        visible.setStatus("EXPORTED");
+        visible.setPackageObjectKey("exports/private/visible.pkg");
+        visible.setManifestData("""
+                {
+                  "projects": [{
+                    "confidentiality_level_id": "%s",
+                    "files": []
+                  }]
+                }
+                """.formatted(visibleLevel));
+
+        ProjectExport hidden = new ProjectExport();
+        hidden.setId(UUID.randomUUID());
+        hidden.setPackageUuid(UUID.randomUUID());
+        hidden.setPackageName("hidden.pkg");
+        hidden.setSchemaVersion("1.0");
+        hidden.setProjectsCount(1);
+        hidden.setFilesCount(0);
+        hidden.setStatus("EXPORTED");
+        hidden.setPackageObjectKey("exports/private/hidden.pkg");
+        hidden.setManifestData("""
+                {
+                  "projects": [{
+                    "confidentiality_level_id": "%s",
+                    "files": []
+                  }]
+                }
+                """.formatted(hiddenLevel));
+
+        when(exportRepository.findAll()).thenReturn(List.of(visible, hidden));
+        when(exportRepository.findById(hidden.getId())).thenReturn(Optional.of(hidden));
+
+        doNothing().when(confidentiality).requireReadAccess(visibleLevel);
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(hiddenLevel);
+
+        ExportService service = new ExportService(
+                projectRepository,
+                memberRepository,
+                fileRepository,
+                minioService,
+                minioConfig,
+                exportRepository,
+                objectMapper,
+                archiveService,
+                confidentiality,
+                UUID.randomUUID()
+        );
+
+        var listed = service.list(null);
+        assertEquals(1, listed.size());
+        assertEquals(visible.getId(), listed.get(0).getId());
+
+        assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.getById(hidden.getId())
+        );
+
+        JsonNode serialized = objectMapper.readTree(objectMapper.writeValueAsString(visible));
+        assertFalse(serialized.has("manifestData"));
+        assertFalse(serialized.has("packageObjectKey"));
+    }
+
     private String sha256(byte[] content) throws Exception {
         return HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(content)
