@@ -57,7 +57,7 @@ public class MigrationService {
         return toSourceResponse(saved);
     }
 
-    public MigrationSourceResponse updateSource(UUID id, MigrationSourceRequest request) {
+    public MigrationSourceResponse updateSource(UUID id, MigrationSourceUpdateRequest request) {
         MigrationSource source = sourceRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Migration source not found: " + id));
         if (request.name() != null) source.setName(request.name());
@@ -74,6 +74,22 @@ public class MigrationService {
         if (!sourceRepository.existsById(id)) {
             throw new RuntimeException("Migration source not found: " + id);
         }
+
+        long runningBatches = batchRepository.countByMigrationSourceIdAndStatus(
+                id,
+                MigrationBatch.Status.RUNNING
+        );
+        if (runningBatches > 0) {
+            throw new IllegalStateException(
+                    "Cannot delete migration source with running batches");
+        }
+
+        long totalBatches = batchRepository.countByMigrationSourceId(id);
+        if (totalBatches > 0) {
+            throw new IllegalStateException(
+                    "Cannot delete migration source while migration batch history exists");
+        }
+
         sourceRepository.deleteById(id);
         log.info("Deleted migration source: {}", id);
     }
