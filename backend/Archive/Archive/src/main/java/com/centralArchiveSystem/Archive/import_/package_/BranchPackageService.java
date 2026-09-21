@@ -481,7 +481,7 @@ public class BranchPackageService {
 
         // Project.createdBy is still a String in the current model. Store the authenticated
         // central user UUID as text until the actor-column UUID migration is completed.
-        project.setCreatedBy(createdBy.toString());
+        project.setCreatedBy(createdBy);
         return project;
     }
 
