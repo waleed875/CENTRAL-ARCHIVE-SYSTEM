@@ -212,7 +212,7 @@ class FileServiceTest {
                 confidentiality
         );
 
-        FileResponse response = service.uploadFile(
+        var response = service.uploadFile(
                 projectId,
                 multipart,
                 request,
