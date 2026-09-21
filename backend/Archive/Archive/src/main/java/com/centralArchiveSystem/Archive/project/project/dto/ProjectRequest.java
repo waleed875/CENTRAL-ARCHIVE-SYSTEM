@@ -54,7 +54,7 @@ public record ProjectRequest(
 
     @Schema(description = "Source reference") String sourceReference,
 
-    @Schema(description = "Created by user") String createdBy,
+    @Schema(description = "Deprecated: ignored; creator is derived from the authenticated user", deprecated = true) String createdBy,
 
     @Schema(description = "Optional project members created with the project. Manage later changes through the member endpoints.")
     List<@Valid MemberRequest> members
