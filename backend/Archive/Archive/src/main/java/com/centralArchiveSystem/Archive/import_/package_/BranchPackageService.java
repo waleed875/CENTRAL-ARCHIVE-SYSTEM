@@ -8,6 +8,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
+import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
 import com.centralArchiveSystem.Archive.project.file.FileEntity;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
@@ -526,7 +527,14 @@ public class BranchPackageService {
         String originalName = fileNode.path("original_name").asText(
                 fileNode.path("name").asText("file"));
         String extension = optionalText(fileNode, "extension");
-        String mimeType = fileNode.path("mime_type").asText("application/octet-stream");
+        if (extension == null) {
+            extension = FileContentInspector.extensionFromName(originalName);
+        }
+        if (extension == null) {
+            throw new IllegalArgumentException(
+                    "Imported file has no resolvable extension: " + originalName);
+        }
+        String mimeType = FileContentInspector.mimeTypeForExtension(extension);
         long expectedSize = fileNode.path("size_bytes").asLong(-1);
         String expectedChecksum = requiredText(fileNode, "checksum_sha256");
         String sourceEntryPath = packageArchiveService.resolveFileEntryPath(fileNode);
