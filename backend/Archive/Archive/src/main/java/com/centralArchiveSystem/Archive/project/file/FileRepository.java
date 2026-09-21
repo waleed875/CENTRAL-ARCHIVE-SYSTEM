@@ -70,6 +70,104 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
             @Param("maxLevelOrder") Integer maxLevelOrder,
             Pageable pageable);
 
+    @Query("""
+           SELECT COUNT(f) FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    long countAccessibleActive(@Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT COALESCE(SUM(f.sizeBytes), 0) FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    long sumAccessibleActiveSize(@Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT f FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    Page<FileEntity> findAccessibleRecent(
+            @Param("maxLevelOrder") Integer maxLevelOrder,
+            Pageable pageable);
+
     List<FileEntity> findByDeletedAtIsNotNull();
 
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
