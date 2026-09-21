@@ -37,10 +37,19 @@ public class FileController {
             @PathVariable UUID projectId,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) UUID typeId,
+            @RequestParam(defaultValue = "ACTIVE") String status,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<FileResponse> result = fileService.listProjectFiles(projectId, categoryId, typeId, search, page - 1, size);
+        Page<FileResponse> result = fileService.listProjectFiles(
+                projectId,
+                categoryId,
+                typeId,
+                status,
+                search,
+                page - 1,
+                size
+        );
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
