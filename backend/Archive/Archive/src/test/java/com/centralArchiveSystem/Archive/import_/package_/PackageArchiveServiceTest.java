@@ -206,6 +206,51 @@ class PackageArchiveServiceTest {
                 .anyMatch(error -> error.contains("Office document type")));
     }
 
+
+    @Test
+    void rejectsPackageEntryThatExceedsExpandedFileLimit() throws Exception {
+        byte[] fileContent = "content larger than test expansion limit"
+                .getBytes(StandardCharsets.UTF_8);
+        String fileHash = sha256(fileContent);
+
+        String manifest = """
+                {
+                  "package_uuid": "11111111-1111-1111-1111-111111111111",
+                  "package_name": "sample.pkg",
+                  "schema_version": "1.0",
+                  "source_terminal_uuid": "22222222-2222-2222-2222-222222222222",
+                  "projects": [{
+                    "project_id": "33333333-3333-3333-3333-333333333333",
+                    "project_number": "P-001",
+                    "name": "Test Project",
+                    "year": 2026,
+                    "files": [{
+                      "project_id": "33333333-3333-3333-3333-333333333333",
+                      "original_name": "document.txt",
+                      "extension": "txt",
+                      "object_key": "files/document.txt",
+                      "size_bytes": %d,
+                      "checksum_sha256": "%s"
+                    }]
+                  }]
+                }
+                """.formatted(fileContent.length, fileHash);
+
+        byte[] packageBytes = createPackage(manifest, fileContent);
+        String manifestHash = sha256(manifest.getBytes(StandardCharsets.UTF_8));
+
+        setField(service, "maxExpandedFileBytes", 8L);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.verifyContents(
+                        new ByteArrayInputStream(packageBytes),
+                        manifestHash,
+                        "1.0"
+                )
+        );
+    }
+
     @Test
     void rejectsUnsupportedSchemaVersion() throws Exception {
         byte[] fileContent = "content".getBytes(StandardCharsets.UTF_8);
@@ -243,6 +288,12 @@ class PackageArchiveServiceTest {
         assertFalse(verification.schemaVersionValid());
         assertTrue(verification.errors().stream()
                 .anyMatch(error -> error.contains("schema_version")));
+    }
+
+    private void setField(Object target, String name, Object value) throws Exception {
+        var field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     private byte[] createPackage(String manifest, byte[] fileContent) throws Exception {
