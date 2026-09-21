@@ -8,11 +8,14 @@ import com.centralArchiveSystem.Archive.project.project.Project;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.access.AccessDeniedException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
@@ -148,6 +151,83 @@ class FileServiceTest {
                 () -> service.softDelete(fileId, UUID.randomUUID(), "test"));
         verify(fileRepository, never()).save(any());
         verifyNoInteractions(minioService);
+    }
+
+    @Test
+    void manualUploadDefaultsSourceTypeWhenMetadataOmitsIt() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        UUID typeId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory category =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setCode("DOCS");
+        category.setName("Documents");
+        category.setIsActive(true);
+
+        com.centralArchiveSystem.Archive.project.filetype.FileType type =
+                new com.centralArchiveSystem.Archive.project.filetype.FileType();
+        type.setId(typeId);
+        type.setCategoryId(categoryId);
+        type.setCode("TXT");
+        type.setName("Text");
+        type.setDefaultExtension("txt");
+        type.setIsActive(true);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(typeRepository.findById(typeId)).thenReturn(Optional.of(type));
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(fileRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        MockMultipartFile multipart = new MockMultipartFile(
+                "file",
+                "notes.txt",
+                "text/plain",
+                "hello archive".getBytes(StandardCharsets.UTF_8)
+        );
+
+        com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest request =
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
+                        categoryId,
+                        typeId,
+                        null,
+                        null,
+                        null
+                );
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        service.uploadFile(projectId, multipart, request, UUID.randomUUID());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(FileEntity.class);
+        verify(fileRepository).save(captor.capture());
+        assertEquals("MANUAL", captor.getValue().getSourceType());
     }
 
     @Test
