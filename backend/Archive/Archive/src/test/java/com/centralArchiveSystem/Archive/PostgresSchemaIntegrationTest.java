@@ -1,5 +1,7 @@
 package com.centralArchiveSystem.Archive;
 
+import com.centralArchiveSystem.Archive.audit.AuditLog;
+import com.centralArchiveSystem.Archive.audit.AuditLogRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +14,9 @@ class PostgresSchemaIntegrationTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    AuditLogRepository auditLogRepository;
 
     @Test
     void runsAgainstPostgresqlAndAppliesLatestFlywayMigration() {
@@ -90,6 +95,25 @@ class PostgresSchemaIntegrationTest {
         );
 
         assertEquals(1, count);
+    }
+
+    @Test
+    void auditIpAddressPersistsThroughJpaIntoInetColumn() {
+        AuditLog auditLog = new AuditLog();
+        auditLog.setAction("INTEGRATION_TEST");
+        auditLog.setEntityType("AuditLog");
+        auditLog.setDescription("PostgreSQL inet mapping verification");
+        auditLog.setIpAddress("127.0.0.1");
+
+        AuditLog saved = auditLogRepository.saveAndFlush(auditLog);
+
+        String storedIp = jdbcTemplate.queryForObject(
+                "SELECT host(ip_address) FROM audit.audit_logs WHERE id = ?",
+                String.class,
+                saved.getId()
+        );
+
+        assertEquals("127.0.0.1", storedIp);
     }
 
     @Test
