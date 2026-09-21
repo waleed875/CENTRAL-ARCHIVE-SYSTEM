@@ -522,38 +522,51 @@ public class BranchPackageService {
         String bucket = minioConfig.getBucket();
         String objectKey = "import/" + pkg.getPackageUuid() + "/" + projectId + "/" + storedName;
 
-        try (InputStream packageStream = minioService.downloadFile(
-                bucket,
-                packageObjectKey(pkg.getPackageUuid()))) {
+        boolean uploadedToObjectStorage = false;
+        try {
+            try (InputStream packageStream = minioService.downloadFile(
+                    bucket,
+                    packageObjectKey(pkg.getPackageUuid()))) {
 
-            packageArchiveService.withEntry(packageStream, sourceEntryPath, (entryStream, declaredSize) -> {
-                long uploadSize = expectedSize >= 0 ? expectedSize : declaredSize;
-                if (uploadSize < 0) {
-                    throw new IllegalArgumentException(
-                            "Package file size is missing for entry: " + sourceEntryPath);
+                packageArchiveService.withEntry(packageStream, sourceEntryPath, (entryStream, declaredSize) -> {
+                    long uploadSize = expectedSize >= 0 ? expectedSize : declaredSize;
+                    if (uploadSize < 0) {
+                        throw new IllegalArgumentException(
+                                "Package file size is missing for entry: " + sourceEntryPath);
+                    }
+                    minioService.uploadRaw(entryStream, bucket, objectKey, mimeType, uploadSize);
+                });
+            }
+            uploadedToObjectStorage = true;
+
+            FileEntity file = new FileEntity();
+            file.setProjectId(projectId);
+            file.setCategoryId(optionalUuid(fileNode, "category_id"));
+            file.setTypeId(optionalUuid(fileNode, "type_id"));
+            file.setConfidentialityLevelId(optionalUuid(fileNode, "confidentiality_level_id"));
+            file.setOriginalName(originalName);
+            file.setStoredName(storedName);
+            file.setBucketName(bucket);
+            file.setObjectKey(objectKey);
+            file.setExtension(extension);
+            file.setMimeType(mimeType);
+            file.setSizeBytes(expectedSize >= 0 ? expectedSize : null);
+            file.setChecksumSha256(expectedChecksum);
+            file.setStatus("ACTIVE");
+            file.setUploadedBy(uploadedBy);
+            file.setSourceType("BRANCH_PACKAGE");
+            file.setSourceReference(pkg.getPackageUuid().toString());
+            fileRepository.save(file);
+        } catch (Exception e) {
+            if (uploadedToObjectStorage) {
+                try {
+                    minioService.deleteFile(bucket, objectKey);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to remove orphan imported object: {}", objectKey, cleanupError);
                 }
-                minioService.uploadRaw(entryStream, bucket, objectKey, mimeType, uploadSize);
-            });
+            }
+            throw e;
         }
-
-        FileEntity file = new FileEntity();
-        file.setProjectId(projectId);
-        file.setCategoryId(optionalUuid(fileNode, "category_id"));
-        file.setTypeId(optionalUuid(fileNode, "type_id"));
-        file.setConfidentialityLevelId(optionalUuid(fileNode, "confidentiality_level_id"));
-        file.setOriginalName(originalName);
-        file.setStoredName(storedName);
-        file.setBucketName(bucket);
-        file.setObjectKey(objectKey);
-        file.setExtension(extension);
-        file.setMimeType(mimeType);
-        file.setSizeBytes(expectedSize >= 0 ? expectedSize : null);
-        file.setChecksumSha256(expectedChecksum);
-        file.setStatus("ACTIVE");
-        file.setUploadedBy(uploadedBy);
-        file.setSourceType("BRANCH_PACKAGE");
-        file.setSourceReference(pkg.getPackageUuid().toString());
-        fileRepository.save(file);
     }
 
     private PackageProject createPackageProjectLink(BranchPackage pkg,
