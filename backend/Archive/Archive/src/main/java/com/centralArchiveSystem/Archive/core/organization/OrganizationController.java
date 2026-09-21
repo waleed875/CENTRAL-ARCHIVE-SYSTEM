@@ -5,6 +5,7 @@ import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationRequest;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationTreeResponse;
+import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -65,7 +66,7 @@ public class OrganizationController {
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<ApiResponse<OrganizationResponse>> update(@PathVariable UUID id, @Valid @RequestBody OrganizationRequest request) {
+    public ResponseEntity<ApiResponse<OrganizationResponse>> update(@PathVariable UUID id, @RequestBody OrganizationUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(organizationService.update(id, request), "Organization updated"));
     }
 
