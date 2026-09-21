@@ -115,6 +115,97 @@ class PackageArchiveServiceTest {
                 .anyMatch(error -> error.contains("Checksum mismatch")));
     }
 
+
+    @Test
+    void rejectsExecutableDisguisedAsPdfInsidePackage() throws Exception {
+        byte[] fileContent = new byte[]{0x4D, 0x5A, 0x00, 0x00, 0x01};
+        String fileHash = sha256(fileContent);
+
+        String manifest = """
+                {
+                  "package_uuid": "11111111-1111-1111-1111-111111111111",
+                  "package_name": "sample.pkg",
+                  "schema_version": "1.0",
+                  "source_terminal_uuid": "22222222-2222-2222-2222-222222222222",
+                  "projects": [{
+                    "project_id": "33333333-3333-3333-3333-333333333333",
+                    "project_number": "P-001",
+                    "name": "Test Project",
+                    "year": 2026,
+                    "files": [{
+                      "project_id": "33333333-3333-3333-3333-333333333333",
+                      "original_name": "report.pdf",
+                      "extension": "pdf",
+                      "object_key": "files/document.txt",
+                      "size_bytes": %d,
+                      "checksum_sha256": "%s"
+                    }]
+                  }]
+                }
+                """.formatted(fileContent.length, fileHash);
+
+        byte[] packageBytes = createPackage(manifest, fileContent);
+        String manifestHash = sha256(manifest.getBytes(StandardCharsets.UTF_8));
+
+        PackageArchiveService.Verification verification = service.verifyContents(
+                new ByteArrayInputStream(packageBytes),
+                manifestHash,
+                "1.0"
+        );
+
+        assertFalse(verification.filesValid());
+        assertTrue(verification.errors().stream()
+                .anyMatch(error -> error.contains("Content type mismatch")));
+    }
+
+    @Test
+    void rejectsOrdinaryZipDisguisedAsDocxInsidePackage() throws Exception {
+        ByteArrayOutputStream innerOutput = new ByteArrayOutputStream();
+        try (ZipOutputStream innerZip = new ZipOutputStream(innerOutput)) {
+            innerZip.putNextEntry(new ZipEntry("random.txt"));
+            innerZip.write("not an office document".getBytes(StandardCharsets.UTF_8));
+            innerZip.closeEntry();
+        }
+        byte[] fileContent = innerOutput.toByteArray();
+        String fileHash = sha256(fileContent);
+
+        String manifest = """
+                {
+                  "package_uuid": "11111111-1111-1111-1111-111111111111",
+                  "package_name": "sample.pkg",
+                  "schema_version": "1.0",
+                  "source_terminal_uuid": "22222222-2222-2222-2222-222222222222",
+                  "projects": [{
+                    "project_id": "33333333-3333-3333-3333-333333333333",
+                    "project_number": "P-001",
+                    "name": "Test Project",
+                    "year": 2026,
+                    "files": [{
+                      "project_id": "33333333-3333-3333-3333-333333333333",
+                      "original_name": "document.docx",
+                      "extension": "docx",
+                      "object_key": "files/document.txt",
+                      "size_bytes": %d,
+                      "checksum_sha256": "%s"
+                    }]
+                  }]
+                }
+                """.formatted(fileContent.length, fileHash);
+
+        byte[] packageBytes = createPackage(manifest, fileContent);
+        String manifestHash = sha256(manifest.getBytes(StandardCharsets.UTF_8));
+
+        PackageArchiveService.Verification verification = service.verifyContents(
+                new ByteArrayInputStream(packageBytes),
+                manifestHash,
+                "1.0"
+        );
+
+        assertFalse(verification.filesValid());
+        assertTrue(verification.errors().stream()
+                .anyMatch(error -> error.contains("Office document type")));
+    }
+
     @Test
     void rejectsUnsupportedSchemaVersion() throws Exception {
         byte[] fileContent = "content".getBytes(StandardCharsets.UTF_8);
