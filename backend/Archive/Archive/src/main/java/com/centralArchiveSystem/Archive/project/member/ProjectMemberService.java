@@ -121,6 +121,8 @@ public class ProjectMemberService {
 
     private Project requireMutableProject(UUID projectId) {
         Project project = requireProject(projectId);
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+
         if (project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
             throw new IllegalStateException(
