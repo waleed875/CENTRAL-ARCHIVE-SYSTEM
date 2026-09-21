@@ -2,6 +2,7 @@ package com.centralArchiveSystem.Archive.project.filecategory;
 
 import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryRequest;
 import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryResponse;
+import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryUpdateRequest;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,24 +27,8 @@ public class FileCategoryService {
 
     public Page<FileCategoryResponse> list(String search, Boolean isActive, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("name").ascending());
-        Page<FileCategory> categories;
-
-        if (search != null && !search.isBlank()) {
-            categories = fileCategoryRepository.searchByNameOrCode(search, pageable);
-        } else {
-            categories = fileCategoryRepository.findAll(pageable);
-        }
-
-        if (isActive != null) {
-            categories = categories.getContent().stream()
-                    .filter(c -> c.getIsActive().equals(isActive))
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        return categories.map(this::toResponse);
+        return fileCategoryRepository.searchFiltered(search, isActive, pageable)
+                .map(this::toResponse);
     }
 
     public List<FileCategoryResponse> listAll(Boolean isActive) {
@@ -79,19 +64,22 @@ public class FileCategoryService {
     }
 
     @Transactional
-    public FileCategoryResponse update(UUID id, FileCategoryRequest request) {
+    public FileCategoryResponse update(UUID id, FileCategoryUpdateRequest request) {
         FileCategory category = fileCategoryRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + id));
 
-        if (request.code() != null && !request.code().isBlank() &&
-            fileCategoryRepository.existsByCodeAndIdNot(request.code(), id)) {
-            throw new IllegalArgumentException("File category code already exists: " + request.code());
+        if (request.name() != null && !request.name().isBlank()) {
+            category.setName(request.name());
         }
-
-        if (request.code() != null) category.setCode(request.code());
-        if (request.name() != null) category.setName(request.name());
-        if (request.description() != null) category.setDescription(request.description());
-        if (request.isActive() != null) category.setIsActive(request.isActive());
+        if (request.description() != null) {
+            category.setDescription(request.description());
+        }
+        if (request.isActive() != null) {
+            if (!request.isActive() && fileCategoryRepository.countActiveFilesByCategoryId(id) > 0) {
+                throw new IllegalStateException("Cannot deactivate category with active files");
+            }
+            category.setIsActive(request.isActive());
+        }
 
         FileCategory saved = fileCategoryRepository.save(category);
         return toResponse(saved);
@@ -102,12 +90,13 @@ public class FileCategoryService {
         FileCategory category = fileCategoryRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + id));
 
-        long filesCount = fileCategoryRepository.countFilesByCategoryId(id);
-        if (filesCount > 0) {
-            throw new IllegalStateException("Cannot delete category with existing files. Remove files first.");
+        long activeFilesCount = fileCategoryRepository.countActiveFilesByCategoryId(id);
+        if (activeFilesCount > 0) {
+            throw new IllegalStateException("Cannot deactivate category with active files");
         }
 
-        fileCategoryRepository.delete(category);
+        category.setIsActive(false);
+        fileCategoryRepository.save(category);
     }
 
     private FileCategoryResponse toResponse(FileCategory category) {
