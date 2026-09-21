@@ -30,14 +30,15 @@ class AuthHttpIntegrationTest {
     @Autowired RoleRepository roleRepository;
     @Autowired PasswordEncoder passwordEncoder;
 
-    private final String username = "auth_integration_user";
-    private final String adminUsername = "auth_integration_admin";
+    private String username;
+    private String adminUsername;
     private final String password = "StrongIntegrationPassword123!";
 
     @BeforeEach
     void setupUser() {
-        userRepository.findByUsername(username).ifPresent(userRepository::delete);
-        userRepository.findByUsername(adminUsername).ifPresent(userRepository::delete);
+        String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
+        username = "auth_integration_user_" + suffix;
+        adminUsername = "auth_integration_admin_" + suffix;
 
         Role role = roleRepository.findByCode("read_only").orElseGet(() -> {
             Role created = new Role();
