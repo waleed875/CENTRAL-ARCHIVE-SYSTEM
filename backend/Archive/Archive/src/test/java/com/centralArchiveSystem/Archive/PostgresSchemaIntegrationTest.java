@@ -15,10 +15,12 @@ class PostgresSchemaIntegrationTest {
 
     @Test
     void runsAgainstPostgresqlAndAppliesLatestFlywayMigration() {
-        String product = jdbcTemplate.execute(
-                connection -> connection.getMetaData().getDatabaseProductName()
+        String version = jdbcTemplate.queryForObject(
+                "SELECT version()",
+                String.class
         );
-        assertEquals("PostgreSQL", product);
+        assertNotNull(version);
+        assertTrue(version.startsWith("PostgreSQL"));
 
         Integer v7 = jdbcTemplate.queryForObject(
                 """
