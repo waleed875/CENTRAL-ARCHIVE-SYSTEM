@@ -33,6 +33,25 @@ public class ProjectMemberService {
     }
 
     @Transactional
+    public void copyMembers(UUID sourceProjectId, UUID targetProjectId) {
+        List<ProjectMember> copies = projectMemberRepository.findByProjectId(sourceProjectId).stream()
+                .map(source -> {
+                    ProjectMember copy = new ProjectMember();
+                    copy.setProjectId(targetProjectId);
+                    copy.setPersonName(source.getPersonName());
+                    copy.setOrganizationName(source.getOrganizationName());
+                    copy.setRoleName(source.getRoleName());
+                    copy.setNotes(source.getNotes());
+                    return copy;
+                })
+                .toList();
+
+        if (!copies.isEmpty()) {
+            projectMemberRepository.saveAll(copies);
+        }
+    }
+
+    @Transactional
     public MemberResponse create(UUID projectId, MemberRequest request) {
         ProjectMember member = new ProjectMember();
         member.setProjectId(projectId);
