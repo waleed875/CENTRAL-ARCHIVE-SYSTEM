@@ -417,12 +417,19 @@ public class PackageArchiveService {
                     String path = resolveFileEntryPath(file);
                     String checksum = textOrNull(file, "checksum_sha256");
                     Long size = file.hasNonNull("size_bytes") ? file.path("size_bytes").asLong() : null;
+                    String originalName = file.path("original_name")
+                            .asText(file.path("name").asText(path));
+                    String nameExtension = extensionFromPath(originalName);
                     String extension = textOrNull(file, "extension");
+
                     if (extension == null) {
-                        extension = extensionFromPath(
-                                file.path("original_name").asText(file.path("name").asText(path))
-                        );
+                        extension = nameExtension;
+                    } else if (nameExtension != null
+                            && !FileContentInspector.extensionsEquivalent(extension, nameExtension)) {
+                        errors.add(
+                                "Manifest extension does not match original filename for: " + path);
                     }
+
                     if (expected.put(path, new ExpectedFile(checksum, size, extension)) != null) {
                         errors.add("Duplicate file path in manifest: " + path);
                     }
