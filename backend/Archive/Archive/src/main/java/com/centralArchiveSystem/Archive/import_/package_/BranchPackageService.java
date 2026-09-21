@@ -293,14 +293,24 @@ public class BranchPackageService {
     }
 
     @Async
-    public void importPackage(UUID id, PackageImportRequest request, UUID importedBy) {
+    public void importPackage(UUID id,
+                              PackageImportRequest request,
+                              UUID importedBy,
+                              UUID operationId) {
         BranchPackage pkg = findPackage(id);
         if (pkg.getStatus() != BranchPackage.PackageStatus.VERIFIED) {
             log.warn("Package {} is not verified; import cancelled", id);
             return;
         }
 
-        ImportOperation operation = importOperationService.create(id, importedBy);
+        ImportOperation operation = importOperationService.getById(operationId);
+        if (!operation.getPackageId().equals(id)
+                || !operation.getImportedBy().equals(importedBy)
+                || operation.getStatus() != ImportOperation.Status.STARTED) {
+            throw new IllegalStateException(
+                    "Import operation does not match package/import actor or is not active");
+        }
+
         int importedProjects = 0;
         int partialProjects = 0;
         int failedProjects = 0;
