@@ -154,6 +154,67 @@ class FileServiceTest {
     }
 
     @Test
+    void invalidSourceTypeIsRejectedBeforeObjectStorageUpload() {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory category =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setCode("DOCS");
+        category.setName("Documents");
+        category.setIsActive(true);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+
+        MockMultipartFile multipart = new MockMultipartFile(
+                "file",
+                "notes.txt",
+                "text/plain",
+                "hello archive".getBytes(StandardCharsets.UTF_8)
+        );
+
+        var request = new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
+                categoryId,
+                null,
+                null,
+                "UNKNOWN",
+                null
+        );
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.uploadFile(projectId, multipart, request, UUID.randomUUID())
+        );
+
+        verifyNoInteractions(minioService);
+        verify(fileRepository, never()).save(any());
+    }
+
+    @Test
     void duplicateChecksumIsRejectedBeforeObjectStorageUpload() throws Exception {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
