@@ -1,7 +1,8 @@
 package com.centralArchiveSystem.Archive.project.member;
 
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
-import com.centralArchiveSystem.Archive.project.member.dto.MemberRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberUpdateRequest;
 import com.centralArchiveSystem.Archive.project.member.dto.MemberResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -31,7 +32,7 @@ public class ProjectMemberController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<MemberResponse>> create(
             @PathVariable UUID projectId,
-            @Valid @RequestBody MemberRequest request) {
+            @Valid @RequestBody MemberCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(projectMemberService.create(projectId, request), "Member added"));
     }
@@ -41,7 +42,7 @@ public class ProjectMemberController {
     public ResponseEntity<ApiResponse<MemberResponse>> update(
             @PathVariable UUID projectId,
             @PathVariable UUID id,
-            @Valid @RequestBody MemberRequest request) {
+            @RequestBody MemberUpdateRequest request) {
         return ResponseEntity.ok(
                 ApiResponse.success(projectMemberService.update(projectId, id, request), "Member updated"));
     }
@@ -52,6 +53,6 @@ public class ProjectMemberController {
             @PathVariable UUID projectId,
             @PathVariable UUID id) {
         projectMemberService.delete(projectId, id);
-        return ResponseEntity.ok(ApiResponse.success(null, "Member removed"));
+        return ResponseEntity.noContent().build();
     }
 }
