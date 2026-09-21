@@ -179,7 +179,14 @@ CREATE TABLE import.branch_packages (
     files_count INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(40) NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED','VERIFIED','IMPORTED','FAILED','DUPLICATE')),
     received_by UUID REFERENCES core.users(id),
-    received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    verified_at TIMESTAMPTZ,
+    imported_at TIMESTAMPTZ,
+    error_message TEXT,
+    manifest_data TEXT,
+    target_organization_id UUID REFERENCES core.organizations(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ
 );
 
 CREATE TABLE import.package_projects (
@@ -187,7 +194,15 @@ CREATE TABLE import.package_projects (
     package_id UUID NOT NULL REFERENCES import.branch_packages(id) ON DELETE CASCADE,
     project_id UUID NOT NULL REFERENCES project.projects(id),
     local_project_uuid UUID NOT NULL,
+    source_project_number VARCHAR(80),
+    project_name VARCHAR(250),
+    project_year INTEGER,
     import_status VARCHAR(40) NOT NULL DEFAULT 'IMPORTED' CHECK (import_status IN ('IMPORTED','SKIPPED','FAILED','DUPLICATE')),
+    import_error TEXT,
+    files_count INTEGER NOT NULL DEFAULT 0,
+    files_imported INTEGER NOT NULL DEFAULT 0,
+    files_failed INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (package_id, project_id)
 );
 
