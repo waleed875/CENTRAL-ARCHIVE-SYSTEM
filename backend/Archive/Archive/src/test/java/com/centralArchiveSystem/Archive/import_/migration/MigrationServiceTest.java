@@ -33,7 +33,7 @@ class MigrationServiceTest {
         source.setSourceType("POSTGRESQL");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
-        when(batches.save(batch)).thenReturn(batch);
+        when(batches.saveAndFlush(batch)).thenReturn(batch);
         when(sources.findById(batch.getMigrationSourceId())).thenReturn(Optional.of(source));
 
         MigrationService service = new MigrationService(sources, batches, execution, LEGACY_URL, true);
@@ -53,7 +53,7 @@ class MigrationServiceTest {
         assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
         assertNotNull(batch.getStartedAt());
         assertNull(batch.getCompletedAt());
-        verify(batches).save(batch);
+        verify(batches).saveAndFlush(batch);
         verify(execution).execute(id);
     }
 
@@ -138,6 +138,53 @@ class MigrationServiceTest {
         assertEquals(MigrationBatch.Status.PLANNED, batch.getStatus());
         verify(sources, never()).findById(any());
         verify(batches, never()).save(any());
+        verify(execution, never()).execute(any());
+    }
+
+    @Test
+    void runBatchRejectsWhenAnotherBatchIsAlreadyRunning() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-CONCURRENT");
+        batch.setStatus(MigrationBatch.Status.PLANNED);
+
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setSourceType("POSTGRESQL");
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+        when(batches.existsByStatus(MigrationBatch.Status.RUNNING)).thenReturn(true);
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, LEGACY_URL, true);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.runBatch(
+                        id,
+                        new MigrationRunRequest(
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        null,
+                                        Map.of(),
+                                        null
+                                )
+                        )
+                )
+        );
+
+        assertTrue(error.getMessage().contains("already RUNNING"));
+        assertEquals(MigrationBatch.Status.PLANNED, batch.getStatus());
+        verify(batches, never()).saveAndFlush(any());
         verify(execution, never()).execute(any());
     }
 
