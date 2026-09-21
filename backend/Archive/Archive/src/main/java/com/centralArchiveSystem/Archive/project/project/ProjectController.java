@@ -64,7 +64,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Update a project")
     public ResponseEntity<ApiResponse<ProjectResponse>> update(@PathVariable UUID id,
-                                                   @Valid @RequestBody ProjectRequest request) {
+                                                   @Valid @RequestBody ProjectUpdateRequest request) {
         ProjectResponse response = projectService.update(id, request);
         return ResponseEntity.ok(ApiResponse.success(response, "Project updated successfully"));
     }
