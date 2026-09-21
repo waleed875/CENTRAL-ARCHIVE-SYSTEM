@@ -1038,8 +1038,10 @@ Request (multipart/form-data):
   category_id: "uuid"
   type_id: "uuid?"
   confidentiality_level_id: "uuid?"
-  source_type: "MANUAL|BRANCH_PACKAGE|MIGRATION?"
-  source_reference: "string?"
+
+Server-controlled provenance:
+  source_type = "MANUAL"
+  source_reference = null
 
 Response: 201 Created { file metadata object }
 
