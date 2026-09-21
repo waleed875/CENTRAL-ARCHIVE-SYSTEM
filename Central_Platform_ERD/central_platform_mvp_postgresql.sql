@@ -216,6 +216,25 @@ CREATE TABLE import.import_operations (
     completed_at TIMESTAMPTZ
 );
 
+CREATE TABLE import.export_packages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    package_uuid UUID NOT NULL UNIQUE,
+    package_name VARCHAR(300) NOT NULL,
+    schema_version VARCHAR(30) NOT NULL,
+    source_organization_id UUID REFERENCES core.organizations(id),
+    source_username VARCHAR(120),
+    projects_count INTEGER NOT NULL DEFAULT 0,
+    files_count INTEGER NOT NULL DEFAULT 0,
+    package_hash CHAR(64),
+    manifest_hash CHAR(64),
+    package_object_key TEXT,
+    manifest_data TEXT,
+    status VARCHAR(40) NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED','EXPORTED','FAILED')),
+    exported_by UUID REFERENCES core.users(id),
+    exported_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE import.migration_sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(200) NOT NULL,
