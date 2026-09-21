@@ -3,6 +3,8 @@ package com.centralArchiveSystem.Archive.import_.package_;
 import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
@@ -29,11 +31,14 @@ public class BranchPackageController {
 
     private final BranchPackageService branchPackageService;
     private final CurrentUserService currentUserService;
+    private final ImportOperationService importOperationService;
 
     public BranchPackageController(BranchPackageService branchPackageService,
-                                   CurrentUserService currentUserService) {
+                                   CurrentUserService currentUserService,
+                                   ImportOperationService importOperationService) {
         this.branchPackageService = branchPackageService;
         this.currentUserService = currentUserService;
+        this.importOperationService = importOperationService;
     }
 
     @GetMapping
@@ -89,12 +94,23 @@ public class BranchPackageController {
             @Valid @RequestBody PackageImportRequest request) {
 
         branchPackageService.assertImportable(id);
-        branchPackageService.importPackage(id, request, currentUserService.userId());
+
+        UUID importedBy = currentUserService.userId();
+        ImportOperation operation = importOperationService.create(id, importedBy);
+
+        branchPackageService.importPackage(
+                id,
+                request,
+                importedBy,
+                operation.getId()
+        );
+
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(
                     Map.of(
-                        "message", "Import process started for package: " + id,
-                        "status", "ACCEPTED"
+                        "import_id", operation.getId().toString(),
+                        "status", ImportOperation.Status.STARTED.name(),
+                        "message", "Import process started for package: " + id
                     ),
                     "Import process started"
                 ));
