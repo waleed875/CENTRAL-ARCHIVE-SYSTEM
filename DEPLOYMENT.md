@@ -161,7 +161,35 @@ Recommended probes:
 - liveness: `/actuator/health/liveness`
 - readiness: `/actuator/health/readiness`
 
-## 10. Release checklist
+## 10. Audit retention and immutability
+
+The application audit table is append-only. Flyway migration V8 installs a
+PostgreSQL trigger that rejects normal `UPDATE` and `DELETE` operations on
+`audit.audit_logs`.
+
+Choose the legal/organizational retention period before production rollout.
+A seven-year retention window is a reasonable operational default only when it
+matches the organization's policy; it is not hard-coded by the application.
+
+Retention deletion must be executed as a controlled database maintenance
+operation after the relevant PostgreSQL backup has been verified. Example for a
+seven-year policy:
+
+```sql
+BEGIN;
+SET LOCAL app.audit_retention_purge = 'on';
+
+DELETE FROM audit.audit_logs
+WHERE created_at < now() - interval '7 years';
+
+COMMIT;
+```
+
+Do not expose the retention-purge setting through the application API. Record
+the maintenance ticket/change identifier, purge boundary, row count, operator,
+and backup reference outside the table being purged.
+
+## 11. Release checklist
 
 - GitHub Actions backend CI is green.
 - Flyway migrations pass against clean PostgreSQL.
@@ -175,7 +203,7 @@ Recommended probes:
 - MinIO backup/replication is healthy.
 - restore procedure has been tested recently.
 
-## 11. Rollback
+## 12. Rollback
 
 If a release includes only backward-compatible migrations, the previous application may be redeployed if its JPA model still validates against the newer schema.
 
