@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -213,6 +215,7 @@ public class ExportService {
                         Files.size(tempPackage)
                 );
             }
+            registerRollbackObjectCleanup(minioConfig.getBucket(), packageObjectKey);
 
             saved.setPackageHash(packageHash);
             saved.setStatus("EXPORTED");
@@ -275,6 +278,32 @@ public class ExportService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to download export package: " + e.getMessage(), e);
         }
+    }
+
+    private void registerRollbackObjectCleanup(String bucket, String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        if (status != TransactionSynchronization.STATUS_ROLLED_BACK) {
+                            return;
+                        }
+                        try {
+                            minioService.deleteFile(bucket, objectKey);
+                        } catch (Exception cleanupError) {
+                            log.error(
+                                    "Failed to remove export object after transaction rollback: {}",
+                                    objectKey,
+                                    cleanupError
+                            );
+                        }
+                    }
+                }
+        );
     }
 
     private boolean canReadExportManifest(ProjectExport export) {
