@@ -19,9 +19,11 @@ import java.util.UUID;
 public class ExportController {
 
     private final ExportService exportService;
+    private final CurrentUserService currentUserService;
 
-    public ExportController(ExportService exportService) {
+    public ExportController(ExportService exportService, CurrentUserService currentUserService) {
         this.exportService = exportService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping
