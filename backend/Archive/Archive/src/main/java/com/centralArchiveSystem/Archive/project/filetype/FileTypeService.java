@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
 import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeRequest;
 import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeResponse;
+import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeUpdateRequest;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -31,27 +32,8 @@ public class FileTypeService {
 
     public Page<FileTypeResponse> list(UUID categoryId, String search, Boolean isActive, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("name").ascending());
-        Page<FileType> types;
-
-        if (search != null && !search.isBlank()) {
-            types = fileTypeRepository.searchByNameOrCode(search, pageable);
-        } else if (categoryId != null) {
-            types = new org.springframework.data.domain.PageImpl<>(
-                    fileTypeRepository.findByCategoryId(categoryId), pageable, fileTypeRepository.findByCategoryId(categoryId).size());
-        } else {
-            types = fileTypeRepository.findAll(pageable);
-        }
-
-        if (isActive != null) {
-            types = types.getContent().stream()
-                    .filter(t -> t.getIsActive().equals(isActive))
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        return types.map(this::toResponse);
+        return fileTypeRepository.searchFiltered(search, categoryId, isActive, pageable)
+                .map(this::toResponse);
     }
 
     public List<FileTypeResponse> listByCategory(UUID categoryId, Boolean isActive) {
@@ -92,26 +74,25 @@ public class FileTypeService {
     }
 
     @Transactional
-    public FileTypeResponse update(UUID id, FileTypeRequest request) {
+    public FileTypeResponse update(UUID id, FileTypeUpdateRequest request) {
         FileType fileType = fileTypeRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + id));
 
-        if (request.categoryId() != null) {
-            fileCategoryRepository.findById(request.categoryId())
-                    .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
-            fileType.setCategoryId(request.categoryId());
+        if (request.name() != null && !request.name().isBlank()) {
+            fileType.setName(request.name());
         }
-
-        if (request.code() != null && !request.code().isBlank() &&
-            fileTypeRepository.existsByCodeAndIdNot(request.code(), id)) {
-            throw new IllegalArgumentException("File type code already exists: " + request.code());
+        if (request.defaultExtension() != null && !request.defaultExtension().isBlank()) {
+            fileType.setDefaultExtension(request.defaultExtension());
         }
-
-        if (request.code() != null) fileType.setCode(request.code());
-        if (request.name() != null) fileType.setName(request.name());
-        if (request.defaultExtension() != null) fileType.setDefaultExtension(request.defaultExtension());
-        if (request.description() != null) fileType.setDescription(request.description());
-        if (request.isActive() != null) fileType.setIsActive(request.isActive());
+        if (request.description() != null) {
+            fileType.setDescription(request.description());
+        }
+        if (request.isActive() != null) {
+            if (!request.isActive() && fileTypeRepository.countActiveFilesByTypeId(id) > 0) {
+                throw new IllegalStateException("Cannot deactivate file type with active files");
+            }
+            fileType.setIsActive(request.isActive());
+        }
 
         FileType saved = fileTypeRepository.save(fileType);
         return toResponse(saved);
@@ -122,12 +103,13 @@ public class FileTypeService {
         FileType fileType = fileTypeRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + id));
 
-        long filesCount = fileTypeRepository.countFilesByTypeId(id);
-        if (filesCount > 0) {
-            throw new IllegalStateException("Cannot delete file type with existing files. Remove files first.");
+        long activeFilesCount = fileTypeRepository.countActiveFilesByTypeId(id);
+        if (activeFilesCount > 0) {
+            throw new IllegalStateException("Cannot deactivate file type with active files");
         }
 
-        fileTypeRepository.delete(fileType);
+        fileType.setIsActive(false);
+        fileTypeRepository.save(fileType);
     }
 
     private FileTypeResponse toResponse(FileType fileType) {
