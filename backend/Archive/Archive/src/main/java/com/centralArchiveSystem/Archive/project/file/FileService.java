@@ -172,7 +172,7 @@ public class FileService {
     }
 
     @Transactional
-    public FileResponse updateFileMetadata(UUID id, FileUploadRequest request) {
+    public FileResponse updateFileMetadata(UUID id, FileMetadataUpdateRequest request) {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
 
