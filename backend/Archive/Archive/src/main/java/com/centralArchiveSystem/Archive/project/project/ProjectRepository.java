@@ -79,6 +79,70 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             @Param("projectUid") UUID projectUid,
             @Param("maxLevelOrder") Integer maxLevelOrder);
 
+
+    @Query("""
+           SELECT COUNT(p) FROM Project p
+           WHERE p.isLatestVersion = true
+             AND (:organizationId IS NULL OR p.organizationId = :organizationId)
+             AND (
+                 p.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = p.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+           """)
+    long countAccessibleLatest(
+            @Param("organizationId") UUID organizationId,
+            @Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT p.status, COUNT(p) FROM Project p
+           WHERE p.isLatestVersion = true
+             AND (:organizationId IS NULL OR p.organizationId = :organizationId)
+             AND (
+                 p.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = p.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+           GROUP BY p.status
+           """)
+    List<Object[]> countAccessibleByStatus(
+            @Param("organizationId") UUID organizationId,
+            @Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT p.year, COUNT(p) FROM Project p
+           WHERE p.isLatestVersion = true
+             AND (:organizationId IS NULL OR p.organizationId = :organizationId)
+             AND (
+                 p.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = p.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+           GROUP BY p.year
+           ORDER BY p.year DESC
+           """)
+    List<Object[]> countAccessibleByYear(
+            @Param("organizationId") UUID organizationId,
+            @Param("maxLevelOrder") Integer maxLevelOrder);
+
     @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.isLatestVersion = true")
     long countByOrganizationId(@Param("organizationId") UUID organizationId);
 
