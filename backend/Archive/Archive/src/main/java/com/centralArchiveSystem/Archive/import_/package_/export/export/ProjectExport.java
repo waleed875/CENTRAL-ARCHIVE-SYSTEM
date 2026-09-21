@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.package_.export.export;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -94,9 +95,11 @@ public class ProjectExport {
     public String getManifestHash() { return manifestHash; }
     public void setManifestHash(String manifestHash) { this.manifestHash = manifestHash; }
 
+    @JsonIgnore
     public String getPackageObjectKey() { return packageObjectKey; }
     public void setPackageObjectKey(String packageObjectKey) { this.packageObjectKey = packageObjectKey; }
 
+    @JsonIgnore
     public String getManifestData() { return manifestData; }
     public void setManifestData(String manifestData) { this.manifestData = manifestData; }
 
