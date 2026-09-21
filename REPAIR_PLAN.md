@@ -36,63 +36,63 @@ Status: IN PROGRESS
 - [x] Redact password/token/authorization/secret fields from audit payloads.
 - [x] Resolve the authenticated user centrally instead of trusting client-supplied usernames.
 - [x] Populate uploaded_by/deleted_by and operation actor fields from authenticated identity; database UUID alignment for remaining actor columns continues in Phase 2.
-- [ ] Add role and object-level authorization tests.
-- [ ] Add organization/confidentiality enforcement.
+- [ ] Add broader role and object-level integration tests (confidentiality unit coverage is in place).
+- [x] Add confidentiality enforcement for project/file read paths; organization visibility remains intentionally global for central users per the documented MVP workflow.
 
 ## Phase 2 - Database and Entity Alignment
 
 - [x] Align `project_uid` type and constraints between PostgreSQL and JPA.
 - [x] Remove the incorrect single-column unique constraint on `project_uid`.
 - [x] Enforce `UNIQUE(project_uid, version_no)`.
-- [ ] Align user-reference columns (`created_by`, `approved_by`, etc.) with Java types.
-- [ ] Align branch package IDs and terminal IDs with the PostgreSQL schema.
-- [ ] Align `PackageProject` fields with the real import lifecycle.
+- [x] Align project/package/export actor references with authenticated user UUIDs.
+- [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
+- [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
 - [ ] Replace schema drift via `ddl-auto=update` with versioned migrations.
 - [ ] Set production Hibernate mode to `validate`.
 
 ## Phase 3 - Authorization and Confidentiality
 
-- [ ] Keep the documented seven-role MVP model; do not add a detailed permissions subsystem yet.
-- [ ] Add a centralized authorization service for documented role checks and confidentiality checks.
-- [ ] Enforce `max_confidentiality_level_id` on project/file search, view, and download.
-- [ ] Apply confidentiality filtering in list/search results as well as direct get/download endpoints.
-- [ ] Review organization visibility rules against the documented central-user workflow before enforcing organization isolation.
-- [ ] Review `read_only` visibility against the documented allowed-data rule.
+- [x] Keep the documented seven-role MVP model; no undocumented permissions subsystem added.
+- [x] Add centralized confidentiality authorization while keeping role checks in documented method security.
+- [x] Enforce `max_confidentiality_level_id` on project/file list, search, view, and download.
+- [x] Apply confidentiality filtering in PostgreSQL list/search queries and direct get/download checks.
+- [x] Review organization visibility rules; do not enforce source-organization isolation for central users in the current MVP.
+- [x] Allow `read_only` users to view/download permitted data while retaining no write permissions.
 - [ ] Add direct-object-reference tests for project and file access.
 
 ## Phase 4 - Documented Offline Package Workflow
 
 The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system receives a real package file from an offline terminal, not only a JSON manifest.
 
-- [ ] Change `POST /api/v1/packages/receive` to accept the documented package file (for example `.pkg`) instead of a manifest-only JSON upload.
-- [ ] Store the received package temporarily or in MinIO before import.
-- [ ] Extract the manifest from the received package and validate its schema version.
-- [ ] Calculate `package_hash` from the complete received package; keep `manifest_hash` separate.
-- [ ] Detect duplicates using both `package_uuid` and `package_hash`.
-- [ ] Make `POST /packages/{id}/verify` re-read the stored package, re-extract the manifest, and verify every contained file checksum.
-- [ ] Fail verification when package hash, manifest, schema compatibility, or any file checksum is invalid.
-- [ ] Keep the documented states `RECEIVED`, `VERIFIED`, `IMPORTED`, `FAILED`, and `DUPLICATE`.
-- [ ] Allow import only from `VERIFIED`.
-- [ ] Create an `import_operations` row with `STARTED`, then complete it as `SUCCESS`, `PARTIAL`, or `FAILED`.
-- [ ] Import projects with status `IMPORTED`; they must not become approved or archived automatically.
-- [ ] Store imported files in MinIO and create `package_projects` provenance links.
-- [ ] Record the authenticated central user as `received_by` / `imported_by`.
-- [ ] Stream package/file content where practical instead of embedding full file bodies as Base64 inside manifest JSON.
-- [ ] Preserve the original package or an immutable package object for traceability according to retention policy.
+- [x] Change `POST /api/v1/packages/receive` to accept a real `.pkg` package file instead of manifest-only JSON.
+- [x] Store the original received package in MinIO before verification/import.
+- [x] Extract `manifest.json` from the package and validate supported schema versions.
+- [x] Calculate full-package SHA-256 separately from `manifest_hash`.
+- [x] Reject duplicate receives using both `package_uuid` and `package_hash`.
+- [x] Re-read the stored package during verify, re-extract the manifest, and verify each file checksum and size.
+- [x] Fail verification on package hash, manifest hash, schema compatibility, missing files, checksum mismatch, or size mismatch.
+- [x] Keep the documented package states in the entity/schema.
+- [x] Reject import requests unless the package is `VERIFIED`.
+- [x] Create and complete `import_operations` with `STARTED`, `SUCCESS`, `PARTIAL`, or `FAILED`.
+- [x] Import projects with status `IMPORTED` only.
+- [x] Stream imported files into MinIO and create package/project provenance links after central project creation.
+- [x] Record authenticated central user UUIDs for receive/import operations.
+- [x] Remove Base64 file bodies from the package contract and stream archive entries to/from MinIO.
+- [x] Preserve the original imported package object in MinIO; formal retention policy remains pending.
 
 ## Phase 5 - File Handling
 
-- [ ] Stream SHA-256 calculation for uploads.
-- [ ] Configure maximum upload/request sizes.
+- [x] Stream SHA-256 calculation for uploads.
+- [x] Configure environment-driven maximum package upload/request sizes.
 - [ ] Validate allowed file types using content inspection, not filename only.
-- [ ] Sanitize download filenames and content disposition.
-- [ ] Ensure soft-deleted files cannot be downloaded through direct IDs.
-- [ ] Add object-storage reconciliation for database/storage failures.
+- [x] Use UTF-8-safe `Content-Disposition` generation for downloads.
+- [x] Ensure soft-deleted files cannot be downloaded through direct IDs.
+- [x] Remove newly uploaded MinIO objects when subsequent database persistence fails; broader reconciliation job remains future work.
 
 ## Phase 6 - Audit Reliability
 
 - [x] Redact common sensitive fields from serialized audit results.
-- [ ] Store the real user UUID in audit records.
+- [x] Store the real authenticated user UUID in AOP-generated audit records.
 - [ ] Capture request IP safely behind configured proxies.
 - [ ] Make audit serialization bounded to avoid huge payloads.
 - [ ] Ensure audit logging cannot recursively expose credentials or file contents.
@@ -105,9 +105,19 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [ ] Add project workflow/versioning tests.
 - [ ] Add PostgreSQL integration tests with Testcontainers.
 - [ ] Add MinIO integration tests.
-- [ ] Add package import/export integrity tests.
-- [ ] Add GitHub Actions for build + tests.
+- [x] Add package verification and export/import round-trip integrity tests.
+- [x] Add GitHub Actions for backend compile and focused unit tests.
 - [ ] Add dependency/security scanning.
+
+### Additional completed API alignment
+
+- [x] Make file metadata PATCH partial with a dedicated update DTO.
+- [x] Make project PATCH partial as documented.
+- [x] Restrict UNDER_REVIEW project edits to description/notes.
+- [x] Require new versions instead of editing APPROVED/ARCHIVED projects.
+- [x] Create real streamed export .pkg archives and make them downloadable.
+- [x] Validate project/file confidentiality before package export.
+- [x] Add stable archive instance UUID configuration for package manifests.
 
 ## Phase 8 - Production Configuration
 
