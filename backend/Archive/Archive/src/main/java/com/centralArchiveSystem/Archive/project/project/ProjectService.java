@@ -40,6 +40,13 @@ public class ProjectService {
                 organizationId,
                 status,
                 year,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
                 maxLevelOrder,
                 pageable
         ).map(ProjectResponse::fromEntity);
@@ -291,6 +298,13 @@ public class ProjectService {
                 request.organizationId(),
                 request.status(),
                 request.year(),
+                request.projectTypeId(),
+                request.confidentialityLevelId(),
+                request.sourceType(),
+                request.projectUid(),
+                request.createdBy(),
+                request.approvedBy(),
+                request.isLatestVersion(),
                 maxLevelOrder,
                 pageable
         ).map(ProjectResponse::fromEntity);
