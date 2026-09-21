@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.metamodel.EntityType;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -18,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -97,12 +100,21 @@ public class AuditAspect {
                         newValues,
                         executionTime,
                         status,
-                        errorMessage
+                        errorMessage,
+                        currentRemoteAddress()
                 );
             } catch (Exception e) {
                 logger.error("Failed to create audit log", e);
             }
         }
+    }
+
+    private String currentRemoteAddress() {
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes)) {
+            return null;
+        }
+        HttpServletRequest request = attributes.getRequest();
+        return request != null ? request.getRemoteAddr() : null;
     }
 
     private Actor getCurrentActor() {
