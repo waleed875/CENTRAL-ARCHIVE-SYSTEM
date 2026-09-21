@@ -1,6 +1,9 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.ConflictException;
+import com.centralArchiveSystem.Archive.core.organization.Organization;
+import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.config.MinioConfig;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
@@ -57,6 +60,8 @@ public class BranchPackageService {
     private final MinioConfig minioConfig;
     private final PackageArchiveService packageArchiveService;
     private final ImportOperationService importOperationService;
+    private final OrganizationRepository organizationRepository;
+    private final ConfidentialityAccessService confidentialityAccessService;
     private final TransactionTemplate projectImportTransaction;
 
     public BranchPackageService(BranchPackageRepository branchPackageRepository,
@@ -69,6 +74,8 @@ public class BranchPackageService {
                                 MinioConfig minioConfig,
                                 PackageArchiveService packageArchiveService,
                                 ImportOperationService importOperationService,
+                                OrganizationRepository organizationRepository,
+                                ConfidentialityAccessService confidentialityAccessService,
                                 PlatformTransactionManager transactionManager) {
         this.branchPackageRepository = branchPackageRepository;
         this.packageProjectRepository = packageProjectRepository;
@@ -80,6 +87,8 @@ public class BranchPackageService {
         this.minioConfig = minioConfig;
         this.packageArchiveService = packageArchiveService;
         this.importOperationService = importOperationService;
+        this.organizationRepository = organizationRepository;
+        this.confidentialityAccessService = confidentialityAccessService;
         this.projectImportTransaction = new TransactionTemplate(transactionManager);
         this.projectImportTransaction.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -292,11 +301,67 @@ public class BranchPackageService {
     }
 
     @Transactional(readOnly = true)
-    public void assertImportable(UUID id) {
+    public void assertImportable(UUID id, PackageImportRequest request) {
         BranchPackage pkg = findPackage(id);
         if (pkg.getStatus() != BranchPackage.PackageStatus.VERIFIED) {
             throw new IllegalStateException(
                     "Package must be VERIFIED before import; current status: " + pkg.getStatus());
+        }
+        if (request == null) {
+            throw new IllegalArgumentException("Package import request is required");
+        }
+
+        try {
+            JsonNode manifest = objectMapper.readTree(pkg.getManifestData());
+            JsonNode projects = manifest.path("projects");
+            if (!projects.isArray()) {
+                throw new IllegalArgumentException("Stored manifest has no projects array");
+            }
+
+            Map<UUID, UUID> mapping = request.organizationMapping() != null
+                    ? request.organizationMapping()
+                    : Map.of();
+
+            for (JsonNode projectNode : projects) {
+                UUID sourceOrgId = sourceOrganizationId(projectNode, pkg);
+                if (sourceOrgId == null) {
+                    throw new IllegalArgumentException(
+                            "Project has no source organization that can be mapped");
+                }
+
+                UUID targetOrgId = mapping.get(sourceOrgId);
+                if (targetOrgId == null) {
+                    throw new IllegalArgumentException(
+                            "Missing organization mapping for source organization: " + sourceOrgId);
+                }
+
+                Organization targetOrganization = organizationRepository.findById(targetOrgId)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Target organization does not exist: " + targetOrgId));
+                if (!Boolean.TRUE.equals(targetOrganization.getIsActive())) {
+                    throw new IllegalArgumentException(
+                            "Target organization is inactive: " + targetOrgId);
+                }
+
+                UUID projectLevelId = optionalUuid(projectNode, "confidentiality_level_id");
+                if (projectLevelId == null) {
+                    projectLevelId = request.confidentialityLevelId();
+                }
+                confidentialityAccessService.requireReadAccess(projectLevelId);
+
+                JsonNode files = projectNode.path("files");
+                if (files.isArray()) {
+                    for (JsonNode fileNode : files) {
+                        UUID fileLevelId = optionalUuid(fileNode, "confidentiality_level_id");
+                        if (fileLevelId == null) {
+                            fileLevelId = projectLevelId;
+                        }
+                        confidentialityAccessService.requireReadAccess(fileLevelId);
+                    }
+                }
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("Stored package manifest is invalid", e);
         }
     }
 
@@ -347,9 +412,6 @@ public class BranchPackageService {
             if (!projects.isArray()) {
                 throw new IllegalStateException("Stored manifest has no projects array");
             }
-
-            UUID targetOrgId = request.targetOrganizationId();
-            pkg.setTargetOrganizationId(targetOrgId);
 
             for (JsonNode projectNode : projects) {
                 List<StoredObject> projectObjects = new ArrayList<>();
@@ -454,24 +516,15 @@ public class BranchPackageService {
                     existing.get(),
                     sourceProjectUuid,
                     projectNode,
-                    request.skipDuplicates()
-                            ? PackageProject.ImportStatus.SKIPPED
-                            : PackageProject.ImportStatus.DUPLICATE
+                    PackageProject.ImportStatus.SKIPPED
             );
-
-            if (request.skipDuplicates()) {
-                packageProjectRepository.save(link);
-                log.info("Skipped duplicate imported project: source={}, existing={}",
-                        sourceProjectUuid, existing.get().getId());
-                return new ImportProjectResult(false, false, existing.get().getId());
-            }
-
             packageProjectRepository.save(link);
-            throw new IllegalStateException(
-                    "Project already exists for organization/year/number: " + projectNumber);
+            log.info("Skipped duplicate imported project: source={}, existing={}",
+                    sourceProjectUuid, existing.get().getId());
+            return new ImportProjectResult(false, false, existing.get().getId());
         }
 
-        Project project = buildProject(projectNode, resolvedOrgId, pkg, importedBy);
+        Project project = buildProject(projectNode, resolvedOrgId, pkg, request, importedBy);
         Project savedProject = projectRepository.save(project);
         createProjectMembers(projectNode, savedProject.getId());
 
@@ -487,6 +540,7 @@ public class BranchPackageService {
                     StoredObject storedObject = importFile(
                             fileNode,
                             savedProject.getId(),
+                            savedProject.getConfidentialityLevelId(),
                             pkg,
                             importedBy
                     );
@@ -531,6 +585,7 @@ public class BranchPackageService {
     private Project buildProject(JsonNode projectNode,
                                  UUID organizationId,
                                  BranchPackage pkg,
+                                 PackageImportRequest request,
                                  UUID createdBy) {
         Project project = new Project();
         project.setProjectUid(UUID.randomUUID());
@@ -548,7 +603,11 @@ public class BranchPackageService {
         project.setTableOfContents(optionalText(projectNode, "table_of_contents"));
         project.setKeywords(optionalText(projectNode, "keywords"));
         project.setProjectTypeId(optionalUuid(projectNode, "project_type_id"));
-        project.setConfidentialityLevelId(optionalUuid(projectNode, "confidentiality_level_id"));
+        UUID projectLevelId = optionalUuid(projectNode, "confidentiality_level_id");
+        if (projectLevelId == null) {
+            projectLevelId = request.confidentialityLevelId();
+        }
+        project.setConfidentialityLevelId(projectLevelId);
         project.setStatus(Project.ProjectStatus.IMPORTED);
         project.setDataCompletionStatus(Project.DataCompletionStatus.COMPLETE);
         project.setSourceType(Project.SourceType.BRANCH_PACKAGE);
@@ -583,6 +642,7 @@ public class BranchPackageService {
 
     private StoredObject importFile(JsonNode fileNode,
                                     UUID projectId,
+                                    UUID projectConfidentialityLevelId,
                                     BranchPackage pkg,
                                     UUID uploadedBy) throws Exception {
         String originalName = fileNode.path("original_name").asText(
@@ -625,7 +685,11 @@ public class BranchPackageService {
             file.setProjectId(projectId);
             file.setCategoryId(optionalUuid(fileNode, "category_id"));
             file.setTypeId(optionalUuid(fileNode, "type_id"));
-            file.setConfidentialityLevelId(optionalUuid(fileNode, "confidentiality_level_id"));
+            UUID fileLevelId = optionalUuid(fileNode, "confidentiality_level_id");
+            if (fileLevelId == null) {
+                fileLevelId = projectConfidentialityLevelId;
+            }
+            file.setConfidentialityLevelId(fileLevelId);
             file.setOriginalName(originalName);
             file.setStoredName(storedName);
             file.setBucketName(bucket);
@@ -695,17 +759,13 @@ public class BranchPackageService {
                 ? request.organizationMapping()
                 : Map.of();
 
+        UUID sourceOrgId = sourceOrganizationId(projectNode, pkg);
+        return sourceOrgId != null ? mapping.get(sourceOrgId) : null;
+    }
+
+    private UUID sourceOrganizationId(JsonNode projectNode, BranchPackage pkg) {
         UUID projectSourceOrg = optionalUuid(projectNode, "organization_id");
-        if (projectSourceOrg != null && mapping.containsKey(projectSourceOrg)) {
-            return mapping.get(projectSourceOrg);
-        }
-
-        if (pkg.getSourceOrganizationId() != null
-                && mapping.containsKey(pkg.getSourceOrganizationId())) {
-            return mapping.get(pkg.getSourceOrganizationId());
-        }
-
-        return request.targetOrganizationId();
+        return projectSourceOrg != null ? projectSourceOrg : pkg.getSourceOrganizationId();
     }
 
     @Transactional(readOnly = true)
