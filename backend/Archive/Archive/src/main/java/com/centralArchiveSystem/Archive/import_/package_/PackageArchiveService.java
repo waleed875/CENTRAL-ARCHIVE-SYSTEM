@@ -31,8 +31,20 @@ public class PackageArchiveService {
     private static final String MANIFEST_FILE_NAME = "manifest.json";
     private static final int BUFFER_SIZE = 8192;
     private static final int MAX_MANIFEST_BYTES = 10 * 1024 * 1024;
+    private static final long DEFAULT_MAX_EXPANDED_FILE_BYTES = 20L * 1024 * 1024 * 1024;
+    private static final long DEFAULT_MAX_EXPANDED_TOTAL_BYTES = 40L * 1024 * 1024 * 1024;
+    private static final int DEFAULT_MAX_ARCHIVE_ENTRIES = 100_000;
 
     private final ObjectMapper objectMapper;
+
+    @Value("${archive.packages.max-expanded-file-bytes:21474836480}")
+    private long maxExpandedFileBytes = DEFAULT_MAX_EXPANDED_FILE_BYTES;
+
+    @Value("${archive.packages.max-expanded-total-bytes:42949672960}")
+    private long maxExpandedTotalBytes = DEFAULT_MAX_EXPANDED_TOTAL_BYTES;
+
+    @Value("${archive.packages.max-archive-entries:100000}")
+    private int maxArchiveEntries = DEFAULT_MAX_ARCHIVE_ENTRIES;
     private final Set<String> supportedSchemaVersions;
 
     public PackageArchiveService(
@@ -89,9 +101,17 @@ public class PackageArchiveService {
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
+        long totalExpandedBytes = 0L;
+        int archiveEntries = 0;
+
         try (ZipInputStream zip = new ZipInputStream(packageInput)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {
+                archiveEntries++;
+                if (archiveEntries > maxArchiveEntries) {
+                    throw new IllegalArgumentException(
+                            "Package exceeds maximum archive entry count: " + maxArchiveEntries);
+                }
                 if (entry.isDirectory()) {
                     zip.closeEntry();
                     continue;
@@ -129,6 +149,16 @@ public class PackageArchiveService {
                         while ((read = zip.read(buffer)) != -1) {
                             digest.update(buffer, 0, read);
                             size += read;
+                            totalExpandedBytes += read;
+
+                            if (size > maxExpandedFileBytes) {
+                                throw new IllegalArgumentException(
+                                        "Package entry exceeds maximum expanded size: " + entryName);
+                            }
+                            if (totalExpandedBytes > maxExpandedTotalBytes) {
+                                throw new IllegalArgumentException(
+                                        "Package exceeds maximum total expanded size");
+                            }
 
                             int remaining = FileContentInspector.SNIFF_BYTES - prefix.size();
                             if (remaining > 0) {
