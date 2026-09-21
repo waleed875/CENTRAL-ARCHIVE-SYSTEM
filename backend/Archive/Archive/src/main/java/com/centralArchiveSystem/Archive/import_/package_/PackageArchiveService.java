@@ -209,6 +209,9 @@ public class PackageArchiveService {
                 }
                 zip.closeEntry();
             }
+        } catch (Exception e) {
+            cleanupEntrySpools(actualEntries, warnings);
+            throw e;
         }
 
         try {
