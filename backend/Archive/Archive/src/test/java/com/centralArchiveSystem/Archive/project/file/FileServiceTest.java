@@ -10,6 +10,8 @@ import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
@@ -30,6 +32,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -59,7 +64,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(AccessDeniedException.class, () -> service.getFileMetadata(fileId));
@@ -77,6 +83,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -105,7 +114,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(AccessDeniedException.class, () -> service.downloadFile(fileId));
@@ -122,6 +132,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -149,14 +162,15 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(
                 AccessDeniedException.class,
                 () -> service.softDelete(fileId, UUID.randomUUID(), "restricted")
         );
-        verify(fileRepository, never()).save(any());
+        verify(fileRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -168,6 +182,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -190,12 +207,13 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(IllegalStateException.class,
                 () -> service.softDelete(fileId, UUID.randomUUID(), "test"));
-        verify(fileRepository, never()).save(any());
+        verify(fileRepository, never()).saveAndFlush(any());
         verifyNoInteractions(minioService);
     }
 
@@ -208,6 +226,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID projectId = UUID.randomUUID();
         UUID categoryId = UUID.randomUUID();
@@ -256,7 +277,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(
@@ -265,7 +287,7 @@ class FileServiceTest {
         );
 
         verifyNoInteractions(minioService);
-        verify(fileRepository, never()).save(any());
+        verify(fileRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -277,6 +299,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID projectId = UUID.randomUUID();
         UUID categoryId = UUID.randomUUID();
@@ -295,7 +320,7 @@ class FileServiceTest {
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
         when(minioConfig.getBucket()).thenReturn("archive-files");
-        when(fileRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+        when(fileRepository.saveAndFlush(any(FileEntity.class))).thenAnswer(invocation -> {
             FileEntity saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
             return saved;
@@ -322,7 +347,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         var response = service.uploadFile(
@@ -346,6 +372,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -390,7 +419,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(
@@ -405,7 +435,7 @@ class FileServiceTest {
                 )
         );
 
-        verify(fileRepository, never()).save(any());
+        verify(fileRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -417,6 +447,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID projectId = UUID.randomUUID();
         UUID categoryId = UUID.randomUUID();
@@ -446,7 +479,7 @@ class FileServiceTest {
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
         when(typeRepository.findById(typeId)).thenReturn(Optional.of(type));
         when(minioConfig.getBucket()).thenReturn("archive-files");
-        when(fileRepository.save(any(FileEntity.class))).thenAnswer(invocation -> {
+        when(fileRepository.saveAndFlush(any(FileEntity.class))).thenAnswer(invocation -> {
             FileEntity saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
             return saved;
@@ -473,15 +506,92 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         service.uploadFile(projectId, multipart, request, UUID.randomUUID());
 
         var captor = org.mockito.ArgumentCaptor.forClass(FileEntity.class);
-        verify(fileRepository).save(captor.capture());
+        verify(fileRepository).saveAndFlush(captor.capture());
         assertEquals("MANUAL", captor.getValue().getSourceType());
         assertEquals(null, captor.getValue().getSourceReference());
+    }
+
+    @Test
+    void batchUploadUsesIndependentTransactionsPerFile() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus firstStatus = mock(TransactionStatus.class);
+        TransactionStatus secondStatus = mock(TransactionStatus.class);
+
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(firstStatus, secondStatus);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        com.centralArchiveSystem.Archive.project.filecategory.FileCategory category =
+                new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setCode("DOCS");
+        category.setName("Documents");
+        category.setIsActive(true);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+
+        when(fileRepository.saveAndFlush(any(FileEntity.class)))
+                .thenAnswer(invocation -> {
+                    FileEntity entity = invocation.getArgument(0);
+                    if ("good.txt".equals(entity.getOriginalName())) {
+                        entity.setId(UUID.randomUUID());
+                        return entity;
+                    }
+                    throw new IllegalStateException("simulated database failure");
+                });
+
+        MockMultipartFile good = new MockMultipartFile(
+                "files", "good.txt", "text/plain",
+                "good content".getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile bad = new MockMultipartFile(
+                "files", "bad.txt", "text/plain",
+                "bad content".getBytes(StandardCharsets.UTF_8));
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality,
+                transactionManager
+        );
+
+        var result = service.uploadBatch(
+                projectId,
+                java.util.List.of(good, bad),
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
+                        categoryId, null, null),
+                UUID.randomUUID()
+        );
+
+        assertEquals(1, result.uploaded());
+        assertEquals(1, result.failed());
+        verify(transactionManager).commit(firstStatus);
+        verify(transactionManager).rollback(secondStatus);
     }
 
     @Test
@@ -493,6 +603,9 @@ class FileServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
 
         UUID fileId = UUID.randomUUID();
 
@@ -511,7 +624,8 @@ class FileServiceTest {
                 minioService,
                 minioConfig,
                 projectRepository,
-                confidentiality
+                confidentiality,
+                transactionManager
         );
 
         assertThrows(EntityNotFoundException.class, () -> service.getFileMetadata(fileId));
