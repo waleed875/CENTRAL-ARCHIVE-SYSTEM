@@ -1,6 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
-import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;\nimport com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
@@ -58,7 +58,7 @@ public class BranchPackageController {
             @RequestParam(value = "receivedBy", defaultValue = "system") String receivedBy) throws IOException {
 
         String manifestJson = new String(file.getBytes(), StandardCharsets.UTF_8);
-        PackageResponse response = branchPackageService.receive(manifestJson, receivedBy);
+        PackageResponse response = branchPackageService.receive(manifestJson, currentUserService.username());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Package received"));
     }
@@ -96,7 +96,14 @@ public class BranchPackageController {
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
-        branchPackageService.importPackage(id, request);
+        PackageImportRequest authenticatedRequest = new PackageImportRequest(
+                request.targetOrganizationId(),
+                request.organizationMapping(),
+                request.skipDuplicates(),
+                request.overwriteExisting(),
+                currentUserService.username()
+        );
+        branchPackageService.importPackage(id, authenticatedRequest);
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(
                     Map.of(
