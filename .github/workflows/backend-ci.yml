@@ -47,6 +47,10 @@ jobs:
       LEGACY_DB_PASSWORD: archive_password
       BOOTSTRAP_ADMIN_ENABLED: "false"
       ARCHIVE_INSTANCE_UUID: 00000000-0000-0000-0000-000000000001
+      MINIO_ENDPOINT: http://localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET: archive-files-ci
 
     steps:
       - name: Checkout
@@ -60,6 +64,22 @@ jobs:
           cache: maven
           cache-dependency-path: backend/Archive/Archive/pom.xml
 
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio-ci \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+          for i in {1..30}; do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs minio-ci
+          exit 1
+
       - name: Compile backend
         run: bash mvnw -B -DskipTests package
 
@@ -68,6 +88,9 @@ jobs:
 
       - name: Run authentication HTTP integration tests
         run: bash mvnw -B -Dtest=AuthHttpIntegrationTest test
+
+      - name: Run MinIO integration tests
+        run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
 
       - name: Verify Flyway migrations and Hibernate schema
         run: bash mvnw -B -Dtest=ArchiveApplicationTests test
