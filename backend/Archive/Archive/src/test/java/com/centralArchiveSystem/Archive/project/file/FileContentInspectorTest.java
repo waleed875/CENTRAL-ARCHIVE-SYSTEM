@@ -3,7 +3,10 @@ package com.centralArchiveSystem.Archive.project.file;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -55,8 +58,11 @@ class FileContentInspectorTest {
     }
 
     @Test
-    void acceptsOfficeZipContainerForDocx() {
-        byte[] bytes = new byte[]{0x50, 0x4B, 0x03, 0x04, 0x00, 0x00};
+    void acceptsOfficeZipContainerForDocx() throws Exception {
+        byte[] bytes = zip(
+                "[Content_Types].xml",
+                "word/document.xml"
+        );
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "document.docx",
@@ -67,6 +73,22 @@ class FileContentInspectorTest {
         assertEquals(
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 FileContentInspector.validateMultipart(file, "docx")
+        );
+    }
+
+    @Test
+    void rejectsOrdinaryZipDisguisedAsDocx() throws Exception {
+        byte[] bytes = zip("random.txt");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "document.docx",
+                "application/zip",
+                bytes
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FileContentInspector.validateMultipart(file, "docx")
         );
     }
 
@@ -82,6 +104,18 @@ class FileContentInspectorTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> FileContentInspector.validateMultipart(file, "txt"));
+    }
+
+    private byte[] zip(String... entries) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            for (String entryName : entries) {
+                zip.putNextEntry(new ZipEntry(entryName));
+                zip.write("<x/>".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        return output.toByteArray();
     }
 
     @Test
