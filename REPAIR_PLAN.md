@@ -128,6 +128,10 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Create real streamed export .pkg archives and make them downloadable.
 - [x] Validate project/file confidentiality before package export.
 - [x] Add stable archive instance UUID configuration for package manifests.
+- [x] Keep import-operation mutation/detail APIs internal: the public contract exposes only package-scoped operation history, while operation creation/status updates are driven by the verified package import workflow and authenticated central actor.
+- [x] Enforce confidentiality clearance on dashboard project/file aggregates and recent project/file activity so dashboard data cannot disclose higher-classification resources.
+- [x] Align project correction/rejection workflow payloads with the documented snake_case contract; require nonblank `review_notes` and `rejection_reason`, and document the REJECTED state/workflow.
+- [x] Preserve correct HTTP semantics for missing routes and unsupported methods (404/405) instead of converting them to generic 500 responses.
 
 ## Migration hardening completed during final API audit
 
