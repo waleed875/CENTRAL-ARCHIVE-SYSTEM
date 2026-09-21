@@ -39,6 +39,43 @@ class ProjectMemberServiceTest {
     }
 
     @Test
+    void memberMutationRejectsProjectAboveUserClearance() {
+        ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID projectId = UUID.randomUUID();
+        UUID confidentialityId = UUID.randomUUID();
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        project.setConfidentialityLevelId(confidentialityId);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(confidentialityId);
+
+        ProjectMemberService service = new ProjectMemberService(
+                memberRepository,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.create(
+                        projectId,
+                        new com.centralArchiveSystem.Archive.project.member.dto.MemberRequest(
+                                "Restricted Member", null, null, null
+                        )
+                )
+        );
+
+        verify(memberRepository, never()).save(any());
+    }
+
+    @Test
     void listMembersChecksProjectConfidentiality() {
         ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);
