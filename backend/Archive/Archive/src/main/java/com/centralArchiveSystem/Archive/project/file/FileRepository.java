@@ -31,18 +31,37 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
 
     long countByTypeIdAndDeletedAtIsNull(UUID typeId);
 
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "(LOWER(f.originalName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(f.extension) LIKE LOWER(CONCAT('%', :query, '%')))")
-    Page<FileEntity> searchByProjectAndQuery(@Param("projectId") UUID projectId, @Param("query") String query, Pageable pageable);
-
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "f.categoryId = :categoryId")
-    Page<FileEntity> findByProjectAndCategory(@Param("projectId") UUID projectId, @Param("categoryId") UUID categoryId, Pageable pageable);
-
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "f.typeId = :typeId")
-    Page<FileEntity> findByProjectAndType(@Param("projectId") UUID projectId, @Param("typeId") UUID typeId, Pageable pageable);
+    @Query("""
+           SELECT f FROM FileEntity f
+           WHERE f.projectId = :projectId
+             AND f.deletedAt IS NULL
+             AND (:categoryId IS NULL OR f.categoryId = :categoryId)
+             AND (:typeId IS NULL OR f.typeId = :typeId)
+             AND (
+                  :search IS NULL OR :search = ''
+                  OR LOWER(f.originalName) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(f.extension) LIKE LOWER(CONCAT('%', :search, '%'))
+             )
+             AND (
+                  f.confidentialityLevelId IS NULL
+                  OR (
+                      :maxLevelOrder IS NOT NULL
+                      AND EXISTS (
+                          SELECT c.id
+                          FROM ConfidentialityLevel c
+                          WHERE c.id = f.confidentialityLevelId
+                            AND c.levelOrder <= :maxLevelOrder
+                      )
+                  )
+             )
+           """)
+    Page<FileEntity> searchAccessibleProjectFiles(
+            @Param("projectId") UUID projectId,
+            @Param("categoryId") UUID categoryId,
+            @Param("typeId") UUID typeId,
+            @Param("search") String search,
+            @Param("maxLevelOrder") Integer maxLevelOrder,
+            Pageable pageable);
 
     List<FileEntity> findByDeletedAtIsNotNull();
 
