@@ -171,10 +171,15 @@ public class MigrationService {
                             + batch.getStatus());
         }
 
+        if (batchRepository.existsByStatus(MigrationBatch.Status.RUNNING)) {
+            throw new IllegalStateException(
+                    "Another migration batch is already RUNNING");
+        }
+
         batch.setStatus(MigrationBatch.Status.RUNNING);
         batch.setStartedAt(LocalDateTime.now());
         batch.setCompletedAt(null);
-        MigrationBatch saved = batchRepository.save(batch);
+        MigrationBatch saved = batchRepository.saveAndFlush(batch);
 
         // Do not log connection strings or other migration credentials.
         log.info("Migration batch {} accepted for background execution via legacy staging adapter",
