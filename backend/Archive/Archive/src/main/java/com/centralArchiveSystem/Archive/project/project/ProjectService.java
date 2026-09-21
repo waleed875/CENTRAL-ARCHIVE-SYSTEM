@@ -287,49 +287,42 @@ public class ProjectService {
     }
 
     public ProjectStatsResponse getStats(UUID organizationId) {
-        long totalProjects;
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+
+        long totalProjects = projectRepository.countAccessibleLatest(
+                organizationId,
+                maxLevelOrder
+        );
+
         Map<String, Long> projectsByStatus = new LinkedHashMap<>();
-        Map<Integer, Long> projectsByYear = new LinkedHashMap<>();
-        long latestVersionCount;
-        long archivedCount;
-
-        if (organizationId != null) {
-            totalProjects = projectRepository.countByOrganizationId(organizationId);
-            latestVersionCount = totalProjects;
-
-            for (Project.ProjectStatus status : Project.ProjectStatus.values()) {
-                long count = projectRepository.countByOrganizationIdAndStatus(organizationId, status);
-                if (count > 0) {
-                    projectsByStatus.put(status.name(), count);
-                }
-            }
-
-            List<Object[]> yearCounts = projectRepository.countByYearForOrganization(organizationId);
-            for (Object[] row : yearCounts) {
-                projectsByYear.put((Integer) row[0], (Long) row[1]);
-            }
-
-            archivedCount = projectsByStatus.getOrDefault(Project.ProjectStatus.ARCHIVED.name(), 0L);
-        } else {
-            totalProjects = projectRepository.count();
-            latestVersionCount = projectRepository.findByIsLatestVersion(true).size();
-
-            for (Project.ProjectStatus status : Project.ProjectStatus.values()) {
-                long count = projectRepository.findByStatus(status).stream()
-                        .filter(p -> Boolean.TRUE.equals(p.getIsLatestVersion()))
-                        .count();
-                if (count > 0) {
-                    projectsByStatus.put(status.name(), count);
-                }
-            }
-
-            archivedCount = projectRepository.findByStatus(Project.ProjectStatus.ARCHIVED).stream()
-                    .filter(p -> Boolean.TRUE.equals(p.getIsLatestVersion()))
-                    .count();
+        for (Object[] row : projectRepository.countAccessibleByStatus(
+                organizationId,
+                maxLevelOrder
+        )) {
+            Project.ProjectStatus status = (Project.ProjectStatus) row[0];
+            projectsByStatus.put(status.name(), (Long) row[1]);
         }
 
-        return new ProjectStatsResponse(totalProjects, projectsByStatus, projectsByYear,
-                latestVersionCount, archivedCount);
+        Map<Integer, Long> projectsByYear = new LinkedHashMap<>();
+        for (Object[] row : projectRepository.countAccessibleByYear(
+                organizationId,
+                maxLevelOrder
+        )) {
+            projectsByYear.put((Integer) row[0], (Long) row[1]);
+        }
+
+        long archivedCount = projectsByStatus.getOrDefault(
+                Project.ProjectStatus.ARCHIVED.name(),
+                0L
+        );
+
+        return new ProjectStatsResponse(
+                totalProjects,
+                projectsByStatus,
+                projectsByYear,
+                totalProjects,
+                archivedCount
+        );
     }
 
     private boolean hasRestrictedReviewChanges(ProjectUpdateRequest request) {
