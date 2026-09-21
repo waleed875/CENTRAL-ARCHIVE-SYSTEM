@@ -75,6 +75,10 @@ public class AuditAspect {
             oldValues = determineOldValues(entityType, entityId);
         }
 
+        // Capture the actor before controller execution so logout cannot erase
+        // the identity before the audit record is written.
+        Actor actorBeforeExecution = getCurrentActor();
+
         try {
             result = joinPoint.proceed();
             return result;
@@ -86,7 +90,9 @@ public class AuditAspect {
                 if (entityId == null) {
                     entityId = determineEntityId(joinPoint, result);
                 }
-                Actor actor = getCurrentActor();
+                Actor actor = actorBeforeExecution.userId() != null
+                        ? actorBeforeExecution
+                        : getCurrentActor();
                 String newValues = determineNewValues(result);
                 long executionTime = System.currentTimeMillis() - startTime;
                 String status = exception == null ? "SUCCESS" : "FAILURE";
