@@ -75,7 +75,7 @@ class BranchPackageServiceTest {
         operation.setStatus(ImportOperation.Status.STARTED);
 
         when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
-        when(operations.create(packageId, importedBy)).thenReturn(operation);
+        when(operations.getById(operationId)).thenReturn(operation);
         when(projects.findActiveByProjectNumberAndOrganizationIdAndYear(
                 "P-001",
                 targetOrganizationId,
@@ -119,7 +119,8 @@ class BranchPackageServiceTest {
                         true,
                         false
                 ),
-                importedBy
+                importedBy,
+                operationId
         );
 
         assertEquals(BranchPackage.PackageStatus.IMPORTED, pkg.getStatus());
@@ -127,6 +128,7 @@ class BranchPackageServiceTest {
         assertNotNull(pkg.getErrorMessage());
         assertTrue(pkg.getErrorMessage().contains("1 project(s) imported incompletely"));
 
+        verify(operations, never()).create(any(), any());
         verify(operations).updateStatus(
                 eq(operationId),
                 eq(ImportOperation.Status.PARTIAL),
