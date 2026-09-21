@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
 import org.springframework.data.domain.Page;
@@ -104,13 +105,13 @@ public class ProjectService {
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED ||
             project.getStatus() == Project.ProjectStatus.ARCHIVED) {
-            throw new IllegalStateException(
+            throw new BusinessRuleException(
                     "Cannot update project in " + project.getStatus() + " status; create a new version instead");
         }
 
         if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW) {
             if (hasRestrictedReviewChanges(request)) {
-                throw new IllegalStateException(
+                throw new BusinessRuleException(
                         "UNDER_REVIEW projects only allow description and notes changes");
             }
             if (request.description() != null) {
@@ -162,7 +163,7 @@ public class ProjectService {
 
         if (original.getStatus() != Project.ProjectStatus.APPROVED
                 && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
-            throw new IllegalStateException(
+            throw new BusinessRuleException(
                     "New versions can only be created from APPROVED or ARCHIVED projects");
         }
 
@@ -223,7 +224,7 @@ public class ProjectService {
         if (project.getStatus() != Project.ProjectStatus.DRAFT
                 && project.getStatus() != Project.ProjectStatus.IMPORTED
                 && project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
-            throw new IllegalStateException(
+            throw new BusinessRuleException(
                     "Can only submit DRAFT, IMPORTED or NEEDS_CORRECTION projects for review");
         }
 
@@ -242,7 +243,7 @@ public class ProjectService {
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only request correction for UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only request correction for UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
@@ -256,7 +257,7 @@ public class ProjectService {
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only approve UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only approve UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.APPROVED);
@@ -275,7 +276,7 @@ public class ProjectService {
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only reject UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only reject UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.REJECTED);
@@ -289,7 +290,7 @@ public class ProjectService {
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
         if (project.getStatus() != Project.ProjectStatus.APPROVED) {
-            throw new IllegalStateException("Can only archive APPROVED projects");
+            throw new BusinessRuleException("Can only archive APPROVED projects");
         }
 
         project.setStatus(Project.ProjectStatus.ARCHIVED);
