@@ -1,5 +1,8 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.core.organization.Organization;
+import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.config.MinioConfig;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService;
@@ -38,6 +41,8 @@ class BranchPackageServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         PackageArchiveService archive = mock(PackageArchiveService.class);
         ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         TransactionStatus transactionStatus = mock(TransactionStatus.class);
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
@@ -71,16 +76,16 @@ class BranchPackageServiceTest {
                 minioConfig,
                 archive,
                 operations,
+                organizations,
+                confidentiality,
                 transactionManager
         );
 
         service.importPackage(
                 packageId,
                 new PackageImportRequest(
-                        UUID.randomUUID(),
                         Map.of(),
-                        true,
-                        false
+                        null
                 ),
                 importedBy,
                 operationId
@@ -106,6 +111,8 @@ class BranchPackageServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         PackageArchiveService archive = mock(PackageArchiveService.class);
         ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         TransactionStatus transactionStatus = mock(TransactionStatus.class);
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
@@ -113,6 +120,7 @@ class BranchPackageServiceTest {
         UUID packageId = UUID.randomUUID();
         UUID packageUuid = UUID.randomUUID();
         UUID targetOrganizationId = UUID.randomUUID();
+        UUID sourceOrganizationId = UUID.randomUUID();
         UUID sourceProjectId = UUID.randomUUID();
         UUID operationId = UUID.randomUUID();
         UUID importedBy = UUID.randomUUID();
@@ -121,6 +129,7 @@ class BranchPackageServiceTest {
                 {
                   "projects": [{
                     "project_id": "%s",
+                    "organization_id": "%s",
                     "project_number": "P-001",
                     "name": "Partial Import Project",
                     "year": 2026,
@@ -133,7 +142,7 @@ class BranchPackageServiceTest {
                     }]
                   }]
                 }
-                """.formatted(sourceProjectId);
+                """.formatted(sourceProjectId, sourceOrganizationId);
 
         BranchPackage pkg = new BranchPackage();
         pkg.setId(packageId);
@@ -182,16 +191,16 @@ class BranchPackageServiceTest {
                 minioConfig,
                 archive,
                 operations,
+                organizations,
+                confidentiality,
                 transactionManager
         );
 
         service.importPackage(
                 packageId,
                 new PackageImportRequest(
-                        targetOrganizationId,
-                        Map.of(),
-                        true,
-                        false
+                        Map.of(sourceOrganizationId, targetOrganizationId),
+                        null
                 ),
                 importedBy,
                 operationId
@@ -231,6 +240,73 @@ class BranchPackageServiceTest {
         verify(files, never()).save(any());
     }
     @Test
+    void assertImportableRejectsMissingOrganizationMapping() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID sourceOrganizationId = UUID.randomUUID();
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setPackageUuid(UUID.randomUUID());
+        pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+        pkg.setManifestData("""
+                {
+                  "projects": [{
+                    "project_id": "%s",
+                    "organization_id": "%s",
+                    "project_number": "P-MAP",
+                    "name": "Mapping Project",
+                    "year": 2026,
+                    "files": []
+                  }]
+                }
+                """.formatted(UUID.randomUUID(), sourceOrganizationId));
+
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+
+        BranchPackageService service = new BranchPackageService(
+                packages,
+                packageProjects,
+                objectMapper,
+                projects,
+                members,
+                files,
+                minio,
+                minioConfig,
+                archive,
+                operations,
+                organizations,
+                confidentiality,
+                transactionManager
+        );
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.assertImportable(
+                        packageId,
+                        new PackageImportRequest(Map.of(), null)
+                )
+        );
+
+        assertTrue(error.getMessage().contains("Missing organization mapping"));
+        verifyNoInteractions(organizations);
+        verifyNoInteractions(confidentiality);
+    }
+
+    @Test
     void projectImportFailureRollsBackItsOwnTransaction() {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
@@ -242,6 +318,8 @@ class BranchPackageServiceTest {
         MinioConfig minioConfig = mock(MinioConfig.class);
         PackageArchiveService archive = mock(PackageArchiveService.class);
         ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
         PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
         TransactionStatus transactionStatus = mock(TransactionStatus.class);
         when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
@@ -249,6 +327,7 @@ class BranchPackageServiceTest {
         UUID packageId = UUID.randomUUID();
         UUID packageUuid = UUID.randomUUID();
         UUID targetOrganizationId = UUID.randomUUID();
+        UUID sourceOrganizationId = UUID.randomUUID();
         UUID sourceProjectId = UUID.randomUUID();
         UUID operationId = UUID.randomUUID();
         UUID importedBy = UUID.randomUUID();
@@ -257,6 +336,7 @@ class BranchPackageServiceTest {
                 {
                   "projects": [{
                     "project_id": "%s",
+                    "organization_id": "%s",
                     "project_number": "P-ROLLBACK",
                     "name": "Rollback Project",
                     "year": 2026,
@@ -266,7 +346,7 @@ class BranchPackageServiceTest {
                     "files": []
                   }]
                 }
-                """.formatted(sourceProjectId);
+                """.formatted(sourceProjectId, sourceOrganizationId);
 
         BranchPackage pkg = new BranchPackage();
         pkg.setId(packageId);
@@ -304,16 +384,16 @@ class BranchPackageServiceTest {
                 minioConfig,
                 archive,
                 operations,
+                organizations,
+                confidentiality,
                 transactionManager
         );
 
         service.importPackage(
                 packageId,
                 new PackageImportRequest(
-                        targetOrganizationId,
-                        Map.of(),
-                        true,
-                        false
+                        Map.of(sourceOrganizationId, targetOrganizationId),
+                        null
                 ),
                 importedBy,
                 operationId
