@@ -2,6 +2,23 @@
 
 Branch: `fix/foundation-security-phase1`
 
+## Source of truth
+
+Repair work must follow the repository design documents before introducing new workflow concepts:
+
+- `مخطط سير عمل إدارة المشاريع والملفات.md`
+- `Central_Platform_ERD/API_ENDPOINTS_DESIGN.md`
+- `Central_Platform_ERD_MVP_AR.md`
+- `Central_Platform_ERD/central_platform_mvp_postgresql.sql`
+
+For the MVP, do not introduce project-assignment tables, detailed permission tables, or undocumented package statuses unless the requirements are explicitly changed.
+
+The documented package flow is:
+
+`RECEIVED -> VERIFIED -> IMPORTED`
+
+with `FAILED` and `DUPLICATE` as failure/duplicate states. The central import officer manually receives, verifies, and starts the import; branch terminals are not directly connected to the central application.
+
 ## Goal
 
 Move the current backend from MVP-level implementation toward a safe, testable production baseline without mixing unrelated feature work.
@@ -35,23 +52,33 @@ Status: IN PROGRESS
 
 ## Phase 3 - Authorization and Confidentiality
 
-- [ ] Add a centralized authorization service.
-- [ ] Enforce organization scope for project/file/package reads.
-- [ ] Enforce maximum confidentiality level for projects and files.
-- [ ] Enforce scope in list/search/stats endpoints, not only get-by-id.
-- [ ] Prevent direct-object-reference access to cross-organization data.
-- [ ] Review read-only role visibility.
+- [ ] Keep the documented seven-role MVP model; do not add a detailed permissions subsystem yet.
+- [ ] Add a centralized authorization service for documented role checks and confidentiality checks.
+- [ ] Enforce `max_confidentiality_level_id` on project/file search, view, and download.
+- [ ] Apply confidentiality filtering in list/search results as well as direct get/download endpoints.
+- [ ] Review organization visibility rules against the documented central-user workflow before enforcing organization isolation.
+- [ ] Review `read_only` visibility against the documented allowed-data rule.
+- [ ] Add direct-object-reference tests for project and file access.
 
-## Phase 4 - Package Integrity and Import/Export
+## Phase 4 - Documented Offline Package Workflow
 
-- [ ] Verify SHA-256 from decoded file content instead of trusting the manifest checksum.
-- [ ] Fail package verification when any file integrity check fails.
-- [ ] Validate package schema version against supported versions.
-- [ ] Add package authenticity/signature support.
-- [ ] Replace Base64-in-JSON packages with streamed archive packages (manifest + files).
-- [ ] Remove full-file memory buffering during export/import.
-- [ ] Make import state transitions transactional and recoverable.
-- [ ] Record partial failures explicitly.
+The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system receives a real package file from an offline terminal, not only a JSON manifest.
+
+- [ ] Change `POST /api/v1/packages/receive` to accept the documented package file (for example `.pkg`) instead of a manifest-only JSON upload.
+- [ ] Store the received package temporarily or in MinIO before import.
+- [ ] Extract the manifest from the received package and validate its schema version.
+- [ ] Calculate `package_hash` from the complete received package; keep `manifest_hash` separate.
+- [ ] Detect duplicates using both `package_uuid` and `package_hash`.
+- [ ] Make `POST /packages/{id}/verify` re-read the stored package, re-extract the manifest, and verify every contained file checksum.
+- [ ] Fail verification when package hash, manifest, schema compatibility, or any file checksum is invalid.
+- [ ] Keep the documented states `RECEIVED`, `VERIFIED`, `IMPORTED`, `FAILED`, and `DUPLICATE`.
+- [ ] Allow import only from `VERIFIED`.
+- [ ] Create an `import_operations` row with `STARTED`, then complete it as `SUCCESS`, `PARTIAL`, or `FAILED`.
+- [ ] Import projects with status `IMPORTED`; they must not become approved or archived automatically.
+- [ ] Store imported files in MinIO and create `package_projects` provenance links.
+- [ ] Record the authenticated central user as `received_by` / `imported_by`.
+- [ ] Stream package/file content where practical instead of embedding full file bodies as Base64 inside manifest JSON.
+- [ ] Preserve the original package or an immutable package object for traceability according to retention policy.
 
 ## Phase 5 - File Handling
 
