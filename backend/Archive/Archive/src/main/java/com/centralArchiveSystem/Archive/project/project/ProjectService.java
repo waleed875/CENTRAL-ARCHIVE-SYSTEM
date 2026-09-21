@@ -149,16 +149,24 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse newVersion(UUID id) {
+    public ProjectResponse newVersion(UUID id, UUID createdBy) {
         Project original = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+
+        if (original.getStatus() != Project.ProjectStatus.APPROVED
+                && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
+            throw new IllegalStateException(
+                    "New versions can only be created from APPROVED or ARCHIVED projects");
+        }
 
         original.setIsLatestVersion(false);
         projectRepository.save(original);
 
         Project newVersionProject = new Project();
         newVersionProject.setProjectUid(original.getProjectUid());
-        newVersionProject.setVersionNo(original.getVersionNo() + 1);
+        newVersionProject.setVersionNo(
+                projectRepository.findMaxVersionNoByProjectUid(original.getProjectUid()) + 1
+        );
         newVersionProject.setPreviousProjectId(original.getId());
         newVersionProject.setIsLatestVersion(true);
         newVersionProject.setOrganizationId(original.getOrganizationId());
@@ -178,9 +186,10 @@ public class ProjectService {
         newVersionProject.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
         newVersionProject.setSourceType(original.getSourceType());
         newVersionProject.setSourceReference(original.getSourceReference());
-        newVersionProject.setCreatedBy(original.getCreatedBy());
+        newVersionProject.setCreatedBy(createdBy);
 
         Project saved = projectRepository.save(newVersionProject);
+        projectMemberService.copyMembers(original.getId(), saved.getId());
         return ProjectResponse.fromEntity(saved);
     }
 
@@ -200,10 +209,11 @@ public class ProjectService {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
 
-        if (project.getStatus() != Project.ProjectStatus.DRAFT &&
-            project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
+        if (project.getStatus() != Project.ProjectStatus.DRAFT
+                && project.getStatus() != Project.ProjectStatus.IMPORTED
+                && project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
             throw new IllegalStateException(
-                    "Can only submit DRAFT or NEEDS_CORRECTION projects for review");
+                    "Can only submit DRAFT, IMPORTED or NEEDS_CORRECTION projects for review");
         }
 
         project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
