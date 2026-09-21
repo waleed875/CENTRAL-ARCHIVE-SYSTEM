@@ -22,24 +22,73 @@ class ProjectServiceTest {
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
 
         Project original = baseProject();
+        original.setStatus(Project.ProjectStatus.APPROVED);
         UUID originalId = original.getId();
         UUID projectUid = original.getProjectUid();
+        UUID currentUserId = UUID.randomUUID();
 
         when(repository.findById(originalId)).thenReturn(Optional.of(original));
-        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findMaxVersionNoByProjectUid(projectUid)).thenReturn(3);
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> {
+            Project saved = invocation.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(UUID.randomUUID());
+            }
+            return saved;
+        });
 
         ProjectService service = new ProjectService(repository, memberService, confidentiality);
 
-        ProjectResponse response = service.newVersion(originalId);
+        ProjectResponse response = service.newVersion(originalId, currentUserId);
 
         assertEquals(projectUid, response.projectUid());
-        assertEquals(2, response.versionNo());
+        assertEquals(4, response.versionNo());
         assertEquals(originalId, response.previousProjectId());
         assertTrue(response.isLatestVersion());
         assertEquals(Project.ProjectStatus.DRAFT, response.status());
         assertFalse(original.getIsLatestVersion());
+        assertEquals(currentUserId, response.createdBy());
 
         verify(repository, times(2)).save(any(Project.class));
+        verify(memberService).copyMembers(eq(originalId), any(UUID.class));
+    }
+
+
+    @Test
+    void newVersionRejectsMutableProjectStates() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(IllegalStateException.class,
+                () -> service.newVersion(project.getId(), UUID.randomUUID()));
+        verify(repository, never()).findMaxVersionNoByProjectUid(any());
+        verify(memberService, never()).copyMembers(any(), any());
+    }
+
+    @Test
+    void importedProjectCanBeSubmittedForReview() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.IMPORTED);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        ProjectResponse response = service.submitForReview(project.getId());
+
+        assertEquals(Project.ProjectStatus.UNDER_REVIEW, response.status());
+        verify(repository).save(project);
     }
 
     @Test
