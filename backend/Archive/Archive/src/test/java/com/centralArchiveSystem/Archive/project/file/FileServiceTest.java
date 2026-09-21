@@ -109,6 +109,47 @@ class FileServiceTest {
         verifyNoInteractions(minioService);
     }
 
+
+    @Test
+    void rejectsFileMutationForApprovedProject() {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID fileId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        FileEntity file = new FileEntity();
+        file.setId(fileId);
+        file.setProjectId(projectId);
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.APPROVED);
+
+        when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(IllegalStateException.class,
+                () -> service.softDelete(fileId, UUID.randomUUID(), "test"));
+        verify(fileRepository, never()).save(any());
+        verifyNoInteractions(minioService);
+    }
+
     @Test
     void softDeletedFileCannotBeReadByDirectId() {
         FileRepository fileRepository = mock(FileRepository.class);
