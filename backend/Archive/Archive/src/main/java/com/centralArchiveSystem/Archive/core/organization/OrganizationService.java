@@ -242,9 +242,10 @@ public class OrganizationService {
                 if (!visited.add(cursor) || currentId.equals(cursor)) {
                     throw new IllegalArgumentException("Organization hierarchy cycle detected");
                 }
-                Organization ancestor = organizationRepository.findById(cursor)
+                UUID ancestorId = cursor;
+                Organization ancestor = organizationRepository.findById(ancestorId)
                         .orElseThrow(() -> new EntityNotFoundException(
-                                "Ancestor organization not found with id: " + cursor));
+                                "Ancestor organization not found with id: " + ancestorId));
                 cursor = ancestor.getParentId();
             }
         }
