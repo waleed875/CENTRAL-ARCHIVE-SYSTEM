@@ -22,6 +22,11 @@ public class ImportOperationService {
     }
 
     public ImportOperation create(UUID packageId, UUID importedBy) {
+        if (repository.existsByPackageIdAndStatus(packageId, ImportOperation.Status.STARTED)) {
+            throw new IllegalStateException(
+                    "An import operation is already running for package: " + packageId);
+        }
+
         ImportOperation operation = new ImportOperation(packageId, importedBy);
         ImportOperation saved = repository.save(operation);
         log.info("Created import operation: id={}, packageId={}, importedBy={}",
