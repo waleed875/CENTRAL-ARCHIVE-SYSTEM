@@ -35,37 +35,21 @@ public class OrganizationService {
         return toResponse(organization);
     }
 
-    public Page<OrganizationResponse> list(String search, String type, Boolean isActive, int page, int size) {
+    public Page<OrganizationResponse> list(String search, UUID parentId, String type,
+                                           Boolean isActive, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("name").ascending());
+        Organization.OrganizationType orgType =
+                type == null || type.isBlank()
+                        ? null
+                        : Organization.OrganizationType.valueOf(type.toUpperCase());
 
-        Page<Organization> organizations;
-
-        if (search != null && !search.isBlank()) {
-            organizations = organizationRepository.searchByNameOrCode(search, pageable);
-        } else {
-            organizations = organizationRepository.findAll(pageable);
-        }
-
-        if (type != null && !type.isBlank()) {
-            Organization.OrganizationType orgType = Organization.OrganizationType.valueOf(type.toUpperCase());
-            organizations = organizations.getContent().stream()
-                    .filter(o -> o.getType() == orgType)
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        if (isActive != null) {
-            organizations = organizations.getContent().stream()
-                    .filter(o -> o.getIsActive().equals(isActive))
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        return organizations.map(this::toResponse);
+        return organizationRepository.searchFiltered(
+                search,
+                parentId,
+                orgType,
+                isActive,
+                pageable
+        ).map(this::toResponse);
     }
 
     public List<OrganizationTreeResponse> getTree() {
