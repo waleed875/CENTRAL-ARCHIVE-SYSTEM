@@ -20,7 +20,7 @@ services:
 
   minio:
     profiles: ["bundled-minio"]
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    image: quay.io/minio/minio:RELEASE.2025-09-06T17-38-46Z
     container_name: central-archive-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
