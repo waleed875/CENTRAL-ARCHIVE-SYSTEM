@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectUpdateRequest;
@@ -74,7 +75,7 @@ class ProjectServiceTest {
 
         ProjectService service = new ProjectService(repository, memberService, confidentiality);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(BusinessRuleException.class,
                 () -> service.newVersion(project.getId(), UUID.randomUUID(), null));
         verify(repository, never()).findMaxVersionNoByProjectUid(any());
         verify(memberService, never()).copyMembers(any(), any());
@@ -153,7 +154,7 @@ class ProjectServiceTest {
                 null, null, null
         );
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(BusinessRuleException.class,
                 () -> service.update(project.getId(), forbidden));
     }
 
@@ -176,7 +177,7 @@ class ProjectServiceTest {
                 null, null, null
         );
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(BusinessRuleException.class,
                 () -> service.update(project.getId(), request));
         verify(repository, never()).save(any(Project.class));
     }
