@@ -33,7 +33,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '10'
+                 WHERE version = '11'
                    AND success = true
                 """,
                 Integer.class
@@ -129,6 +129,27 @@ class PostgresSchemaIntegrationTest {
         assertEquals(Boolean.TRUE, index.get("is_unique"));
         String predicate = String.valueOf(index.get("predicate"));
         assertTrue(predicate.contains("STARTED"));
+    }
+
+    @Test
+    void onlyOneMigrationBatchCanBeRunning() {
+        Map<String, Object> index = jdbcTemplate.queryForMap(
+                """
+                SELECT i.indisunique AS is_unique,
+                       pg_get_expr(i.indpred, i.indrelid) AS predicate
+                  FROM pg_index i
+                  JOIN pg_class idx ON idx.oid = i.indexrelid
+                  JOIN pg_class tbl ON tbl.oid = i.indrelid
+                  JOIN pg_namespace n ON n.oid = tbl.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND tbl.relname = 'migration_batches'
+                   AND idx.relname = 'uk_migration_batches_one_running'
+                """
+        );
+
+        assertEquals(Boolean.TRUE, index.get("is_unique"));
+        String predicate = String.valueOf(index.get("predicate"));
+        assertTrue(predicate.contains("RUNNING"));
     }
 
     @Test
