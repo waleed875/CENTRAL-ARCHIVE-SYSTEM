@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeRequest;
 import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeResponse;
+import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -52,14 +53,16 @@ public class ProjectTypeController {
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<ApiResponse<ProjectTypeResponse>> update(@PathVariable UUID id, @Valid @RequestBody ProjectTypeRequest request) {
+    public ResponseEntity<ApiResponse<ProjectTypeResponse>> update(
+            @PathVariable UUID id,
+            @RequestBody ProjectTypeUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(projectTypeService.update(id, request), "Project type updated"));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
         projectTypeService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "Project type deleted"));
+        return ResponseEntity.noContent().build();
     }
 }
