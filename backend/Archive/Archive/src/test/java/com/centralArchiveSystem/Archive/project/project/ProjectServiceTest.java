@@ -136,6 +136,30 @@ class ProjectServiceTest {
         verify(repository).countAccessibleByYear(organizationId, 2);
     }
 
+
+    @Test
+    void directProjectAccessRejectsProjectAboveUserClearance() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        UUID levelId = UUID.randomUUID();
+        project.setConfidentialityLevelId(levelId);
+
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(levelId);
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(
+                org.springframework.security.access.AccessDeniedException.class,
+                () -> service.getById(project.getId())
+        );
+        verify(confidentiality).requireReadAccess(levelId);
+    }
+
     private Project baseProject() {
         Project project = new Project();
         project.setId(UUID.randomUUID());
