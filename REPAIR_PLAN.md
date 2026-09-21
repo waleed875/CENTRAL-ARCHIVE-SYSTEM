@@ -48,7 +48,7 @@ Status: COMPLETE
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V10 are committed. V9 normalizes migration batch identifiers and V10 prevents parallel package imports; final CI validation for the latest migrations is in progress.
+- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V10 are committed and green against PostgreSQL 17, including V9 migration-batch normalization and the V10 single-active-import guard.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
