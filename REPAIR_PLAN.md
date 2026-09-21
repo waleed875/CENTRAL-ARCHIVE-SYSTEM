@@ -93,7 +93,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 - [x] Redact common sensitive fields from serialized audit results.
 - [x] Store the real authenticated user UUID in AOP-generated audit records.
-- [ ] Capture request IP safely behind configured proxies.
+- [x] Capture request IP from the servlet request and make forwarded-header trust an explicit production setting.
 - [x] Make audit serialization bounded to avoid huge payloads.
 - [x] Ensure audit logging redacts credentials, token/secret fields, embedded file/package byte fields, and manifest payload fields.
 - [ ] Define retention and immutability strategy.
@@ -126,7 +126,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [x] Disable Swagger/API docs by default in the production profile.
 - [x] Disable bootstrap admin by default in production.
 - [ ] Add structured logging; health/readiness endpoints are now exposed through Actuator with details hidden.
-- [ ] Add deployment documentation and backup/restore procedures.
+- [x] Add deployment documentation and PostgreSQL/MinIO backup and restore procedures in `DEPLOYMENT.md`.
 
 ## Delivery rule
 
