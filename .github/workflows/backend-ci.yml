@@ -84,7 +84,7 @@ jobs:
         run: bash mvnw -B -DskipTests package
 
       - name: Run focused unit tests
-        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,FileServiceTest,AuditAspectTest test
+        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,FileServiceTest,AuditAspectTest test
 
       - name: Run authentication HTTP integration tests
         run: bash mvnw -B -Dtest=AuthHttpIntegrationTest test
