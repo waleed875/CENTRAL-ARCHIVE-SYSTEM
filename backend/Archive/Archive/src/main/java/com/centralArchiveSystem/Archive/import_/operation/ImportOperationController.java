@@ -35,21 +35,4 @@ public class ImportOperationController {
         return ResponseEntity.ok(ApiResponse.success(service.getById(id)));
     }
 
-    @PostMapping("/packages/{packageId}/operations")
-    @Operation(summary = "Create a new import operation for a package")
-    public ResponseEntity<ApiResponse<ImportOperation>> create(
-            @Parameter(description = "Package UUID") @PathVariable UUID packageId,
-            @Parameter(description = "User who initiated the import")
-            @RequestParam(required = false) UUID importedBy) {
-        return ResponseEntity.ok(ApiResponse.success(service.create(packageId, importedBy)));
-    }
-
-    @PatchMapping("/operations/{id}/status")
-    @Operation(summary = "Update the status of an import operation")
-    public ResponseEntity<ApiResponse<ImportOperation>> updateStatus(
-            @Parameter(description = "Operation UUID") @PathVariable UUID id,
-            @RequestParam ImportOperation.Status status,
-            @RequestParam(required = false) String errorMessage) {
-        return ResponseEntity.ok(ApiResponse.success(service.updateStatus(id, status, errorMessage)));
-    }
 }
