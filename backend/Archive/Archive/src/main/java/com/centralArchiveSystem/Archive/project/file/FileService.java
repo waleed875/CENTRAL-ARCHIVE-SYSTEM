@@ -266,15 +266,16 @@ public class FileService {
 
     private String calculateChecksum(MultipartFile file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] fileBytes = file.getBytes();
-        byte[] hash = digest.digest(fileBytes);
-        StringBuilder hexString = new StringBuilder();
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
-            hexString.append(hex);
+        byte[] buffer = new byte[8192];
+
+        try (InputStream input = file.getInputStream()) {
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
         }
-        return hexString.toString();
+
+        return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
     private FileResponse toResponse(FileEntity file) {
