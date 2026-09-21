@@ -10,7 +10,7 @@ import java.util.UUID;
 @Repository
 public interface ProjectExportRepository extends JpaRepository<ProjectExport, UUID> {
 
-    Optional<ProjectExport> findByPackageUuid(String packageUuid);
+    Optional<ProjectExport> findByPackageUuid(UUID packageUuid);
 
     List<ProjectExport> findBySourceOrganizationIdOrderByCreatedAtDesc(UUID sourceOrganizationId);
 }
