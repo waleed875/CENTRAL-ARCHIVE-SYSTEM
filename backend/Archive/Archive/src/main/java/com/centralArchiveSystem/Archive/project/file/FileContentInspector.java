@@ -168,6 +168,34 @@ public final class FileContentInspector {
         return MIME_TYPES.getOrDefault(expected, "application/octet-stream");
     }
 
+    public static boolean hasZipSignature(byte[] prefix) {
+        return prefix != null && isZip(prefix);
+    }
+
+    public static String validatePackageEntry(byte[] prefix,
+                                              String expectedExtension,
+                                              Path zipSpool) throws IOException {
+        String expected = normalizeExtension(expectedExtension);
+        if (expected == null) {
+            throw new IllegalArgumentException("File extension is required for content inspection");
+        }
+        if (prefix == null || prefix.length == 0) {
+            throw new IllegalArgumentException("File content is empty");
+        }
+
+        String mimeType = validatePrefix(prefix, expected);
+
+        if (ZIP_EXTENSIONS.contains(expected) && !"zip".equals(expected)) {
+            if (zipSpool == null) {
+                throw new IllegalArgumentException(
+                        "ZIP container is required for ." + expected + " inspection");
+            }
+            validateZipContainer(zipSpool, expected);
+        }
+
+        return mimeType;
+    }
+
     private static void validateZipContainer(Path zipPath, String expected) throws IOException {
         boolean contentTypes = false;
         boolean expectedRoot = false;
