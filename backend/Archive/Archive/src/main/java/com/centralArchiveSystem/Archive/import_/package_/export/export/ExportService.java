@@ -146,6 +146,7 @@ public class ExportService {
 
                 ObjectNode fileNode = filesNode.addObject();
                 fileNode.put("project_id", project.getId().toString());
+                fileNode.put("file_id", file.getId().toString());
                 fileNode.put("original_name", file.getOriginalName());
                 fileNode.put("name", file.getOriginalName());
                 putNullable(fileNode, "extension", file.getExtension());
@@ -322,7 +323,12 @@ public class ExportService {
                     String expectedHash = fileNode.path("checksum_sha256").asText();
                     long expectedSize = fileNode.path("size_bytes").asLong(-1);
 
-                    FileEntity file = findSourceFile(projectId, fileNode.path("original_name").asText(), expectedHash);
+                    UUID fileId = UUID.fromString(fileNode.path("file_id").asText());
+                    FileEntity file = fileRepository.findById(fileId)
+                            .filter(candidate -> candidate.getProjectId().equals(projectId))
+                            .filter(candidate -> candidate.getDeletedAt() == null)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Source file not found while creating package: " + fileId));
 
                     ZipEntry fileEntry = new ZipEntry(entryPath);
                     zip.putNextEntry(fileEntry);
@@ -356,19 +362,6 @@ public class ExportService {
                 }
             }
         }
-    }
-
-    private FileEntity findSourceFile(UUID projectId,
-                                      String originalName,
-                                      String checksum) {
-        return fileRepository.findByProjectIdAndDeletedAtIsNull(projectId).stream()
-                .filter(file -> originalName.equals(file.getOriginalName()))
-                .filter(file -> checksum.equalsIgnoreCase(file.getChecksumSha256())
-                        || file.getChecksumSha256() == null
-                        || file.getChecksumSha256().isBlank())
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "Source file not found while creating package: " + originalName));
     }
 
     private String calculateStoredFileChecksum(FileEntity file) {
