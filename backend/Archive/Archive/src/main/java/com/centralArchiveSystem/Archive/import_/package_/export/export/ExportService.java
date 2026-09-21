@@ -32,7 +32,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -79,7 +81,6 @@ public class ExportService {
     }
 
     public ProjectExport createExport(List<UUID> projectIds,
-                                      UUID sourceOrganizationId,
                                       UUID exportedBy,
                                       String sourceUsername) {
         UUID packageUuid = UUID.randomUUID();
@@ -91,20 +92,19 @@ public class ExportService {
         manifest.put("package_uuid", packageUuid.toString());
         manifest.put("package_name", packageName);
         manifest.put("schema_version", SCHEMA_VERSION);
-        if (sourceOrganizationId != null) {
-            manifest.put("source_organization_id", sourceOrganizationId.toString());
-        }
         manifest.put("source_terminal_uuid", archiveInstanceUuid.toString());
         manifest.put("source_username", sourceUsername != null ? sourceUsername : "system");
 
         ArrayNode projectsNode = manifest.putArray("projects");
         int totalFiles = 0;
+        Set<UUID> sourceOrganizationIds = new LinkedHashSet<>();
 
         for (UUID projectId : projectIds) {
             Project project = projectRepository.findById(projectId)
                     .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
 
             confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+            sourceOrganizationIds.add(project.getOrganizationId());
 
             ObjectNode projectNode = projectsNode.addObject();
             projectNode.put("project_id", project.getId().toString());
@@ -170,6 +170,13 @@ public class ExportService {
                 fileNode.put("object_key", packageEntryPath);
                 totalFiles++;
             }
+        }
+
+        UUID sourceOrganizationId = sourceOrganizationIds.size() == 1
+                ? sourceOrganizationIds.iterator().next()
+                : null;
+        if (sourceOrganizationId != null) {
+            manifest.put("source_organization_id", sourceOrganizationId.toString());
         }
 
         byte[] manifestBytes;
