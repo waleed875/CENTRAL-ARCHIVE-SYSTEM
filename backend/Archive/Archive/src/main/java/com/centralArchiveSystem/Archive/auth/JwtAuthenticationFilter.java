@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.auth;
 
+import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,10 +21,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
     private final UserDetailsService userDetailsService;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider,
+                                   UserDetailsService userDetailsService,
+                                   UserRepository userRepository) {
         this.tokenProvider = tokenProvider;
         this.userDetailsService = userDetailsService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -36,6 +41,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 && SecurityContextHolder.getContext().getAuthentication() == null
                 && tokenProvider.validateAccessToken(token)) {
             String username = tokenProvider.getUsernameFromToken(token);
+            boolean activeToken = userRepository.findByUsername(username)
+                    .map(user -> tokenProvider.isIssuedOnOrAfter(token, user.getTokenValidAfter()))
+                    .orElse(false);
+
+            if (!activeToken) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
             UsernamePasswordAuthenticationToken authentication =
