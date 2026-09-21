@@ -93,7 +93,7 @@ public class BranchPackageController {
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
-        branchPackageService.assertImportable(id);
+        branchPackageService.assertImportable(id, request);
 
         UUID importedBy = currentUserService.userId();
         ImportOperation operation = importOperationService.create(id, importedBy);
