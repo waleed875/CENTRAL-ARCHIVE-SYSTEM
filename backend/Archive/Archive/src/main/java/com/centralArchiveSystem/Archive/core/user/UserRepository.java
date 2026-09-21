@@ -28,6 +28,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     List<User> findByStatus(User.UserStatus status);
 
+    long countByMaxConfidentialityLevelId(UUID maxConfidentialityLevelId);
+
     @Query("""
            SELECT COUNT(u) FROM User u
            JOIN u.roles r
