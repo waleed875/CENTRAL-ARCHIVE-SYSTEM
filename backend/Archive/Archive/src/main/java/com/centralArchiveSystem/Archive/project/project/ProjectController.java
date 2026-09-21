@@ -72,8 +72,14 @@ public class ProjectController {
     @PostMapping("/{id}/new-version")
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new version of a project")
-    public ResponseEntity<ApiResponse<ProjectResponse>> newVersion(@PathVariable UUID id) {
-        ProjectResponse response = projectService.newVersion(id, currentUserService.userId());
+    public ResponseEntity<ApiResponse<ProjectResponse>> newVersion(
+            @PathVariable UUID id,
+            @RequestBody(required = false) ProjectUpdateRequest overrides) {
+        ProjectResponse response = projectService.newVersion(
+                id,
+                currentUserService.userId(),
+                overrides
+        );
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "New project version created"));
     }
