@@ -3,6 +3,7 @@ package com.centralArchiveSystem.Archive.project.project;
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
+import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectUpdateRequest;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,50 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class ProjectServiceTest {
+
+    @Test
+    void manualProjectCreateUsesServerControlledProvenance() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID createdBy = UUID.randomUUID();
+
+        when(repository.findActiveByProjectNumberAndOrganizationIdAndYear(
+                "PRJ-MANUAL", organizationId, 2026
+        )).thenReturn(Optional.empty());
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> {
+            Project saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        ProjectRequest request = new ProjectRequest(
+                organizationId,
+                null,
+                null,
+                "PRJ-MANUAL",
+                null,
+                "Manual Project",
+                2026,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectResponse response = service.create(request, createdBy);
+
+        assertEquals(Project.SourceType.MANUAL, response.sourceType());
+        assertEquals(null, response.sourceReference());
+        assertEquals(createdBy, response.createdBy());
+    }
 
     @Test
     void newVersionPreservesProjectUidAndIncrementsVersion() {
