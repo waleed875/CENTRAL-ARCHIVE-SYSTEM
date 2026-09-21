@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -110,19 +112,23 @@ class PostgresSchemaIntegrationTest {
 
     @Test
     void onlyOneStartedImportOperationIsAllowedPerPackage() {
-        Integer indexCount = jdbcTemplate.queryForObject(
+        Map<String, Object> index = jdbcTemplate.queryForMap(
                 """
-                SELECT COUNT(*)
-                  FROM pg_indexes
-                 WHERE schemaname = 'import'
-                   AND tablename = 'import_operations'
-                   AND indexname = 'uk_import_operations_one_started_per_package'
-                   AND indexdef ILIKE '%WHERE (status = ''STARTED''%'
-                """,
-                Integer.class
+                SELECT i.indisunique AS is_unique,
+                       pg_get_expr(i.indpred, i.indrelid) AS predicate
+                  FROM pg_index i
+                  JOIN pg_class idx ON idx.oid = i.indexrelid
+                  JOIN pg_class tbl ON tbl.oid = i.indrelid
+                  JOIN pg_namespace n ON n.oid = tbl.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND tbl.relname = 'import_operations'
+                   AND idx.relname = 'uk_import_operations_one_started_per_package'
+                """
         );
 
-        assertEquals(1, indexCount);
+        assertEquals(Boolean.TRUE, index.get("is_unique"));
+        String predicate = String.valueOf(index.get("predicate"));
+        assertTrue(predicate.contains("STARTED"));
     }
 
     @Test
