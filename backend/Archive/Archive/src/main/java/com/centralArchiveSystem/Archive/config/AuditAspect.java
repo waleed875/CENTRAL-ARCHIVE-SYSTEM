@@ -32,6 +32,8 @@ public class AuditAspect {
 
     private static final Logger logger = LoggerFactory.getLogger(AuditAspect.class);
     private static final String REDACTED = "***REDACTED***";
+    private static final String TRUNCATED = "***TRUNCATED***";
+    private static final int MAX_AUDIT_JSON_CHARS = 32_000;
 
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
@@ -251,7 +253,16 @@ public class AuditAspect {
     private String serializeForAudit(Object value) throws Exception {
         JsonNode root = objectMapper.valueToTree(value);
         redactSensitiveFields(root);
-        return objectMapper.writeValueAsString(root);
+        String json = objectMapper.writeValueAsString(root);
+        if (json.length() <= MAX_AUDIT_JSON_CHARS) {
+            return json;
+        }
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("truncated", true);
+        summary.put("originalLength", json.length());
+        summary.put("value", TRUNCATED);
+        return objectMapper.writeValueAsString(summary);
     }
 
     private void redactSensitiveFields(JsonNode node) {
@@ -288,6 +299,12 @@ public class AuditAspect {
         return normalized.contains("password")
                 || normalized.contains("token")
                 || normalized.contains("authorization")
-                || normalized.contains("secret");
+                || normalized.contains("secret")
+                || normalized.equals("content_base64")
+                || normalized.equals("manifest_data")
+                || normalized.equals("manifestjson")
+                || normalized.equals("filebytes")
+                || normalized.equals("packagebytes")
+                || normalized.equals("bytes");
     }
 }
