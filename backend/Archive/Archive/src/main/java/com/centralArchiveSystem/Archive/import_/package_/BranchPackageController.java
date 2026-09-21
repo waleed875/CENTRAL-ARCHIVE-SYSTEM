@@ -88,7 +88,7 @@ public class BranchPackageController {
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
-        branchPackageService.importPackage(id, request, currentUserService.userId());
+        branchPackageService.assertImportable(id);\n        branchPackageService.importPackage(id, request, currentUserService.userId());
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(
                     Map.of(
