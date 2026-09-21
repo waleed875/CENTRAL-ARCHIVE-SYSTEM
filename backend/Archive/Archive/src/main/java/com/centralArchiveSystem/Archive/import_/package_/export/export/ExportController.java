@@ -39,7 +39,6 @@ public class ExportController {
     public ResponseEntity<ApiResponse<ProjectExport>> create(@Valid @RequestBody ExportRequest request) {
         ProjectExport export = exportService.createExport(
                 request.projectIds(),
-                request.sourceOrganizationId(),
                 currentUserService.userId(),
                 currentUserService.username()
         );
