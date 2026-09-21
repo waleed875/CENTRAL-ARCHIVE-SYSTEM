@@ -114,6 +114,52 @@ class FileServiceTest {
 
 
     @Test
+    void fileMutationRejectsFileAboveUserClearance() {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID fileId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID fileLevelId = UUID.randomUUID();
+
+        FileEntity file = new FileEntity();
+        file.setId(fileId);
+        file.setProjectId(projectId);
+        file.setStatus("ACTIVE");
+        file.setConfidentialityLevelId(fileLevelId);
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+
+        when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        doThrow(new AccessDeniedException("denied"))
+                .when(confidentiality).requireReadAccess(fileLevelId);
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality
+        );
+
+        assertThrows(
+                AccessDeniedException.class,
+                () -> service.softDelete(fileId, UUID.randomUUID(), "restricted")
+        );
+        verify(fileRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsFileMutationForApprovedProject() {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
