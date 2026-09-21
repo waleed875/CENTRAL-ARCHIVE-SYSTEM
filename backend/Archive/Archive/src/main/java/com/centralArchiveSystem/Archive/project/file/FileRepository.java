@@ -73,4 +73,6 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     List<FileEntity> findByDeletedAtIsNotNull();
 
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
+
+    long countByConfidentialityLevelId(UUID confidentialityLevelId);
 }
