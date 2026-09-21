@@ -37,5 +37,5 @@ jobs:
       - name: Compile backend
         run: bash mvnw -B -DskipTests package
 
-      - name: Test package archive contract
-        run: bash mvnw -B -Dtest=PackageArchiveServiceTest test
+      - name: Run focused unit tests
+        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,ConfidentialityAccessServiceTest test
