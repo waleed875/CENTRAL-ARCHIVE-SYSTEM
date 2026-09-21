@@ -23,7 +23,9 @@ import org.springframework.core.env.Environment;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -37,6 +39,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Migrates data from the legacy staging database (restored from the 600GB
@@ -68,6 +71,7 @@ public class LegacyMigrationService {
     private final FileTypeRepository fileTypeRepository;
     private final ConfidentialityLevelRepository confidentialityLevelRepository;
     private final LegacyMigrationItemRepository itemRepository;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${legacy.migration.default-year:2000}")
     private int defaultYear;
@@ -88,7 +92,8 @@ public class LegacyMigrationService {
             FileCategoryRepository fileCategoryRepository,
             FileTypeRepository fileTypeRepository,
             ConfidentialityLevelRepository confidentialityLevelRepository,
-            LegacyMigrationItemRepository itemRepository) {
+            LegacyMigrationItemRepository itemRepository,
+            PlatformTransactionManager transactionManager) {
         this.legacyJdbc = buildLegacyJdbc(env);
         this.minioService = minioService;
         this.minioConfig = minioConfig;
@@ -99,6 +104,7 @@ public class LegacyMigrationService {
         this.fileTypeRepository = fileTypeRepository;
         this.confidentialityLevelRepository = confidentialityLevelRepository;
         this.itemRepository = itemRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -252,7 +258,12 @@ public class LegacyMigrationService {
         } catch (Exception e) {
             log.error("Parallel file migration failed", e);
         }
-        log.info("Legacy files migrated: {} done, {} failed, {} skipped", summary.done, summary.failed, summary.skipped);
+        log.info(
+                "Legacy files migrated: {} done, {} failed, {} skipped",
+                summary.done(),
+                summary.failed(),
+                summary.skipped()
+        );
         return summary;
     }
 
@@ -286,7 +297,7 @@ public class LegacyMigrationService {
                             LegacyMigrationItem.Kind.FILE,
                             sourceKey
                     )) {
-                        summary.skipped++;
+                        summary.incrementSkipped();
                         return;
                     }
 
@@ -386,13 +397,23 @@ public class LegacyMigrationService {
             file.setSourceType("MIGRATION");
             file.setSourceReference("ARC2:tbl_files:" + idfile);
 
-            FileEntity saved = fileRepository.save(file);
+            FileEntity saved = transactionTemplate.execute(status -> {
+                FileEntity persisted = fileRepository.save(file);
 
-            item.setTargetId(saved.getId());
-            item.setStatus(LegacyMigrationItem.Status.DONE);
-            item.setFinishedAt(java.time.LocalDateTime.now());
-            itemRepository.save(item);
-            summary.done++;
+                item.setTargetId(persisted.getId());
+                item.setStatus(LegacyMigrationItem.Status.DONE);
+                item.setFinishedAt(java.time.LocalDateTime.now());
+                itemRepository.save(item);
+
+                return persisted;
+            });
+
+            if (saved == null) {
+                throw new IllegalStateException(
+                        "Legacy file metadata transaction returned no saved file");
+            }
+
+            summary.incrementDone();
         } catch (Exception e) {
             log.error(
                     "Failed to migrate file {} ({}): {}",
@@ -419,7 +440,7 @@ public class LegacyMigrationService {
             item.setFinishedAt(java.time.LocalDateTime.now());
             item.setAttempts((item.getAttempts() == null ? 0 : item.getAttempts()) + 1);
             itemRepository.save(item);
-            summary.failed++;
+            summary.incrementFailed();
         } finally {
             if (spool != null) {
                 try {
@@ -638,8 +659,32 @@ public class LegacyMigrationService {
     }
 
     public static class LegacyFileSummary {
-        public int done;
-        public int failed;
-        public int skipped;
+        private final AtomicInteger done = new AtomicInteger();
+        private final AtomicInteger failed = new AtomicInteger();
+        private final AtomicInteger skipped = new AtomicInteger();
+
+        public void incrementDone() {
+            done.incrementAndGet();
+        }
+
+        public void incrementFailed() {
+            failed.incrementAndGet();
+        }
+
+        public void incrementSkipped() {
+            skipped.incrementAndGet();
+        }
+
+        public int done() {
+            return done.get();
+        }
+
+        public int failed() {
+            return failed.get();
+        }
+
+        public int skipped() {
+            return skipped.get();
+        }
     }
 }
