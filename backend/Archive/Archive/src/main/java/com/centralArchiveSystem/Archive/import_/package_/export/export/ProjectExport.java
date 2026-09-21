@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "import.export_packages")
+@Table(name = "export_packages", schema = "import")
 @Schema(name = "import.export_packages")
 public class ProjectExport {
 
@@ -17,7 +17,7 @@ public class ProjectExport {
     private UUID id;
 
     @Column(name = "package_uuid", nullable = false, unique = true)
-    private String packageUuid;
+    private UUID packageUuid;
 
     @Column(name = "package_name", nullable = false)
     private String packageName;
@@ -37,8 +37,14 @@ public class ProjectExport {
     @Column(name = "files_count", nullable = false)
     private Integer filesCount;
 
-    @Column(name = "package_hash")
+    @Column(name = "package_hash", length = 64)
     private String packageHash;
+
+    @Column(name = "manifest_hash", length = 64)
+    private String manifestHash;
+
+    @Column(name = "package_object_key", columnDefinition = "TEXT")
+    private String packageObjectKey;
 
     @Column(name = "manifest_data", columnDefinition = "TEXT")
     private String manifestData;
@@ -47,7 +53,7 @@ public class ProjectExport {
     private String status = "CREATED";
 
     @Column(name = "exported_by")
-    private String exportedBy;
+    private UUID exportedBy;
 
     @Column(name = "exported_at")
     private LocalDateTime exportedAt;
@@ -61,8 +67,8 @@ public class ProjectExport {
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
-    public String getPackageUuid() { return packageUuid; }
-    public void setPackageUuid(String packageUuid) { this.packageUuid = packageUuid; }
+    public UUID getPackageUuid() { return packageUuid; }
+    public void setPackageUuid(UUID packageUuid) { this.packageUuid = packageUuid; }
 
     public String getPackageName() { return packageName; }
     public void setPackageName(String packageName) { this.packageName = packageName; }
@@ -85,14 +91,20 @@ public class ProjectExport {
     public String getPackageHash() { return packageHash; }
     public void setPackageHash(String packageHash) { this.packageHash = packageHash; }
 
+    public String getManifestHash() { return manifestHash; }
+    public void setManifestHash(String manifestHash) { this.manifestHash = manifestHash; }
+
+    public String getPackageObjectKey() { return packageObjectKey; }
+    public void setPackageObjectKey(String packageObjectKey) { this.packageObjectKey = packageObjectKey; }
+
     public String getManifestData() { return manifestData; }
     public void setManifestData(String manifestData) { this.manifestData = manifestData; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
 
-    public String getExportedBy() { return exportedBy; }
-    public void setExportedBy(String exportedBy) { this.exportedBy = exportedBy; }
+    public UUID getExportedBy() { return exportedBy; }
+    public void setExportedBy(UUID exportedBy) { this.exportedBy = exportedBy; }
 
     public LocalDateTime getExportedAt() { return exportedAt; }
     public void setExportedAt(LocalDateTime exportedAt) { this.exportedAt = exportedAt; }
