@@ -31,7 +31,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '9'
+                 WHERE version = '10'
                    AND success = true
                 """,
                 Integer.class
@@ -106,6 +106,23 @@ class PostgresSchemaIntegrationTest {
                 Integer.class
         );
         assertEquals(1, constraintCount);
+    }
+
+    @Test
+    void onlyOneStartedImportOperationIsAllowedPerPackage() {
+        Integer indexCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_indexes
+                 WHERE schemaname = 'import'
+                   AND tablename = 'import_operations'
+                   AND indexname = 'uk_import_operations_one_started_per_package'
+                   AND indexdef ILIKE '%WHERE (status = ''STARTED''%'
+                """,
+                Integer.class
+        );
+
+        assertEquals(1, indexCount);
     }
 
     @Test
