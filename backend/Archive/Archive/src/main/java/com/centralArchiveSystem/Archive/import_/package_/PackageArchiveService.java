@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
+import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,7 +10,10 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -80,7 +84,7 @@ public class PackageArchiveService {
     public Verification verifyContents(InputStream packageInput,
                                        String expectedManifestHash,
                                        String expectedSchemaVersion) throws Exception {
-        Map<String, EntryDigest> actualEntries = new LinkedHashMap<>();
+        Map<String, EntryScan> actualEntries = new LinkedHashMap<>();
         byte[] manifestBytes = null;
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -103,17 +107,58 @@ public class PackageArchiveService {
 
                 if (isManifestEntry(entryName)) {
                     manifestBytes = readLimited(zip, MAX_MANIFEST_BYTES);
-                    actualEntries.put(entryName, new EntryDigest(sha256(manifestBytes), manifestBytes.length));
+                    actualEntries.put(
+                            entryName,
+                            new EntryScan(
+                                    sha256(manifestBytes),
+                                    manifestBytes.length,
+                                    firstBytes(manifestBytes, FileContentInspector.SNIFF_BYTES),
+                                    null
+                            )
+                    );
                 } else {
                     MessageDigest digest = MessageDigest.getInstance("SHA-256");
                     byte[] buffer = new byte[BUFFER_SIZE];
+                    ByteArrayOutputStream prefix = new ByteArrayOutputStream(FileContentInspector.SNIFF_BYTES);
+                    Path zipSpool = null;
+                    OutputStream spoolOutput = null;
                     long size = 0;
                     int read;
-                    while ((read = zip.read(buffer)) != -1) {
-                        digest.update(buffer, 0, read);
-                        size += read;
+
+                    try {
+                        while ((read = zip.read(buffer)) != -1) {
+                            digest.update(buffer, 0, read);
+                            size += read;
+
+                            int remaining = FileContentInspector.SNIFF_BYTES - prefix.size();
+                            if (remaining > 0) {
+                                prefix.write(buffer, 0, Math.min(read, remaining));
+                            }
+
+                            if (zipSpool == null
+                                    && FileContentInspector.hasZipSignature(prefix.toByteArray())) {
+                                zipSpool = Files.createTempFile("central-archive-package-entry-", ".zip");
+                                spoolOutput = Files.newOutputStream(zipSpool);
+                                spoolOutput.write(prefix.toByteArray());
+                            } else if (spoolOutput != null) {
+                                spoolOutput.write(buffer, 0, read);
+                            }
+                        }
+                    } finally {
+                        if (spoolOutput != null) {
+                            spoolOutput.close();
+                        }
                     }
-                    actualEntries.put(entryName, new EntryDigest(toHex(digest.digest()), size));
+
+                    actualEntries.put(
+                            entryName,
+                            new EntryScan(
+                                    toHex(digest.digest()),
+                                    size,
+                                    prefix.toByteArray(),
+                                    zipSpool
+                            )
+                    );
                 }
                 zip.closeEntry();
             }
@@ -146,7 +191,7 @@ public class PackageArchiveService {
         for (Map.Entry<String, ExpectedFile> expectedEntry : expectedFiles.entrySet()) {
             String path = expectedEntry.getKey();
             ExpectedFile expected = expectedEntry.getValue();
-            EntryDigest actual = actualEntries.get(path);
+            EntryScan actual = actualEntries.get(path);
 
             if (actual == null) {
                 errors.add("Missing package file: " + path);
@@ -170,6 +215,27 @@ public class PackageArchiveService {
                 errors.add("Size mismatch for: " + path);
                 filesValid = false;
             }
+
+            String expectedExtension = expected.extension();
+            if (expectedExtension == null) {
+                expectedExtension = extensionFromPath(path);
+            }
+
+            if (expectedExtension == null) {
+                errors.add("Missing file extension for content inspection: " + path);
+                filesValid = false;
+            } else {
+                try {
+                    FileContentInspector.validatePackageEntry(
+                            actual.prefix(),
+                            expectedExtension,
+                            actual.zipSpool()
+                    );
+                } catch (Exception e) {
+                    errors.add("Content type mismatch for " + path + ": " + e.getMessage());
+                    filesValid = false;
+                }
+            }
         }
 
         Set<String> expectedEntryNames = new HashSet<>(expectedFiles.keySet());
@@ -181,6 +247,16 @@ public class PackageArchiveService {
 
         int projectsCount = manifest.path("projects").isArray() ? manifest.path("projects").size() : 0;
         int filesCount = expectedFiles.size();
+
+        for (EntryScan scan : actualEntries.values()) {
+            if (scan.zipSpool() != null) {
+                try {
+                    Files.deleteIfExists(scan.zipSpool());
+                } catch (IOException cleanupError) {
+                    warnings.add("Unable to remove temporary inspection file");
+                }
+            }
+        }
 
         return new Verification(
                 manifestHashValid,
@@ -297,7 +373,13 @@ public class PackageArchiveService {
                     String path = resolveFileEntryPath(file);
                     String checksum = textOrNull(file, "checksum_sha256");
                     Long size = file.hasNonNull("size_bytes") ? file.path("size_bytes").asLong() : null;
-                    if (expected.put(path, new ExpectedFile(checksum, size)) != null) {
+                    String extension = textOrNull(file, "extension");
+                    if (extension == null) {
+                        extension = extensionFromPath(
+                                file.path("original_name").asText(file.path("name").asText(path))
+                        );
+                    }
+                    if (expected.put(path, new ExpectedFile(checksum, size, extension)) != null) {
                         errors.add("Duplicate file path in manifest: " + path);
                     }
                 } catch (IllegalArgumentException e) {
@@ -395,6 +477,25 @@ public class PackageArchiveService {
             JsonNode manifest
     ) {}
 
-    private record ExpectedFile(String checksum, Long sizeBytes) {}
-    private record EntryDigest(String sha256, long size) {}
+    private byte[] firstBytes(byte[] data, int maxBytes) {
+        int length = Math.min(data.length, maxBytes);
+        byte[] prefix = new byte[length];
+        System.arraycopy(data, 0, prefix, 0, length);
+        return prefix;
+    }
+
+    private String extensionFromPath(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        int slash = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
+        int dot = value.lastIndexOf('.');
+        if (dot <= slash || dot == value.length() - 1) {
+            return null;
+        }
+        return value.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private record ExpectedFile(String checksum, Long sizeBytes, String extension) {}
+    private record EntryScan(String sha256, long size, byte[] prefix, Path zipSpool) {}
 }
