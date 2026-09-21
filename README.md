@@ -128,7 +128,10 @@ docker compose down
 - ملف `.env` متجاهل من Git. لا ترفع كلمات المرور أو مفتاح JWT إلى المستودع.
 - لا تستخدم قيم `.env.example` في بيئة مشتركة أو إنتاجية. استبدل كلمات مرور PostgreSQL وMinIO، ومفتاح `JWT_SECRET`، وكلمة مرور المدير قبل التشغيل الأول.
 - `JWT_SECRET` يجب أن يكون Base64 لمفتاح عشوائي طوله 32 بايت على الأقل. مثال: `openssl rand -base64 32`.
-- الترحيل من قاعدة البيانات القديمة معطّل افتراضياً عبر `legacy.migration.enabled=false`. لا تضبط `LEGACY_DB_*` أو تفعّله إلا عند تجهيز قاعدة staging مستقلة ونسخة احتياطية موثوقة.
+- الترحيل من قاعدة البيانات القديمة معطّل افتراضيًا عبر `LEGACY_MIGRATION_ENABLED=false` ويعمل فقط على قاعدة staging المحددة في `LEGACY_DB_*`.
+- تشغيل migration يدويًا لا يفعّل الجدولة؛ `LEGACY_MIGRATION_SCHEDULE_ENABLED` يبقى `false` ما لم توجد حاجة تشغيلية صريحة للجدولة.
+- قبل file migration يجب ضبط `LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE` إلى كود موجود فعليًا في `core.confidentiality_levels`. لا يستخدم النظام أقل مستوى سرية تلقائيًا.
+- لا تفعّل نافذة migration إلا بعد تجهيز staging DB مستقلة، نسخة احتياطية موثوقة، ومساحة spool محلية كافية لمعالجة أكبر ملف legacy بصورة streaming.
 
 للنشر الإنتاجي والنسخ الاحتياطي والاستعادة راجع [DEPLOYMENT.md](DEPLOYMENT.md).
 
