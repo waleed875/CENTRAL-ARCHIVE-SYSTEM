@@ -9,7 +9,7 @@ import java.util.UUID;
 @Schema(description = "Full project response DTO")
 public record ProjectResponse(
     @Schema(description = "Project ID") UUID id,
-    @Schema(description = "Project UID") String projectUid,
+    @Schema(description = "Project UID") UUID projectUid,
     @Schema(description = "Version number") Integer versionNo,
     @Schema(description = "Previous project version ID") UUID previousProjectId,
     @Schema(description = "Whether this is the latest version") Boolean isLatestVersion,
