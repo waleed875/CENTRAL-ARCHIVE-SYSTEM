@@ -251,6 +251,49 @@ class PackageArchiveServiceTest {
         );
     }
 
+
+    @Test
+    void rejectsManifestExtensionThatDisagreesWithOriginalFilename() throws Exception {
+        byte[] fileContent = "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII);
+        String fileHash = sha256(fileContent);
+
+        String manifest = """
+                {
+                  "package_uuid": "11111111-1111-1111-1111-111111111111",
+                  "package_name": "sample.pkg",
+                  "schema_version": "1.0",
+                  "source_terminal_uuid": "22222222-2222-2222-2222-222222222222",
+                  "projects": [{
+                    "project_id": "33333333-3333-3333-3333-333333333333",
+                    "project_number": "P-001",
+                    "name": "Test Project",
+                    "year": 2026,
+                    "files": [{
+                      "project_id": "33333333-3333-3333-3333-333333333333",
+                      "original_name": "report.pdf",
+                      "extension": "txt",
+                      "object_key": "files/document.txt",
+                      "size_bytes": %d,
+                      "checksum_sha256": "%s"
+                    }]
+                  }]
+                }
+                """.formatted(fileContent.length, fileHash);
+
+        byte[] packageBytes = createPackage(manifest, fileContent);
+        String manifestHash = sha256(manifest.getBytes(StandardCharsets.UTF_8));
+
+        PackageArchiveService.Verification verification = service.verifyContents(
+                new ByteArrayInputStream(packageBytes),
+                manifestHash,
+                "1.0"
+        );
+
+        assertFalse(verification.filesValid());
+        assertTrue(verification.errors().stream()
+                .anyMatch(error -> error.contains("Manifest extension does not match")));
+    }
+
     @Test
     void rejectsUnsupportedSchemaVersion() throws Exception {
         byte[] fileContent = "content".getBytes(StandardCharsets.UTF_8);
