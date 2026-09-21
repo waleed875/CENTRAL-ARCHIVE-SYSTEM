@@ -31,8 +31,8 @@ public record ProjectResponse(
     @Schema(description = "Review notes") String reviewNotes,
     @Schema(description = "Source type") Project.SourceType sourceType,
     @Schema(description = "Source reference") String sourceReference,
-    @Schema(description = "Created by user") String createdBy,
-    @Schema(description = "Approved by user") String approvedBy,
+    @Schema(description = "Created by user ID") UUID createdBy,
+    @Schema(description = "Approved by user ID") UUID approvedBy,
     @Schema(description = "Approval timestamp") LocalDateTime approvedAt,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt,
     @Schema(description = "Last update timestamp") LocalDateTime updatedAt
