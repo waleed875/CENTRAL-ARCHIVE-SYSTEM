@@ -29,9 +29,12 @@ import java.util.UUID;
 public class BranchPackageController {
 
     private final BranchPackageService branchPackageService;
+    private final CurrentUserService currentUserService;
 
-    public BranchPackageController(BranchPackageService branchPackageService) {
+    public BranchPackageController(BranchPackageService branchPackageService,
+                                   CurrentUserService currentUserService) {
         this.branchPackageService = branchPackageService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -53,9 +56,7 @@ public class BranchPackageController {
     @Operation(summary = "Receive a branch package by uploading manifest file")
     public ResponseEntity<ApiResponse<PackageResponse>> receive(
             @Parameter(description = "Manifest file (JSON)", required = true)
-            @RequestParam("file") MultipartFile file,
-            @Parameter(description = "Username of the receiver")
-            @RequestParam(value = "receivedBy", defaultValue = "system") String receivedBy) throws IOException {
+            @RequestParam("file") MultipartFile file) throws IOException {
 
         String manifestJson = new String(file.getBytes(), StandardCharsets.UTF_8);
         PackageResponse response = branchPackageService.receive(manifestJson, currentUserService.username());
@@ -67,11 +68,9 @@ public class BranchPackageController {
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Receive a branch package by submitting JSON manifest directly")
     public ResponseEntity<ApiResponse<PackageResponse>> receiveJson(
-            @RequestBody String manifestJson,
-            @Parameter(description = "Username of the receiver")
-            @RequestParam(value = "receivedBy", defaultValue = "system") String receivedBy) {
+            @RequestBody String manifestJson) {
 
-        PackageResponse response = branchPackageService.receive(manifestJson, receivedBy);
+        PackageResponse response = branchPackageService.receive(manifestJson, currentUserService.username());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Package received"));
     }
