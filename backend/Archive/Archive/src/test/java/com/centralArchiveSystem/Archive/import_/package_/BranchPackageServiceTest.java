@@ -25,6 +25,70 @@ import static org.mockito.Mockito.*;
 class BranchPackageServiceTest {
 
     @Test
+    void importOperationFailsIfPackageIsNoLongerVerified() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID importedBy = UUID.randomUUID();
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setPackageUuid(UUID.randomUUID());
+        pkg.setStatus(BranchPackage.PackageStatus.FAILED);
+
+        ImportOperation operation = new ImportOperation();
+        operation.setId(operationId);
+        operation.setPackageId(packageId);
+        operation.setImportedBy(importedBy);
+        operation.setStatus(ImportOperation.Status.STARTED);
+
+        when(operations.getById(operationId)).thenReturn(operation);
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+
+        BranchPackageService service = new BranchPackageService(
+                packages,
+                packageProjects,
+                objectMapper,
+                projects,
+                members,
+                files,
+                minio,
+                minioConfig,
+                archive,
+                operations
+        );
+
+        service.importPackage(
+                packageId,
+                new PackageImportRequest(
+                        UUID.randomUUID(),
+                        Map.of(),
+                        true,
+                        false
+                ),
+                importedBy,
+                operationId
+        );
+
+        verify(operations).updateStatus(
+                eq(operationId),
+                eq(ImportOperation.Status.FAILED),
+                contains("must remain VERIFIED")
+        );
+        verifyNoInteractions(projects);
+    }
+
+    @Test
     void fileFailureProducesPartialOperationAndIncompleteImportedProject() throws Exception {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
