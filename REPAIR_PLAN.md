@@ -17,16 +17,16 @@ Status: IN PROGRESS
 - [x] Allow `/api/v1/auth/refresh` without a valid access token.
 - [x] Rotate access/refresh tokens when refresh succeeds.
 - [x] Redact password/token/authorization/secret fields from audit payloads.
-- [ ] Resolve the authenticated user centrally instead of trusting client-supplied usernames.
-- [ ] Populate uploaded_by/deleted_by/approved_by/received_by/exported_by from authenticated identity.
+- [x] Resolve the authenticated user centrally instead of trusting client-supplied usernames.
+- [x] Populate uploaded_by/deleted_by and operation actor fields from authenticated identity; database UUID alignment for remaining actor columns continues in Phase 2.
 - [ ] Add role and object-level authorization tests.
 - [ ] Add organization/confidentiality enforcement.
 
 ## Phase 2 - Database and Entity Alignment
 
-- [ ] Align `project_uid` type and constraints between PostgreSQL and JPA.
-- [ ] Remove the incorrect single-column unique constraint on `project_uid`.
-- [ ] Enforce `UNIQUE(project_uid, version_no)`.
+- [x] Align `project_uid` type and constraints between PostgreSQL and JPA.
+- [x] Remove the incorrect single-column unique constraint on `project_uid`.
+- [x] Enforce `UNIQUE(project_uid, version_no)`.
 - [ ] Align user-reference columns (`created_by`, `approved_by`, etc.) with Java types.
 - [ ] Align branch package IDs and terminal IDs with the PostgreSQL schema.
 - [ ] Align `PackageProject` fields with the real import lifecycle.
