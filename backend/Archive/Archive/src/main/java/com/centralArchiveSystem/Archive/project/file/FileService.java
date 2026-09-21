@@ -122,10 +122,23 @@ public class FileService {
         String bucketName = minioConfig.getBucket();
         String objectKey = "projects/" + projectId + "/" + storedName;
 
+        String checksum;
+        try {
+            checksum = calculateChecksum(multipartFile);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Unable to calculate file checksum", e);
+        }
+
+        if (fileRepository.existsByProjectIdAndChecksumSha256AndDeletedAtIsNull(
+                projectId,
+                checksum
+        )) {
+            throw new IllegalArgumentException(
+                    "A file with the same content already exists in this project");
+        }
+
         boolean uploadedToObjectStorage = false;
         try {
-            String checksum = calculateChecksum(multipartFile);
-
             minioService.uploadFile(multipartFile, bucketName, objectKey);
             uploadedToObjectStorage = true;
 
