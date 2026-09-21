@@ -38,7 +38,7 @@ class ExportServiceTest {
         ProjectExportRepository exportRepository = mock(ProjectExportRepository.class);
         ConfidentialityAccessService confidentialityAccessService = mock(ConfidentialityAccessService.class);
 
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PackageArchiveService packageArchiveService = new PackageArchiveService(objectMapper, "1.0");
 
         MinioConfig minioConfig = new MinioConfig();
@@ -165,7 +165,7 @@ class ExportServiceTest {
         ProjectExportRepository exportRepository = mock(ProjectExportRepository.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
 
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         PackageArchiveService archiveService = new PackageArchiveService(objectMapper, "1.0");
 
         MinioConfig minioConfig = new MinioConfig();
