@@ -13,6 +13,8 @@ public interface MigrationBatchRepository extends JpaRepository<MigrationBatch, 
 
     List<MigrationBatch> findByStatus(MigrationBatch.Status status);
 
+    boolean existsByStatus(MigrationBatch.Status status);
+
     Long countByMigrationSourceIdAndStatus(UUID migrationSourceId, MigrationBatch.Status status);
 
     long countByMigrationSourceId(UUID migrationSourceId);
