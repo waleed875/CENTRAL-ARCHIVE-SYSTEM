@@ -94,8 +94,8 @@ public class MigrationRunner {
                 LegacyMigrationService.LegacyFileSummary files =
                         legacyMigrationService.migrateFilesAsync(4).get();
 
-                long doneFiles = files.done;
-                long failedFiles = files.failed;
+                long doneFiles = files.done();
+                long failedFiles = files.failed();
 
                 batch.setProjectsCount(projects);
                 batch.setFilesCount((int) doneFiles);
@@ -104,7 +104,7 @@ public class MigrationRunner {
                         : MigrationBatch.Status.SUCCESS);
                 batch.setNotes("references=" + refs + ", projects=" + projects
                         + ", files done=" + doneFiles + ", failed=" + failedFiles
-                        + ", skipped=" + files.skipped);
+                        + ", skipped=" + files.skipped());
             } catch (Exception e) {
                 log.error("Legacy migration failed, batch={}", batchId, e);
                 batch.setStatus(MigrationBatch.Status.FAILED);
