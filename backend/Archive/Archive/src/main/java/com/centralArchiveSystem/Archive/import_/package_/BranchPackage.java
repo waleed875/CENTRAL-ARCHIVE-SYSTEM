@@ -32,10 +32,10 @@ public class BranchPackage {
     @Column(name = "package_name", nullable = false)
     private String packageName;
 
-    @Column(name = "package_hash", nullable = false, unique = true, length = 64)
+    @Column(name = "package_hash", nullable = false, unique = true, length = 64, columnDefinition = "char(64)")
     private String packageHash;
 
-    @Column(name = "manifest_hash", nullable = false, length = 64)
+    @Column(name = "manifest_hash", nullable = false, length = 64, columnDefinition = "char(64)")
     private String manifestHash;
 
     @Column(name = "schema_version", nullable = false)
