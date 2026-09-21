@@ -4,18 +4,20 @@ import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.file.dto.*;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -88,22 +90,40 @@ public class FileController {
 
     @GetMapping("/api/v1/files/{id}/download")
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry', 'auditor', 'archive_officer', 'import_officer', 'export_officer')")
-    public void downloadFile(@PathVariable UUID id, HttpServletResponse response) {
-        try {
-            InputStream inputStream = fileService.downloadFile(id);
-            FileResponse fileMetadata = fileService.getFileMetadata(id);
+    public ResponseEntity<StreamingResponseBody> downloadFile(@PathVariable UUID id) {
+        FileResponse fileMetadata = fileService.getFileMetadata(id);
+        InputStream inputStream = fileService.downloadFile(id);
 
-            response.setContentType(fileMetadata.mimeType() != null ? fileMetadata.mimeType() : "application/octet-stream");
-            response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
-                    "attachment; filename=\"" + fileMetadata.originalName() + "\"");
-            response.setContentLength(fileMetadata.sizeBytes().intValue());
+        StreamingResponseBody body = outputStream -> {
+            try (inputStream) {
+                inputStream.transferTo(outputStream);
+            }
+        };
 
-            inputStream.transferTo(response.getOutputStream());
-            response.getOutputStream().flush();
-            inputStream.close();
-        } catch (Exception e) {
-            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        if (fileMetadata.mimeType() != null && !fileMetadata.mimeType().isBlank()) {
+            try {
+                mediaType = MediaType.parseMediaType(fileMetadata.mimeType());
+            } catch (IllegalArgumentException ignored) {
+                // Fall back to application/octet-stream.
+            }
         }
+
+        var response = ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(fileMetadata.originalName(), StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                );
+
+        if (fileMetadata.sizeBytes() != null && fileMetadata.sizeBytes() >= 0) {
+            response.contentLength(fileMetadata.sizeBytes());
+        }
+
+        return response.body(body);
     }
 
     @PostMapping("/api/v1/files/{id}/restore")
