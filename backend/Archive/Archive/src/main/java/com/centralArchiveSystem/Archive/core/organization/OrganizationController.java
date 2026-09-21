@@ -29,11 +29,12 @@ public class OrganizationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<OrganizationResponse>>> list(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID parentId,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<OrganizationResponse> result = organizationService.list(search, type, isActive, page - 1, size);
+        Page<OrganizationResponse> result = organizationService.list(search, parentId, type, isActive, page - 1, size);
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
