@@ -22,9 +22,11 @@ import java.util.UUID;
 public class FileController {
 
     private final FileService fileService;
+    private final CurrentUserService currentUserService;
 
-    public FileController(FileService fileService) {
+    public FileController(FileService fileService, CurrentUserService currentUserService) {
         this.fileService = fileService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/api/v1/projects/{projectId}/files")
