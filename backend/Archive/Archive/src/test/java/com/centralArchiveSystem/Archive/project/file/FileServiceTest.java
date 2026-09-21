@@ -588,8 +588,8 @@ class FileServiceTest {
                 UUID.randomUUID()
         );
 
-        assertEquals(1, result.uploaded());
-        assertEquals(1, result.failed());
+        assertEquals(1, result.totalSucceeded());
+        assertEquals(1, result.totalFailed());
         verify(transactionManager).commit(firstStatus);
         verify(transactionManager).rollback(secondStatus);
     }
