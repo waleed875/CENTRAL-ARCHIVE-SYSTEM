@@ -177,8 +177,8 @@ public class MigrationService {
         MigrationBatch saved = batchRepository.save(batch);
 
         // Do not log connection strings or other migration credentials.
-        log.info("Migration batch {} accepted for background execution, type={}",
-                batchId, runRequest.type());
+        log.info("Migration batch {} accepted for background execution via legacy staging adapter",
+                batchId);
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -206,24 +206,26 @@ public class MigrationService {
                 .orElseThrow(() -> new RuntimeException(
                         "Migration source not found: " + batch.getMigrationSourceId()));
 
-        if (!"LEGACY_DB".equalsIgnoreCase(runRequest.type())) {
-            throw new IllegalArgumentException(
-                    "Unsupported migration type. Current MVP supports only LEGACY_DB staging migrations");
-        }
+        MigrationRunRequest.MigrationConfig config = runRequest.migration_config();
 
-        if (!configuredLegacyJdbcUrl.equals(runRequest.connection_string())) {
+        if (!configuredLegacyJdbcUrl.equals(config.connection_string())) {
             throw new IllegalArgumentException(
                     "Dynamic migration connections are not enabled. Use the configured legacy staging datasource");
         }
 
-        if (runRequest.file_path() != null && !runRequest.file_path().isBlank()) {
+        if (config.file_path() != null && !config.file_path().isBlank()) {
             throw new IllegalArgumentException(
                     "File-based migration adapter is not implemented in the current MVP");
         }
 
-        if (runRequest.type_mapping() != null && !runRequest.type_mapping().isEmpty()) {
+        if (config.project_type_mapping() != null && !config.project_type_mapping().isEmpty()) {
             throw new IllegalArgumentException(
-                    "Dynamic migration mappings are not implemented in the current MVP");
+                    "Dynamic project type mappings are not implemented in the current MVP");
+        }
+
+        if (config.default_confidentiality_level_id() != null) {
+            throw new IllegalArgumentException(
+                    "Default confidentiality override is not implemented in the current MVP");
         }
 
         String sourceType = source.getSourceType();
