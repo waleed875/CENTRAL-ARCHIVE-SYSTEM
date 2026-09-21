@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "import.branch_packages")
+@Table(name = "branch_packages", schema = "import")
 @Schema(name = "import.branch_packages")
 public class BranchPackage {
 
@@ -18,41 +18,41 @@ public class BranchPackage {
     private UUID id;
 
     @Column(name = "package_uuid", nullable = false, unique = true)
-    private String packageUuid;
+    private UUID packageUuid;
 
-    @Column(name = "source_organization_id", nullable = false)
+    @Column(name = "source_organization_id")
     private UUID sourceOrganizationId;
 
     @Column(name = "source_terminal_uuid", nullable = false)
-    private String sourceTerminalUuid;
+    private UUID sourceTerminalUuid;
 
-    @Column(name = "source_username", nullable = false)
+    @Column(name = "source_username")
     private String sourceUsername;
 
     @Column(name = "package_name", nullable = false)
     private String packageName;
 
-    @Column(name = "package_hash", nullable = false, unique = true)
+    @Column(name = "package_hash", nullable = false, unique = true, length = 64)
     private String packageHash;
 
-    @Column(name = "manifest_hash", nullable = false)
+    @Column(name = "manifest_hash", nullable = false, length = 64)
     private String manifestHash;
 
     @Column(name = "schema_version", nullable = false)
     private String schemaVersion;
 
     @Column(name = "projects_count", nullable = false)
-    private Integer projectsCount;
+    private Integer projectsCount = 0;
 
     @Column(name = "files_count", nullable = false)
-    private Integer filesCount;
+    private Integer filesCount = 0;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private PackageStatus status;
+    private PackageStatus status = PackageStatus.RECEIVED;
 
-    @Column(name = "received_by", nullable = false)
-    private String receivedBy;
+    @Column(name = "received_by")
+    private UUID receivedBy;
 
     @Column(name = "received_at", nullable = false)
     private LocalDateTime receivedAt;
@@ -86,41 +86,17 @@ public class BranchPackage {
 
     public BranchPackage() {}
 
-    public BranchPackage(UUID id, String packageUuid, UUID sourceOrganizationId, String sourceTerminalUuid, String sourceUsername, String packageName, String packageHash, String manifestHash, String schemaVersion, Integer projectsCount, Integer filesCount, PackageStatus status, String receivedBy, LocalDateTime receivedAt, LocalDateTime verifiedAt, LocalDateTime importedAt, String errorMessage, String manifestData, UUID targetOrganizationId, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this.id = id;
-        this.packageUuid = packageUuid;
-        this.sourceOrganizationId = sourceOrganizationId;
-        this.sourceTerminalUuid = sourceTerminalUuid;
-        this.sourceUsername = sourceUsername;
-        this.packageName = packageName;
-        this.packageHash = packageHash;
-        this.manifestHash = manifestHash;
-        this.schemaVersion = schemaVersion;
-        this.projectsCount = projectsCount;
-        this.filesCount = filesCount;
-        this.status = status;
-        this.receivedBy = receivedBy;
-        this.receivedAt = receivedAt;
-        this.verifiedAt = verifiedAt;
-        this.importedAt = importedAt;
-        this.errorMessage = errorMessage;
-        this.manifestData = manifestData;
-        this.targetOrganizationId = targetOrganizationId;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-    }
-
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
-    public String getPackageUuid() { return packageUuid; }
-    public void setPackageUuid(String packageUuid) { this.packageUuid = packageUuid; }
+    public UUID getPackageUuid() { return packageUuid; }
+    public void setPackageUuid(UUID packageUuid) { this.packageUuid = packageUuid; }
 
     public UUID getSourceOrganizationId() { return sourceOrganizationId; }
     public void setSourceOrganizationId(UUID sourceOrganizationId) { this.sourceOrganizationId = sourceOrganizationId; }
 
-    public String getSourceTerminalUuid() { return sourceTerminalUuid; }
-    public void setSourceTerminalUuid(String sourceTerminalUuid) { this.sourceTerminalUuid = sourceTerminalUuid; }
+    public UUID getSourceTerminalUuid() { return sourceTerminalUuid; }
+    public void setSourceTerminalUuid(UUID sourceTerminalUuid) { this.sourceTerminalUuid = sourceTerminalUuid; }
 
     public String getSourceUsername() { return sourceUsername; }
     public void setSourceUsername(String sourceUsername) { this.sourceUsername = sourceUsername; }
@@ -146,8 +122,8 @@ public class BranchPackage {
     public PackageStatus getStatus() { return status; }
     public void setStatus(PackageStatus status) { this.status = status; }
 
-    public String getReceivedBy() { return receivedBy; }
-    public void setReceivedBy(String receivedBy) { this.receivedBy = receivedBy; }
+    public UUID getReceivedBy() { return receivedBy; }
+    public void setReceivedBy(UUID receivedBy) { this.receivedBy = receivedBy; }
 
     public LocalDateTime getReceivedAt() { return receivedAt; }
     public void setReceivedAt(LocalDateTime receivedAt) { this.receivedAt = receivedAt; }
