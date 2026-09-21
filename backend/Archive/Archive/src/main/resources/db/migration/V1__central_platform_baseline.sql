@@ -40,7 +40,8 @@ CREATE TABLE core.users (
     max_confidentiality_level_id UUID REFERENCES core.confidentiality_levels(id),
     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISABLED','LOCKED')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ,
+    token_valid_after TIMESTAMPTZ
 );
 
 CREATE TABLE core.roles (
