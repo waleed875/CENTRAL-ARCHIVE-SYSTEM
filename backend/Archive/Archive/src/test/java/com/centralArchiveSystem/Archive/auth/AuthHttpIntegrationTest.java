@@ -142,6 +142,22 @@ class AuthHttpIntegrationTest {
                 .andExpect(status().isCreated());
     }
 
+    @Test
+    void importOperationMutationsAreNotPublicHttpEndpoints() throws Exception {
+        String adminToken = loginAndGetAccessToken(adminUsername);
+        java.util.UUID packageId = java.util.UUID.randomUUID();
+        java.util.UUID operationId = java.util.UUID.randomUUID();
+
+        mockMvc.perform(post("/api/v1/packages/" + packageId + "/operations")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isMethodNotAllowed());
+
+        mockMvc.perform(patch("/api/v1/operations/" + operationId + "/status")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("status", "SUCCESS"))
+                .andExpect(status().isNotFound());
+    }
+
     private String loginAndGetAccessToken(String loginUsername) throws Exception {
         String loginJson = """
                 {"username":"%s","password":"%s"}
