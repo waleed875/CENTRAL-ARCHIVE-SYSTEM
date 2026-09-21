@@ -179,6 +179,7 @@ class ExportServiceTest {
         visible.setProjectsCount(1);
         visible.setFilesCount(0);
         visible.setStatus("EXPORTED");
+        visible.setCreatedAt(java.time.LocalDateTime.now().minusMinutes(1));
         visible.setPackageObjectKey("exports/private/visible.pkg");
         visible.setManifestData("""
                 {
@@ -197,6 +198,7 @@ class ExportServiceTest {
         hidden.setProjectsCount(1);
         hidden.setFilesCount(0);
         hidden.setStatus("EXPORTED");
+        hidden.setCreatedAt(java.time.LocalDateTime.now());
         hidden.setPackageObjectKey("exports/private/hidden.pkg");
         hidden.setManifestData("""
                 {
