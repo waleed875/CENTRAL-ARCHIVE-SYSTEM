@@ -63,7 +63,7 @@ public class ProjectService {
         }
 
         Project project = new Project();
-        project.setProjectUid(UUID.randomUUID().toString());
+        project.setProjectUid(UUID.randomUUID());
         project.setVersionNo(1);
         project.setIsLatestVersion(true);
         project.setStatus(Project.ProjectStatus.DRAFT);
