@@ -63,12 +63,27 @@ public class MigrationRunner {
      * run was (re)started by this call.
      */
     public boolean runOnce() {
+        MigrationBatch batch = findOrCreateRunningBatch();
+        return runBatch(batch.getId());
+    }
+
+    public boolean runBatch(UUID batchId) {
         if (!running.compareAndSet(false, true)) {
-            log.info("Legacy migration already running, skipped trigger");
+            log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
         }
+
         try {
-            MigrationBatch batch = findOrCreateRunningBatch();
+            MigrationBatch batch = batchRepository.findById(batchId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Migration batch not found: " + batchId));
+
+            if (batch.getStatus() != MigrationBatch.Status.RUNNING) {
+                throw new IllegalStateException(
+                        "Migration batch must be RUNNING before execution; current status: "
+                                + batch.getStatus());
+            }
+
             log.info("Legacy migration started, batch={}", batch.getId());
 
             try {
@@ -82,11 +97,14 @@ public class MigrationRunner {
 
                 batch.setProjectsCount(projects);
                 batch.setFilesCount((int) doneFiles);
-                batch.setStatus(failedFiles > 0 ? MigrationBatch.Status.PARTIAL : MigrationBatch.Status.SUCCESS);
+                batch.setStatus(failedFiles > 0
+                        ? MigrationBatch.Status.PARTIAL
+                        : MigrationBatch.Status.SUCCESS);
                 batch.setNotes("references=" + refs + ", projects=" + projects
-                        + ", files done=" + doneFiles + ", failed=" + failedFiles + ", skipped=" + files.skipped);
+                        + ", files done=" + doneFiles + ", failed=" + failedFiles
+                        + ", skipped=" + files.skipped);
             } catch (Exception e) {
-                log.error("Legacy migration failed", e);
+                log.error("Legacy migration failed, batch={}", batchId, e);
                 batch.setStatus(MigrationBatch.Status.FAILED);
                 batch.setNotes("FAILED: " + e.getMessage());
             } finally {
@@ -106,7 +124,7 @@ public class MigrationRunner {
         }
         MigrationBatch batch = new MigrationBatch();
         batch.setMigrationSourceId(ensureSourceId());
-        batch.setBatchNumber(1);
+        batch.setBatchNumber("AUTO-" + System.currentTimeMillis());
         batch.setStatus(MigrationBatch.Status.RUNNING);
         batch.setStartedAt(LocalDateTime.now());
         batch.setNotes("Legacy migration from staging database");
