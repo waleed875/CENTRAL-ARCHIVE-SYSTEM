@@ -53,7 +53,7 @@ public class ProjectService {
         return ProjectResponse.fromEntity(project);
     }
 
-    public ProjectResponse create(ProjectRequest request) {
+    public ProjectResponse create(ProjectRequest request, String createdBy) {
         Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
                 request.projectNumber(), request.organizationId(), request.year());
 
@@ -81,7 +81,7 @@ public class ProjectService {
             project.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
         }
 
-        project.setCreatedBy(request.createdBy());
+        project.setCreatedBy(createdBy);
 
         Project saved = projectRepository.save(project);
 
