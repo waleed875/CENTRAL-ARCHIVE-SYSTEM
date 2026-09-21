@@ -85,9 +85,7 @@ public class FileService {
     @Transactional
     public FileResponse uploadFile(UUID projectId, MultipartFile multipartFile,
                                    FileUploadRequest request, UUID uploadedBy) {
-        if (!projectRepository.existsById(projectId)) {
-            throw new ResourceNotFoundException("Project", "id", projectId);
-        }
+        requireMutableProject(projectId);
 
         FileCategory category = fileCategoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
@@ -175,6 +173,7 @@ public class FileService {
     public FileResponse updateFileMetadata(UUID id, FileMetadataUpdateRequest request) {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        requireMutableProject(file.getProjectId());
 
         if (request.categoryId() != null) {
             fileCategoryRepository.findById(request.categoryId())
@@ -203,6 +202,7 @@ public class FileService {
     public void softDelete(UUID id, UUID deletedBy, String reason) {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        requireMutableProject(file.getProjectId());
 
         file.setStatus("DELETED");
         file.setDeletedAt(LocalDateTime.now());
@@ -236,6 +236,7 @@ public class FileService {
     public FileResponse restoreFile(UUID id) {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
+        requireMutableProject(file.getProjectId());
 
         if (file.getDeletedAt() == null) {
             throw new IllegalStateException("File is not deleted and cannot be restored");
@@ -249,6 +250,18 @@ public class FileService {
         FileEntity saved = fileRepository.save(file);
         log.info("File restored: id={}", id);
         return toResponse(saved);
+    }
+
+    private Project requireMutableProject(UUID projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+
+        if (project.getStatus() == Project.ProjectStatus.APPROVED
+                || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
+            throw new IllegalStateException(
+                    "Project files cannot be modified when project status is " + project.getStatus());
+        }
+        return project;
     }
 
     private FileEntity getAccessibleFile(UUID id) {
