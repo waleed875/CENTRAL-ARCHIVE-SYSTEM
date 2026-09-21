@@ -1,10 +1,12 @@
 package com.centralArchiveSystem.Archive.project.member;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.project.project.Project;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
-import com.centralArchiveSystem.Archive.project.member.dto.MemberRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberUpdateRequest;
 import com.centralArchiveSystem.Archive.project.member.dto.MemberResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,7 +68,7 @@ public class ProjectMemberService {
     }
 
     @Transactional
-    public MemberResponse create(UUID projectId, MemberRequest request) {
+    public MemberResponse create(UUID projectId, MemberCreateRequest request) {
         requireMutableProject(projectId);
 
         ProjectMember member = new ProjectMember();
@@ -81,7 +83,7 @@ public class ProjectMemberService {
     }
 
     @Transactional
-    public MemberResponse update(UUID projectId, UUID id, MemberRequest request) {
+    public MemberResponse update(UUID projectId, UUID id, MemberUpdateRequest request) {
         requireMutableProject(projectId);
 
         ProjectMember member = projectMemberRepository.findById(id)
@@ -125,7 +127,7 @@ public class ProjectMemberService {
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
-            throw new IllegalStateException(
+            throw new BusinessRuleException(
                     "Project members cannot be modified when project status is " + project.getStatus());
         }
         return project;
