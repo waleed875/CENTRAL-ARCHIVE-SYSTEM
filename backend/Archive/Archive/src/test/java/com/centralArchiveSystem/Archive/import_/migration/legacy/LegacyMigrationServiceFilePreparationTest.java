@@ -72,6 +72,24 @@ class LegacyMigrationServiceFilePreparationTest {
         assertTrue(error.getMessage().contains("Executable"));
     }
 
+    @Test
+    void countersRemainAccurateUnderConcurrentUpdates() {
+        LegacyMigrationService.LegacyFileSummary summary =
+                new LegacyMigrationService.LegacyFileSummary();
+
+        java.util.stream.IntStream.range(0, 10_000)
+                .parallel()
+                .forEach(index -> {
+                    summary.incrementDone();
+                    summary.incrementFailed();
+                    summary.incrementSkipped();
+                });
+
+        assertEquals(10_000, summary.done());
+        assertEquals(10_000, summary.failed());
+        assertEquals(10_000, summary.skipped());
+    }
+
     private String sha256(byte[] content) throws Exception {
         byte[] hash = MessageDigest.getInstance("SHA-256").digest(content);
         StringBuilder hex = new StringBuilder(hash.length * 2);
