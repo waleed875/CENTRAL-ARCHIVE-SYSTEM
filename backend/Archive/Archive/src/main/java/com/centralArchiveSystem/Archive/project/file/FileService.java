@@ -119,7 +119,7 @@ public class FileService {
                 multipartFile,
                 expectedExtension
         );
-        String sourceType = normalizeSourceType(request.sourceType(), true);
+        String sourceType = "MANUAL";
 
         String storedName = UUID.randomUUID() + (extension != null ? "." + extension : "");
         String bucketName = minioConfig.getBucket();
@@ -161,7 +161,7 @@ public class FileService {
             fileEntity.setStatus("ACTIVE");
             fileEntity.setUploadedBy(uploadedBy);
             fileEntity.setSourceType(sourceType);
-            fileEntity.setSourceReference(request.sourceReference());
+            fileEntity.setSourceReference(null);
 
             FileEntity saved = fileRepository.save(fileEntity);
             log.info("File uploaded successfully: id={}, originalName={}", saved.getId(), originalName);
@@ -254,11 +254,6 @@ public class FileService {
             file.setConfidentialityLevelId(request.confidentialityLevelId());
         }
 
-        if (request.sourceType() != null) {
-            file.setSourceType(normalizeSourceType(request.sourceType(), false));
-        }
-        if (request.sourceReference() != null) file.setSourceReference(request.sourceReference());
-
         FileEntity saved = fileRepository.save(file);
         return toResponse(saved);
     }
@@ -315,22 +310,6 @@ public class FileService {
         FileEntity saved = fileRepository.save(file);
         log.info("File restored: id={}", id);
         return toResponse(saved);
-    }
-
-    private String normalizeSourceType(String sourceType, boolean defaultManual) {
-        if (sourceType == null || sourceType.isBlank()) {
-            if (defaultManual) {
-                return "MANUAL";
-            }
-            throw new IllegalArgumentException("File source type cannot be blank");
-        }
-
-        String normalized = sourceType.trim().toUpperCase(java.util.Locale.ROOT);
-        if (!java.util.Set.of("MANUAL", "BRANCH_PACKAGE", "MIGRATION").contains(normalized)) {
-            throw new IllegalArgumentException(
-                    "Unsupported file source type: " + sourceType);
-        }
-        return normalized;
     }
 
     private Project requireMutableProject(UUID projectId) {
