@@ -60,7 +60,7 @@ public class FileService {
     }
 
     public Page<FileResponse> listProjectFiles(UUID projectId, UUID categoryId, UUID typeId,
-                                               String search, int page, int size) {
+                                               String status, String search, int page, int size) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
@@ -72,6 +72,7 @@ public class FileService {
                 projectId,
                 categoryId,
                 typeId,
+                status,
                 search,
                 maxLevelOrder,
                 pageable
