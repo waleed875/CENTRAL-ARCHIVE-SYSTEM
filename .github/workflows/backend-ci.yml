@@ -86,8 +86,8 @@ jobs:
       - name: Run focused unit tests
         run: bash mvnw -B -Dtest=PackageArchiveServiceTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,UserServiceTest,FileContentInspectorTest,FileCategoryServiceTest,FileTypeServiceTest,FileServiceTest,RequestCorrelationFilterTest,AuditAspectTest test
 
-      - name: Run authentication HTTP integration tests
-        run: bash mvnw -B -Dtest=AuthHttpIntegrationTest test
+      - name: Run authentication and object authorization HTTP integration tests
+        run: bash mvnw -B -Dtest=AuthHttpIntegrationTest,ObjectAuthorizationHttpIntegrationTest test
 
       - name: Run MinIO integration tests
         run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
