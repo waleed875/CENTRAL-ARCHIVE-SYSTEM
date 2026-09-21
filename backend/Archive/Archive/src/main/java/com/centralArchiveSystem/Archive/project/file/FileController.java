@@ -1,6 +1,6 @@
 package com.centralArchiveSystem.Archive.project.file;
 
-import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;\nimport com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.file.dto.*;
 import jakarta.servlet.http.HttpServletResponse;
@@ -45,7 +45,7 @@ public class FileController {
             @PathVariable UUID projectId,
             @RequestParam("file") MultipartFile file,
             @Valid @RequestPart("metadata") FileUploadRequest metadata) {
-        FileResponse response = fileService.uploadFile(projectId, file, metadata, null);
+        FileResponse response = fileService.uploadFile(projectId, file, metadata, currentUserService.userId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "File uploaded successfully"));
     }
@@ -56,7 +56,7 @@ public class FileController {
             @PathVariable UUID projectId,
             @RequestParam("files") List<MultipartFile> files,
             @Valid @RequestPart("metadata") FileUploadRequest metadata) {
-        FileBatchResponse response = fileService.uploadBatch(projectId, files, metadata, null);
+        FileBatchResponse response = fileService.uploadBatch(projectId, files, metadata, currentUserService.userId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Batch upload completed"));
     }
@@ -79,7 +79,7 @@ public class FileController {
     public ResponseEntity<ApiResponse<Void>> softDeleteFile(
             @PathVariable UUID id,
             @RequestParam(required = false) String reason) {
-        fileService.softDelete(id, null, reason);
+        fileService.softDelete(id, currentUserService.userId(), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "File deleted successfully"));
     }
 
