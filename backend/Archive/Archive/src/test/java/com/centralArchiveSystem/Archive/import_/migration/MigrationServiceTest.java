@@ -41,10 +41,12 @@ class MigrationServiceTest {
         var response = service.runBatch(
                 id,
                 new MigrationRunRequest(
-                        LEGACY_URL,
-                        null,
-                        "LEGACY_DB",
-                        Map.of()
+                        new MigrationRunRequest.MigrationConfig(
+                                LEGACY_URL,
+                                null,
+                                Map.of(),
+                                null
+                        )
                 )
         );
 
@@ -82,10 +84,12 @@ class MigrationServiceTest {
                 () -> service.runBatch(
                         id,
                         new MigrationRunRequest(
-                                LEGACY_URL,
-                                null,
-                                "LEGACY_DB",
-                                Map.of()
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        null,
+                                        Map.of(),
+                                        null
+                                )
                         )
                 )
         );
@@ -120,10 +124,12 @@ class MigrationServiceTest {
                 () -> service.runBatch(
                         id,
                         new MigrationRunRequest(
-                                LEGACY_URL,
-                                null,
-                                "LEGACY_DB",
-                                Map.of()
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        null,
+                                        Map.of(),
+                                        null
+                                )
                         )
                 )
         );
@@ -165,10 +171,12 @@ class MigrationServiceTest {
                 () -> service.runBatch(
                         id,
                         new MigrationRunRequest(
-                                "jdbc:postgresql://another-host/db",
-                                null,
-                                "LEGACY_DB",
-                                Map.of()
+                                new MigrationRunRequest.MigrationConfig(
+                                        "jdbc:postgresql://another-host/db",
+                                        null,
+                                        Map.of(),
+                                        null
+                                )
                         )
                 )
         );
@@ -207,10 +215,12 @@ class MigrationServiceTest {
                 () -> service.runBatch(
                         id,
                         new MigrationRunRequest(
-                                LEGACY_URL,
-                                "/tmp/legacy.csv",
-                                "LEGACY_DB",
-                                Map.of()
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        "/tmp/legacy.csv",
+                                        Map.of(),
+                                        null
+                                )
                         )
                 )
         );
@@ -220,10 +230,56 @@ class MigrationServiceTest {
                 () -> service.runBatch(
                         id,
                         new MigrationRunRequest(
-                                LEGACY_URL,
-                                null,
-                                "LEGACY_DB",
-                                Map.of("old_type", "new_type")
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        null,
+                                        Map.of("old_type", UUID.randomUUID()),
+                                        null
+                                )
+                        )
+                )
+        );
+
+        verify(execution, never()).execute(any());
+        verify(batches, never()).save(any());
+    }
+
+    @Test
+    void runBatchRejectsUnsupportedConfidentialityOverride() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-CONF");
+        batch.setStatus(MigrationBatch.Status.PLANNED);
+
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setSourceType("POSTGRESQL");
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, LEGACY_URL, true);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.runBatch(
+                        id,
+                        new MigrationRunRequest(
+                                new MigrationRunRequest.MigrationConfig(
+                                        LEGACY_URL,
+                                        null,
+                                        Map.of(),
+                                        UUID.randomUUID()
+                                )
                         )
                 )
         );
