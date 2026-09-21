@@ -42,6 +42,7 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
              AND f.deletedAt IS NULL
              AND (:categoryId IS NULL OR f.categoryId = :categoryId)
              AND (:typeId IS NULL OR f.typeId = :typeId)
+             AND (:status IS NULL OR UPPER(f.status) = UPPER(:status))
              AND (
                   :search IS NULL OR :search = ''
                   OR LOWER(f.originalName) LIKE LOWER(CONCAT('%', :search, '%'))
@@ -64,6 +65,7 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
             @Param("projectId") UUID projectId,
             @Param("categoryId") UUID categoryId,
             @Param("typeId") UUID typeId,
+            @Param("status") String status,
             @Param("search") String search,
             @Param("maxLevelOrder") Integer maxLevelOrder,
             Pageable pageable);
