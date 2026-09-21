@@ -6,6 +6,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -39,6 +40,28 @@ class JwtTokenProviderTest {
         assertEquals("auditor-user", provider.getUsernameFromToken(refreshToken));
         assertTrue(provider.getRolesFromToken(accessToken).contains("ROLE_auditor"));
         assertTrue(provider.getRolesFromToken(refreshToken).isEmpty());
+    }
+
+
+    @Test
+    void enforcesPersistentTokenCutoff() throws Exception {
+        JwtTokenProvider provider = new JwtTokenProvider();
+
+        String rawSecret = "central-archive-test-jwt-secret-32-bytes!!";
+        setField(provider, "jwtSecret", Base64.getEncoder().encodeToString(rawSecret.getBytes(StandardCharsets.UTF_8)));
+        setField(provider, "jwtExpirationMs", 60_000L);
+        setField(provider, "jwtRefreshExpirationMs", 300_000L);
+
+        UserDetails user = User.withUsername("user")
+                .password("unused")
+                .roles("read_only")
+                .build();
+
+        String token = provider.generateToken(user);
+        Instant issuedAt = provider.getIssuedAtInstant(token);
+
+        assertTrue(provider.isIssuedOnOrAfter(token, issuedAt));
+        assertFalse(provider.isIssuedOnOrAfter(token, issuedAt.plusMillis(1)));
     }
 
     @Test
