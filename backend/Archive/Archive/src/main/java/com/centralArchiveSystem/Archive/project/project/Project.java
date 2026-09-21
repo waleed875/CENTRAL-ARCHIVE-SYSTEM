@@ -94,10 +94,10 @@ public class Project {
     private String sourceReference;
 
     @Column(name = "created_by")
-    private String createdBy;
+    private UUID createdBy;
 
     @Column(name = "approved_by")
-    private String approvedBy;
+    private UUID approvedBy;
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
@@ -124,7 +124,7 @@ public class Project {
 
     public Project() {}
 
-    public Project(UUID id, UUID projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, String createdBy, String approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
+    public Project(UUID id, UUID projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, UUID createdBy, UUID approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.projectUid = projectUid;
         this.versionNo = versionNo;
@@ -224,11 +224,11 @@ public class Project {
     public String getSourceReference() { return sourceReference; }
     public void setSourceReference(String sourceReference) { this.sourceReference = sourceReference; }
 
-    public String getCreatedBy() { return createdBy; }
-    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public UUID getCreatedBy() { return createdBy; }
+    public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
 
-    public String getApprovedBy() { return approvedBy; }
-    public void setApprovedBy(String approvedBy) { this.approvedBy = approvedBy; }
+    public UUID getApprovedBy() { return approvedBy; }
+    public void setApprovedBy(UUID approvedBy) { this.approvedBy = approvedBy; }
 
     public LocalDateTime getApprovedAt() { return approvedAt; }
     public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
