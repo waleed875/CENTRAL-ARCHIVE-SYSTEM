@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.project.file;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.config.MinioConfig;
@@ -8,10 +9,12 @@ import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
 import com.centralArchiveSystem.Archive.project.filetype.FileType;
 import com.centralArchiveSystem.Archive.project.filetype.FileTypeRepository;
+import com.centralArchiveSystem.Archive.project.project.Project;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;import org.springframework.data.domain.Page;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -38,19 +41,22 @@ public class FileService {
     private final MinioService minioService;
     private final MinioConfig minioConfig;
     private final ProjectRepository projectRepository;
+    private final ConfidentialityAccessService confidentialityAccessService;
 
     public FileService(FileRepository fileRepository,
                        FileCategoryRepository fileCategoryRepository,
                        FileTypeRepository fileTypeRepository,
                        MinioService minioService,
                        MinioConfig minioConfig,
-                       ProjectRepository projectRepository) {
+                       ProjectRepository projectRepository,
+                       ConfidentialityAccessService confidentialityAccessService) {
         this.fileRepository = fileRepository;
         this.fileCategoryRepository = fileCategoryRepository;
         this.fileTypeRepository = fileTypeRepository;
         this.minioService = minioService;
         this.minioConfig = minioConfig;
         this.projectRepository = projectRepository;
+        this.confidentialityAccessService = confidentialityAccessService;
     }
 
     public Page<FileResponse> listProjectFiles(UUID projectId, UUID categoryId, UUID typeId,
