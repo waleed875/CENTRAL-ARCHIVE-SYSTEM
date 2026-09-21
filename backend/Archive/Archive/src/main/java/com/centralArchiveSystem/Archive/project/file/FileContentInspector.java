@@ -259,6 +259,19 @@ public final class FileContentInspector {
         }
     }
 
+    public static String mimeTypeForExtension(String extension) {
+        String normalized = normalizeExtension(extension);
+        if (normalized == null) {
+            throw new IllegalArgumentException("File extension is required");
+        }
+        String mimeType = MIME_TYPES.get(normalized);
+        if (mimeType == null) {
+            throw new IllegalArgumentException(
+                    "No canonical MIME type is registered for extension: ." + normalized);
+        }
+        return mimeType;
+    }
+
     public static boolean extensionsEquivalent(String first, String second) {
         String a = normalizeExtension(first);
         String b = normalizeExtension(second);
