@@ -53,7 +53,7 @@ public class MigrationController {
     @Operation(summary = "Update a migration source")
     public ResponseEntity<ApiResponse<MigrationSourceResponse>> updateSource(
             @Parameter(description = "Source UUID") @PathVariable UUID id,
-            @Valid @RequestBody MigrationSourceRequest request) {
+            @Valid @RequestBody MigrationSourceUpdateRequest request) {
         return ResponseEntity.ok(
                 ApiResponse.success(migrationService.updateSource(id, request), "Migration source updated"));
     }
