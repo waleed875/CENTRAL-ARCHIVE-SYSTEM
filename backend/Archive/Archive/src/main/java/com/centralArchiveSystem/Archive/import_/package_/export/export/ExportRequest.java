@@ -11,5 +11,6 @@ public record ExportRequest(
     @Schema(description = "Project IDs to include in the export", required = true)
     @NotEmpty(message = "At least one project is required") List<UUID> projectIds,
     @Schema(description = "Source organization ID") UUID sourceOrganizationId,
-    @Schema(description = "Username of the exporter") String exportedBy
+    @Schema(description = "Deprecated: ignored; exporter is derived from the authenticated user", deprecated = true)
+    String exportedBy
 ) {}
