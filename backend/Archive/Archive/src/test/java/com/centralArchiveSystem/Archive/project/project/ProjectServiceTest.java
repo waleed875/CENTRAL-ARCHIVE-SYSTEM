@@ -100,6 +100,30 @@ class ProjectServiceTest {
     }
 
     @Test
+    void requestCorrectionRequiresReviewNotes() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.requestCorrection(UUID.randomUUID(), "   "));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void rejectRequiresReason() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.reject(UUID.randomUUID(), ""));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
     void underReviewAllowsOnlyDescriptionAndNotes() {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);
