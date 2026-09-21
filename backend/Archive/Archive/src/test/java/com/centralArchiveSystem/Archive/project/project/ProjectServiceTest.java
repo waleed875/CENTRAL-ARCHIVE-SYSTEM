@@ -100,6 +100,42 @@ class ProjectServiceTest {
         verify(repository, never()).save(any(Project.class));
     }
 
+    @Test
+    void projectStatsUseConfidentialityAwareAggregates() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        UUID organizationId = UUID.randomUUID();
+        when(confidentiality.currentMaxLevelOrder()).thenReturn(2);
+        when(repository.countAccessibleLatest(organizationId, 2)).thenReturn(5L);
+        when(repository.countAccessibleByStatus(organizationId, 2)).thenReturn(
+                java.util.List.of(
+                        new Object[]{Project.ProjectStatus.APPROVED, 3L},
+                        new Object[]{Project.ProjectStatus.ARCHIVED, 2L}
+                )
+        );
+        when(repository.countAccessibleByYear(organizationId, 2)).thenReturn(
+                java.util.List.of(
+                        new Object[]{2026, 4L},
+                        new Object[]{2025, 1L}
+                )
+        );
+
+        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        var stats = service.getStats(organizationId);
+
+        assertEquals(5L, stats.totalProjects());
+        assertEquals(5L, stats.latestVersionCount());
+        assertEquals(2L, stats.archivedCount());
+        assertEquals(3L, stats.projectsByStatus().get("APPROVED"));
+        assertEquals(4L, stats.projectsByYear().get(2026));
+
+        verify(repository).countAccessibleLatest(organizationId, 2);
+        verify(repository).countAccessibleByStatus(organizationId, 2);
+        verify(repository).countAccessibleByYear(organizationId, 2);
+    }
+
     private Project baseProject() {
         Project project = new Project();
         project.setId(UUID.randomUUID());
