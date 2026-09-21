@@ -301,6 +301,7 @@ public class BranchPackageService {
 
         ImportOperation operation = importOperationService.create(id, importedBy);
         int importedProjects = 0;
+        int partialProjects = 0;
         int failedProjects = 0;
 
         try {
@@ -319,21 +320,29 @@ public class BranchPackageService {
                     if (result.imported()) {
                         importedProjects++;
                     }
+                    if (result.partial()) {
+                        partialProjects++;
+                    }
                 } catch (Exception e) {
                     failedProjects++;
                     log.error("Failed to import project from package {}", id, e);
                 }
             }
 
-            pkg.setImportedAt(LocalDateTime.now());
+            if (importedProjects > 0) {
+                pkg.setImportedAt(LocalDateTime.now());
+            }
 
-            if (failedProjects == 0) {
+            if (failedProjects == 0 && partialProjects == 0) {
                 pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
                 pkg.setErrorMessage(null);
                 importOperationService.updateStatus(operation.getId(), ImportOperation.Status.SUCCESS, null);
             } else if (importedProjects > 0) {
                 pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
-                pkg.setErrorMessage(failedProjects + " project(s) failed during import");
+                pkg.setErrorMessage(
+                        partialProjects + " project(s) imported incompletely; "
+                                + failedProjects + " project(s) failed before import"
+                );
                 importOperationService.updateStatus(
                         operation.getId(),
                         ImportOperation.Status.PARTIAL,
@@ -350,8 +359,8 @@ public class BranchPackageService {
             }
 
             branchPackageRepository.save(pkg);
-            log.info("Package import completed: id={}, imported={}, failed={}",
-                    id, importedProjects, failedProjects);
+            log.info("Package import completed: id={}, imported={}, partial={}, failed={}",
+                    id, importedProjects, partialProjects, failedProjects);
         } catch (Exception e) {
             log.error("Package import failed: id={}", id, e);
             pkg.setStatus(BranchPackage.PackageStatus.FAILED);
@@ -398,7 +407,7 @@ public class BranchPackageService {
                 packageProjectRepository.save(link);
                 log.info("Skipped duplicate imported project: source={}, existing={}",
                         sourceProjectUuid, existing.get().getId());
-                return new ImportProjectResult(false, existing.get().getId());
+                return new ImportProjectResult(false, false, existing.get().getId());
             }
 
             packageProjectRepository.save(link);
@@ -433,9 +442,7 @@ public class BranchPackageService {
                 savedProject,
                 sourceProjectUuid,
                 projectNode,
-                failedFiles == 0
-                        ? PackageProject.ImportStatus.IMPORTED
-                        : PackageProject.ImportStatus.FAILED
+                PackageProject.ImportStatus.IMPORTED
         );
         link.setFilesCount(totalFiles);
         link.setFilesImported(importedFiles);
@@ -446,11 +453,17 @@ public class BranchPackageService {
         packageProjectRepository.save(link);
 
         if (failedFiles > 0) {
-            throw new IllegalStateException(
-                    "Project " + savedProject.getId() + " imported with file failures");
+            savedProject.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
+            projectRepository.save(savedProject);
+            log.warn("Project {} imported incompletely: {} file(s) failed",
+                    savedProject.getId(), failedFiles);
         }
 
-        return new ImportProjectResult(true, savedProject.getId());
+        return new ImportProjectResult(
+                true,
+                failedFiles > 0,
+                savedProject.getId()
+        );
     }
 
     private Project buildProject(JsonNode projectNode,
@@ -736,5 +749,9 @@ public class BranchPackageService {
         return value.isBlank() ? null : value;
     }
 
-    private record ImportProjectResult(boolean imported, UUID centralProjectId) {}
+    private record ImportProjectResult(
+            boolean imported,
+            boolean partial,
+            UUID centralProjectId
+    ) {}
 }
