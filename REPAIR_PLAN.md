@@ -131,7 +131,7 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 
 ## Pre-merge blocker discovered during final API audit
 
-- [ ] Align `POST /migration-batches/:id/run` with the documented migration contract. The current legacy runner uses the configured staging datasource (`LEGACY_DB_*`) and does not consume the dynamic `connection_string`, `file_path`, or mapping values accepted by `MigrationRunRequest`. Do not represent dynamic PostgreSQL/File migration adapters as implemented until real adapters and validation exist.
+- [ ] Implement the documented dynamic PostgreSQL/File migration adapters if they remain an MVP requirement. The current legacy runner intentionally supports only the configured staging datasource (`LEGACY_DB_*`); unsupported dynamic `connection_string`, `file_path`, source types, and mappings are now rejected explicitly instead of being silently ignored.
 - [x] Align migration batch lifecycle DTOs and controller/service signatures.
 - [x] Normalize `migration_batches.batch_number` to `VARCHAR(80)` and enforce uniqueness per source.
 - [x] Prevent deleting migration sources while running or historical batches exist.
