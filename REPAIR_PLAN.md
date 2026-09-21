@@ -33,6 +33,7 @@ Status: IN PROGRESS
 - [x] Prevent refresh tokens from authenticating normal API requests.
 - [x] Allow `/api/v1/auth/refresh` without a valid access token.
 - [x] Rotate access/refresh tokens when refresh succeeds.
+- [x] Persist JWT revocation cutoff per user so logout, password changes, and refresh rotation invalidate previously issued tokens.
 - [x] Redact password/token/authorization/secret fields from audit payloads.
 - [x] Resolve the authenticated user centrally instead of trusting client-supplied usernames.
 - [x] Populate uploaded_by/deleted_by and operation actor fields from authenticated identity; database UUID alignment for remaining actor columns continues in Phase 2.
@@ -47,7 +48,7 @@ Status: IN PROGRESS
 - [x] Align project/package/export actor references with authenticated user UUIDs.
 - [x] Align branch package UUID, terminal UUID, receiver UUID, and related package fields with PostgreSQL.
 - [x] Align `PackageProject` with central project IDs and source/local project UUID provenance.
-- [~] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1/V2 are committed and PostgreSQL CI validation is running.
+- [x] Replace schema drift via `ddl-auto=update` with Flyway versioned migrations; V1-V7 are committed and PostgreSQL/Flyway/Hibernate validation is green in CI.
 - [x] Set Hibernate schema mode to `validate` (including the default development path).
 
 ## Phase 3 - Authorization and Confidentiality
@@ -59,6 +60,8 @@ Status: IN PROGRESS
 - [x] Review organization visibility rules; do not enforce source-organization isolation for central users in the current MVP.
 - [x] Allow `read_only` users to view/download permitted data while retaining no write permissions.
 - [x] Add direct-object-reference tests for project and file access.
+- [x] Enforce project-member confidentiality checks and prevent member changes after APPROVED/ARCHIVED.
+- [x] Enforce project file immutability after APPROVED/ARCHIVED.
 
 ## Phase 4 - Documented Offline Package Workflow
 
@@ -110,6 +113,11 @@ The implementation must match `API_ENDPOINTS_DESIGN.md`: the central system rece
 - [ ] Add dependency/security scanning.
 
 ### Additional completed API alignment
+
+- [x] Allow imported projects to enter the documented central review workflow.
+- [x] Restrict new project versions to APPROVED/ARCHIVED projects, use max existing version + 1, attribute the current creator, and copy members without copying files.
+- [x] Correct audit entity attribution/unwrapping for controller responses.
+- [x] Enforce organization hierarchy rules, safe deactivation, correct project counts, partial PATCH semantics, and database-level pagination filtering.
 
 - [x] Make file metadata PATCH partial with a dedicated update DTO.
 - [x] Make project PATCH partial as documented.
