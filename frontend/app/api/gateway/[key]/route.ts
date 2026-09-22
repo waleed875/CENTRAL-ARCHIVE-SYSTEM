@@ -91,7 +91,13 @@ async function handler(
         ? error.message
         : "تعذر الاتصال بالخدمة.";
 
-    return NextResponse.json({ message }, { status });
+    return NextResponse.json(
+      {
+        message,
+        code: error instanceof ApiError ? error.code : undefined,
+      },
+      { status },
+    );
   }
 }
 
