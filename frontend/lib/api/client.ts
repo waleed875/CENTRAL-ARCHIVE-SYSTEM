@@ -4,6 +4,16 @@ import type { HttpMethod } from "./catalog";
 
 type Scalar = string | number | undefined;
 
+export class ApiClientError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
 export type ApiRequestOptions = {
   query?: Record<string, Scalar>;
   pathParams?: Record<string, Scalar>;
@@ -57,6 +67,26 @@ async function sendRequest(
   });
 }
 
+async function toApiClientError(response: Response) {
+  const fallback = `HTTP ${response.status}`;
+
+  try {
+    const body = await response.clone().json() as {
+      message?: unknown;
+      code?: unknown;
+    };
+
+    return new ApiClientError(
+      response.status,
+      typeof body.message === "string" ? body.message : fallback,
+      typeof body.code === "string" ? body.code : undefined,
+    );
+  } catch {
+    const text = await response.clone().text().catch(() => "");
+    return new ApiClientError(response.status, text.trim() || fallback);
+  }
+}
+
 export async function apiRequest<T>(
   key: string,
   method: HttpMethod,
@@ -75,7 +105,7 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    throw new Error("API_REQUEST_FAILED");
+    throw await toApiClientError(response);
   }
 
   return response.json() as Promise<T>;

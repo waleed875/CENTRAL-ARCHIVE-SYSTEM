@@ -6,8 +6,47 @@ export const accessTokenCookie = "ca_access_token";
 export const refreshTokenCookie = "ca_refresh_token";
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string,
+  ) {
     super(message);
+  }
+}
+
+async function extractUpstreamError(response: Response) {
+  const fallback = response.statusText || "تعذر إكمال الطلب.";
+
+  try {
+    const body = await response.clone().json() as {
+      meta?: { message?: unknown };
+      data?: { message?: unknown; code?: unknown };
+      message?: unknown;
+      error?: unknown;
+    };
+
+    const message =
+      typeof body?.data?.message === "string"
+        ? body.data.message
+        : typeof body?.meta?.message === "string"
+          ? body.meta.message
+          : typeof body?.message === "string"
+            ? body.message
+            : typeof body?.error === "string"
+              ? body.error
+              : fallback;
+
+    const code =
+      typeof body?.data?.code === "string" ? body.data.code : undefined;
+
+    return { message, code };
+  } catch {
+    const text = await response.clone().text().catch(() => "");
+    return {
+      message: text.trim() || fallback,
+      code: undefined,
+    };
   }
 }
 
@@ -31,7 +70,8 @@ export async function serverRequest(path: string, init: RequestInit = {}) {
   });
 
   if (!response.ok) {
-    throw new ApiError(response.status, "تعذر إكمال الطلب.");
+    const upstream = await extractUpstreamError(response);
+    throw new ApiError(response.status, upstream.message, upstream.code);
   }
 
   return response;
