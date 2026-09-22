@@ -32,7 +32,7 @@ function buildGatewayUrl(
   return `/api/gateway/${key}${params.size ? `?${params}` : ""}`;
 }
 
-async function sendRequest<T>(
+async function sendRequest(
   key: string,
   method: HttpMethod,
   options: ApiRequestOptions,
@@ -65,12 +65,12 @@ export async function apiRequest<T>(
   pathParams: Record<string, Scalar> = {},
 ): Promise<T> {
   const options = { query, body, pathParams };
-  let response = await sendRequest<T>(key, method, options);
+  let response = await sendRequest(key, method, options);
 
   if (response.status === 401) {
     const refresh = await fetch("/api/auth/refresh", { method: "POST" });
     if (refresh.ok) {
-      response = await sendRequest<T>(key, method, options);
+      response = await sendRequest(key, method, options);
     }
   }
 
