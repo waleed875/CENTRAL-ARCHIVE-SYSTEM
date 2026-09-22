@@ -2,25 +2,84 @@
   "info": {
     "name": "Central Archive - 04 Import & Migration",
     "_postman_id": "import-migration-collection-0004",
-    "description": "Branch Package import and legacy DB Migration endpoints.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\n## First step\nRun **Setup > Login** once. It stores the token into `{{token}}` automatically. Bearer auth is configured at collection level.\n\n## Branch packages\nA TERMINAL produces a package manifest (JSON), which the central system receives via multipart (`receive`) or raw JSON (`receive/json`). Then verify, then import (with organization mapping / duplicate handling).\n\n## Import operations\nEach import creates operations per module that can be polled/updated by status: STARTED, SUCCESS, FAILED, PARTIAL.\n\n## Migration\nDefine a source (legacy DB), create batches, run a batch with connection config, then complete it.\n\n## Auto-captured IDs\nAfter receiving a package / creating an operation / creating a source or batch, ids are stored into `{{packageId}}`, `{{operationId}}`, `{{migrationSourceId}}`, `{{batchId}}`.",
+    "description": "Offline package import/export and controlled legacy PostgreSQL migration endpoints.\n\nBase URL: {{baseUrl}} (default http://localhost:8080)\n\nRun Setup > Login first. Branch packages are uploaded as a real .pkg file using the package_file multipart field, verified, then explicitly imported. Actor identity is taken from the authenticated JWT. Public import-operation mutation/detail endpoints are not part of the current API. Legacy migration currently supports only the configured PostgreSQL staging datasource.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "https://w0x89x36-8080.euw.devtunnels.ms", "type": "string" },
-    { "key": "username", "value": "admin", "type": "string" },
-    { "key": "password", "value": "admin123", "type": "string" },
-    { "key": "token", "value": "", "type": "string" },
-    { "key": "refreshToken", "value": "", "type": "string" },
-    { "key": "orgId", "value": "", "type": "string" },
-    { "key": "packageId", "value": "", "type": "string" },
-    { "key": "operationId", "value": "", "type": "string" },
-    { "key": "migrationSourceId", "value": "", "type": "string" },
-    { "key": "batchId", "value": "", "type": "string" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "admin123",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orgId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "packageId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "operationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "migrationSourceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "batchId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "legacyDbUrl",
+      "value": "jdbc:postgresql://localhost:5433/ARC2",
+      "type": "string"
+    },
+    {
+      "key": "projectId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "exportPackageId",
+      "value": "",
+      "type": "string"
+    }
   ],
   "auth": {
     "type": "bearer",
     "bearer": [
-      { "key": "token", "value": "{{token}}", "type": "string" }
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
     ]
   },
   "item": [
@@ -32,7 +91,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -40,8 +102,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             }
           },
           "event": [
@@ -73,57 +142,40 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages?searchTerm=&status=&sourceOrganizationId=&page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages"
+              ],
               "query": [
-                { "key": "searchTerm", "value": "", "disabled": true },
-                { "key": "status", "value": "", "disabled": true },
-                { "key": "sourceOrganizationId", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Receive Package (multipart manifest)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
                 {
-                  "key": "file",
-                  "type": "file",
-                  "src": []
+                  "key": "searchTerm",
+                  "value": "",
+                  "disabled": true
                 },
                 {
-                  "key": "receivedBy",
-                  "value": "system",
-                  "type": "text"
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "sourceOrganizationId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
                 }
               ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/packages/receive?receivedBy=system",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "receive"],
-              "query": [
-                { "key": "receivedBy", "value": "system", "disabled": true }
-              ]
-            },
-            "description": "multipart/form-data. Select the manifest JSON file in the `file` field. Statuses: RECEIVED, VERIFIED, IMPORTED, FAILED, DUPLICATE. Stores the new id into `{{packageId}}` (if present in the response)."
+            }
           },
           "event": [
             {
@@ -131,10 +183,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201', () => pm.response.to.have.status(201));",
-                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
-                  "const d = u(pm.response.json());",
-                  "if (d && d.id) pm.collectionVariables.set('packageId', d.id);"
+                  "pm.test('200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -142,25 +191,34 @@
           "response": []
         },
         {
-          "name": "Receive Package (raw JSON)",
+          "name": "Receive Package (.pkg multipart)",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{ \"manifest\": \"paste your manifest JSON here\" }"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/packages/receive/json?receivedBy=system",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "receive", "json"],
-              "query": [
-                { "key": "receivedBy", "value": "system", "disabled": true }
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "package_file",
+                  "type": "file",
+                  "src": []
+                }
               ]
             },
-            "description": "Sends the manifest as a raw JSON body. Paste the full manifest text."
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/packages/receive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "receive"
+              ],
+              "query": []
+            },
+            "description": "Upload the offline .pkg archive. The authenticated actor is taken from the JWT."
           },
           "event": [
             {
@@ -185,8 +243,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "{{packageId}}"
+              ]
             }
           },
           "event": [
@@ -194,7 +259,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -207,8 +274,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/verify",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "verify"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "{{packageId}}",
+                "verify"
+              ]
             }
           },
           "event": [
@@ -216,7 +291,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -229,8 +306,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/projects",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "projects"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "{{packageId}}",
+                "projects"
+              ]
             }
           },
           "event": [
@@ -238,29 +323,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Get Package Operations",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "operations"]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -271,16 +336,27 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"targetOrganizationId\": \"{{orgId}}\",\n  \"organizationMapping\": {},\n  \"skipDuplicates\": true,\n  \"overwriteExisting\": false,\n  \"importedBy\": \"admin\"\n}"
+              "raw": "{\n  \"organization_mapping\": {},\n  \"confidentiality_level_id\": null\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "import"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "{{packageId}}",
+                "import"
+              ]
             },
             "description": "organizationMapping maps source organization UUID -> target organization UUID (optional). Returns 202 ACCEPTED; poll the package operations afterward."
           },
@@ -289,7 +365,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('202 accepted', () => pm.response.to.have.status(202));"]
+                "exec": [
+                  "pm.test('202 accepted', () => pm.response.to.have.status(202));"
+                ]
               }
             }
           ],
@@ -307,35 +385,18 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "operations"]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Create Import Operation",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/packages/{{packageId}}/operations?importedBy=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "packages", "{{packageId}}", "operations"],
-              "query": [
-                { "key": "importedBy", "value": "", "disabled": true }
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "packages",
+                "{{packageId}}",
+                "operations"
               ]
             },
-            "description": "Stores the new id into `{{operationId}}`."
+            "description": "Read-only list of import operations for a package."
           },
           "event": [
             {
@@ -343,60 +404,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);",
-                  "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
-                  "const d = u(pm.response.json());",
-                  "if (d && d.id) pm.collectionVariables.set('operationId', d.id);"
+                  "pm.test('200', () => pm.response.to.have.status(200));"
                 ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Get Import Operation",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/operations/{{operationId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "operations", "{{operationId}}"]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "Update Operation Status",
-          "request": {
-            "method": "PATCH",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/operations/{{operationId}}/status?status=SUCCESS&errorMessage=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "operations", "{{operationId}}", "status"],
-              "query": [
-                { "key": "status", "value": "SUCCESS" },
-                { "key": "errorMessage", "value": "", "disabled": true }
-              ]
-            },
-            "description": "status: STARTED, SUCCESS, FAILED, PARTIAL."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
               }
             }
           ],
@@ -414,8 +423,14 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources"
+              ]
             }
           },
           "event": [
@@ -423,7 +438,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -434,16 +451,25 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Legacy DB Office A\",\n  \"sourceType\": \"ORACLE\",\n  \"databaseName\": \"legacy_archives\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Legacy archive database\"\n}"
+              "raw": "{\n  \"name\": \"Legacy PostgreSQL ARC2\",\n  \"sourceType\": \"POSTGRESQL\",\n  \"databaseName\": \"ARC2\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Configured legacy staging database\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources"
+              ]
             },
             "description": "Stores the new id into `{{migrationSourceId}}`."
           },
@@ -470,8 +496,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources",
+                "{{migrationSourceId}}"
+              ]
             }
           },
           "event": [
@@ -479,7 +512,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -490,16 +525,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Legacy DB Office A\",\n  \"sourceType\": \"ORACLE\",\n  \"databaseName\": \"legacy_archives\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Updated description\"\n}"
+              "raw": "{\n  \"name\": \"Legacy PostgreSQL ARC2\",\n  \"sourceType\": \"POSTGRESQL\",\n  \"databaseName\": \"ARC2\",\n  \"officeName\": \"Central Office\",\n  \"description\": \"Updated description\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources",
+                "{{migrationSourceId}}"
+              ]
             }
           },
           "event": [
@@ -507,7 +552,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -520,8 +567,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources",
+                "{{migrationSourceId}}"
+              ]
             }
           },
           "event": [
@@ -529,7 +583,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -547,8 +603,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}/batches",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}", "batches"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources",
+                "{{migrationSourceId}}",
+                "batches"
+              ]
             }
           },
           "event": [
@@ -556,7 +620,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -567,16 +633,27 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"notes\": \"First batch\",\n  \"projectsCount\": 100,\n  \"filesCount\": 500\n}"
+              "raw": "{\n  \"batchNumber\": \"BATCH-001\",\n  \"notes\": \"First controlled migration batch\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-sources/{{migrationSourceId}}/batches",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-sources", "{{migrationSourceId}}", "batches"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources",
+                "{{migrationSourceId}}",
+                "batches"
+              ]
             },
             "description": "Stores the new id into `{{batchId}}`."
           },
@@ -603,8 +680,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-batches", "{{batchId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-batches",
+                "{{batchId}}"
+              ]
             }
           },
           "event": [
@@ -612,7 +696,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -623,16 +709,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"notes\": \"First batch (updated)\",\n  \"projectsCount\": 120,\n  \"filesCount\": 600\n}"
+              "raw": "{\n  \"notes\": \"First controlled migration batch (updated)\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-batches", "{{batchId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-batches",
+                "{{batchId}}"
+              ]
             }
           },
           "event": [
@@ -640,7 +736,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -651,16 +749,27 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"connection_string\": \"jdbc:oracle:thin:@//old-server:1521/ARCHIVE\",\n  \"file_path\": \"/data/legacy_export.csv\",\n  \"type\": \"ORACLE_TO_POSTGRES\",\n  \"type_mapping\": {\n    \"old_col\": \"new_col\"\n  }\n}"
+              "raw": "{\n  \"migration_config\": {\n    \"connection_string\": \"{{legacyDbUrl}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}/run",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-batches", "{{batchId}}", "run"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-batches",
+                "{{batchId}}",
+                "run"
+              ]
             },
             "description": "Returns 202 ACCEPTED with a message when the run starts. Uses snake_case fields from MigrationRunRequest."
           },
@@ -669,7 +778,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('202 accepted', () => pm.response.to.have.status(202));"]
+                "exec": [
+                  "pm.test('202 accepted', () => pm.response.to.have.status(202));"
+                ]
               }
             }
           ],
@@ -679,16 +790,29 @@
           "name": "Complete Migration Batch",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}/complete?projectsCount=0&filesCount=0&status=SUCCESS",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "migration-batches", "{{batchId}}", "complete"],
-              "query": [
-                { "key": "projectsCount", "value": "0" },
-                { "key": "filesCount", "value": "0" },
-                { "key": "status", "value": "SUCCESS" }
-              ]
+              "raw": "{{baseUrl}}/api/v1/migration-batches/{{batchId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-batches",
+                "{{batchId}}",
+                "complete"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUCCESS\",\n  \"notes\": \"Migration batch completed successfully.\"\n}"
             }
           },
           "event": [
@@ -696,7 +820,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
