@@ -132,7 +132,15 @@ export default function PackagesPage() {
       }),
   });
 
-  const packages = useMemo(\n    () => unwrap(packagesQuery.data)?.data ?? [],\n    [packagesQuery.data],\n  );\n  const organizations = useMemo(\n    () => unwrap(organizationsQuery.data)?.data ?? [],\n    [organizationsQuery.data],\n  );\n  const selectedPackage = useMemo(
+  const packages = useMemo(
+    () => unwrap(packagesQuery.data)?.data ?? [],
+    [packagesQuery.data],
+  );
+  const organizations = useMemo(
+    () => unwrap(organizationsQuery.data)?.data ?? [],
+    [organizationsQuery.data],
+  );
+  const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedId),
     [packages, selectedId],
   );
