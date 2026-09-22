@@ -1,7 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project.dto;
 
 import com.centralArchiveSystem.Archive.project.project.Project;
-import com.centralArchiveSystem.Archive.project.member.dto.MemberRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import jakarta.validation.Valid;
@@ -51,5 +51,5 @@ public record ProjectRequest(
     @Schema(description = "Data completion status") Project.DataCompletionStatus dataCompletionStatus,
 
     @Schema(description = "Optional project members created with the project. Manage later changes through the member endpoints.")
-    List<@Valid MemberRequest> members
+    List<@Valid MemberCreateRequest> members
 ) {}
