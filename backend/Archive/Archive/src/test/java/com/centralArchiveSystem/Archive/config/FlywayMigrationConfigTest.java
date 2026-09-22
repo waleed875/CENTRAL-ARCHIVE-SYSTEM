@@ -8,6 +8,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,54 +24,86 @@ import static org.mockito.Mockito.when;
 class FlywayMigrationConfigTest {
 
     private static final String HISTORY = "public.flyway_schema_history";
+    private static final Set<String> PRE_FLYWAY_RELATIONS = Set.of(
+            "core.organizations",
+            "core.users",
+            "project.projects",
+            "import.branch_packages",
+            "import.package_projects"
+    );
 
     @Test
     void baselinesRecognizedPreFlywayDatabaseBeforeMigrating() throws Exception {
-        Flyway flyway = flywayWithRelations(Set.of(
-                "core.organizations",
-                "project.projects",
-                "import.branch_packages",
-                "audit.audit_logs"
-        ));
+        FlywayFixture fixture = flywayFixture(PRE_FLYWAY_RELATIONS, false);
 
-        new FlywayMigrationConfig().migrate(flyway);
+        new FlywayMigrationConfig().migrate(fixture.flyway());
 
-        var ordered = inOrder(flyway);
-        ordered.verify(flyway).baseline();
-        ordered.verify(flyway).migrate();
+        var ordered = inOrder(fixture.flyway());
+        ordered.verify(fixture.flyway()).baseline();
+        ordered.verify(fixture.flyway()).migrate();
     }
 
     @Test
-    void doesNotBaselineDatabaseThatAlreadyHasFlywayHistory() throws Exception {
-        Flyway flyway = flywayWithRelations(Set.of(
-                HISTORY,
-                "core.organizations",
-                "project.projects",
-                "import.branch_packages",
-                "audit.audit_logs"
-        ));
+    void dropsEmptyHistoryTableThenBaselinesRecognizedPreFlywayDatabase() throws Exception {
+        Set<String> relations = new java.util.HashSet<>(PRE_FLYWAY_RELATIONS);
+        relations.add(HISTORY);
 
-        new FlywayMigrationConfig().migrate(flyway);
+        FlywayFixture fixture = flywayFixture(relations, false);
 
-        verify(flyway, never()).baseline();
-        verify(flyway).migrate();
+        new FlywayMigrationConfig().migrate(fixture.flyway());
+
+        verify(fixture.statement()).execute(
+                "DROP TABLE \"public\".\"flyway_schema_history\""
+        );
+        var ordered = inOrder(fixture.flyway());
+        ordered.verify(fixture.flyway()).baseline();
+        ordered.verify(fixture.flyway()).migrate();
+    }
+
+    @Test
+    void doesNotBaselineDatabaseThatAlreadyHasFlywayHistoryRows() throws Exception {
+        Set<String> relations = new java.util.HashSet<>(PRE_FLYWAY_RELATIONS);
+        relations.add(HISTORY);
+
+        FlywayFixture fixture = flywayFixture(relations, true);
+
+        new FlywayMigrationConfig().migrate(fixture.flyway());
+
+        verify(fixture.statement(), never()).execute(anyString());
+        verify(fixture.flyway(), never()).baseline();
+        verify(fixture.flyway()).migrate();
     }
 
     @Test
     void doesNotBaselineFreshOrUnknownDatabase() throws Exception {
-        Flyway flyway = flywayWithRelations(Set.of());
+        FlywayFixture fixture = flywayFixture(Set.of(), false);
 
-        new FlywayMigrationConfig().migrate(flyway);
+        new FlywayMigrationConfig().migrate(fixture.flyway());
 
-        verify(flyway, never()).baseline();
-        verify(flyway).migrate();
+        verify(fixture.flyway(), never()).baseline();
+        verify(fixture.flyway()).migrate();
     }
 
-    private Flyway flywayWithRelations(Set<String> relations) throws Exception {
+    @Test
+    void doesNotBaselinePartialLegacySchema() throws Exception {
+        FlywayFixture fixture = flywayFixture(
+                Set.of("core.organizations", "project.projects"),
+                false
+        );
+
+        new FlywayMigrationConfig().migrate(fixture.flyway());
+
+        verify(fixture.flyway(), never()).baseline();
+        verify(fixture.flyway()).migrate();
+    }
+
+    private FlywayFixture flywayFixture(Set<String> relations, boolean historyHasRows)
+            throws Exception {
         Flyway flyway = mock(Flyway.class);
         Configuration configuration = mock(Configuration.class);
         DataSource dataSource = mock(DataSource.class);
         Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
 
         when(flyway.getConfiguration()).thenReturn(configuration);
         when(configuration.getDataSource()).thenReturn(dataSource);
@@ -81,7 +114,16 @@ class FlywayMigrationConfigTest {
         when(connection.prepareStatement("SELECT to_regclass(?) IS NOT NULL"))
                 .thenAnswer(invocation -> statementForRelations(relations));
 
-        return flyway;
+        when(connection.createStatement()).thenReturn(statement);
+
+        ResultSet historyRowsResult = mock(ResultSet.class);
+        when(historyRowsResult.next()).thenReturn(true);
+        when(historyRowsResult.getBoolean(1)).thenReturn(historyHasRows);
+        when(statement.executeQuery(
+                "SELECT EXISTS (SELECT 1 FROM \"public\".\"flyway_schema_history\")"
+        )).thenReturn(historyRowsResult);
+
+        return new FlywayFixture(flyway, statement);
     }
 
     private PreparedStatement statementForRelations(Set<String> relations) throws Exception {
@@ -101,5 +143,8 @@ class FlywayMigrationConfigTest {
         });
 
         return statement;
+    }
+
+    private record FlywayFixture(Flyway flyway, Statement statement) {
     }
 }
