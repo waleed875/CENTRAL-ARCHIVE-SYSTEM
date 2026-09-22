@@ -533,6 +533,7 @@ Response: 204 No Content (soft deactivation)
 | PATCH | `/projects/:id/submit-for-review` | Submit for review | central_data_entry+ |
 | PATCH | `/projects/:id/request-correction` | Request correction | auditor+ |
 | PATCH | `/projects/:id/approve` | Approve project | auditor+ |
+| PATCH | `/projects/:id/reject` | Reject project | auditor+ |
 | PATCH | `/projects/:id/archive` | Archive project | system_admin, archive_officer |
 | GET | `/projects/search` | Full-text search | Yes |
 | GET | `/projects/stats` | Dashboard statistics | Yes |
@@ -756,6 +757,14 @@ Response: 200 OK {
   approved_by: { current user },
   approved_at: "now"
 }
+Errors: 422 if current status is not UNDER_REVIEW
+```
+
+### PATCH /projects/:id/reject
+
+```
+Request: { "rejection_reason": "string (required)" }
+Response: 200 OK { status: "REJECTED", review_notes: "..." }
 Errors: 422 if current status is not UNDER_REVIEW
 ```
 
@@ -1029,8 +1038,10 @@ Request (multipart/form-data):
   category_id: "uuid"
   type_id: "uuid?"
   confidentiality_level_id: "uuid?"
-  source_type: "MANUAL|BRANCH_PACKAGE|MIGRATION?"
-  source_reference: "string?"
+
+Server-controlled provenance:
+  source_type = "MANUAL"
+  source_reference = null
 
 Response: 201 Created { file metadata object }
 
@@ -1408,28 +1419,38 @@ Errors: 422 if status is RUNNING or SUCCESS
 
 ### POST /migration-batches/:id/run
 
+For the current MVP, migration runs only against the separately restored and
+configured legacy PostgreSQL staging database. It is disabled by default and
+must be enabled explicitly for a controlled migration window with
+`LEGACY_MIGRATION_ENABLED=true`.
+
 ```
 Request: {
   "migration_config": {
-    "connection_string": "string? (if PostgreSQL)",
-    "file_path": "string? (if File)",
-    "project_type_mapping": { "old_type": "new_type_id" },
-    "default_confidentiality_level_id": "uuid?"
+    "connection_string": "configured LEGACY_DB_URL"
   }
 }
-Response: 200 OK { status: "RUNNING" }
+Response: 202 Accepted { status: "ACCEPTED" }
 
-Background Process:
-  1. Validate source connection/access
-  2. Update batch status to RUNNING
-  3. Create import_operations-style tracking
-  4. Extract data from old system
-  5. Transform to new schema format
-  6. Import projects and files
-  7. Update batch counts and status
-  8. Create audit_logs entries
+Current MVP rules:
+  1. The batch must be PLANNED or FAILED.
+  2. Legacy migration must be explicitly enabled.
+  3. connection_string must match the configured LEGACY_DB_URL.
+  4. file_path, project_type_mapping, and
+     default_confidentiality_level_id are reserved for future adapters and are
+     rejected if supplied.
+  5. The configured staging database is read and transformed into the central
+     archive schema.
+  6. Batch counts and terminal status are updated after background execution.
 
-Errors: 422 if status is not PLANNED or FAILED
+Future scope:
+  - Dynamic PostgreSQL connection adapters.
+  - File-based migration adapters.
+  - Per-run project-type mappings.
+  - Per-run default confidentiality overrides.
+
+Errors: rejected when migration is disabled, configuration is unsupported, or
+the batch status is not PLANNED or FAILED.
 ```
 
 ### POST /migration-batches/:id/complete

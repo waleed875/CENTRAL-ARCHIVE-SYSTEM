@@ -19,10 +19,21 @@ public interface OrganizationRepository extends JpaRepository<Organization, UUID
 
     List<Organization> findByIsActive(Boolean isActive);
 
-    @Query("SELECT o FROM Organization o WHERE " +
-           "LOWER(o.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(o.code) LIKE LOWER(CONCAT('%', :query, '%'))")
-    Page<Organization> searchByNameOrCode(@Param("query") String query, Pageable pageable);
+    @Query("""
+           SELECT o FROM Organization o
+           WHERE (:query IS NULL OR :query = ''
+                  OR LOWER(o.name) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR LOWER(o.code) LIKE LOWER(CONCAT('%', :query, '%')))
+             AND (:parentId IS NULL OR o.parentId = :parentId)
+             AND (:type IS NULL OR o.type = :type)
+             AND (:isActive IS NULL OR o.isActive = :isActive)
+           """)
+    Page<Organization> searchFiltered(
+            @Param("query") String query,
+            @Param("parentId") UUID parentId,
+            @Param("type") Organization.OrganizationType type,
+            @Param("isActive") Boolean isActive,
+            Pageable pageable);
 
     @Query("SELECT o FROM Organization o WHERE " +
            "LOWER(o.name) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

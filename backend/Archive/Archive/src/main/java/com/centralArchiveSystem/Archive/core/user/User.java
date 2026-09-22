@@ -3,8 +3,9 @@ package com.centralArchiveSystem.Archive.core.user;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.role.Role;
 import jakarta.persistence.*;
-import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.UuidGenerator;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
@@ -19,8 +20,7 @@ public class User {
     }
 
     @Id
-    @GeneratedValue(generator = "UUID")
-    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @UuidGenerator
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
@@ -64,6 +64,9 @@ public class User {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "token_valid_after")
+    private Instant tokenValidAfter;
 
     public User() {}
 
@@ -117,4 +120,7 @@ public class User {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public Instant getTokenValidAfter() { return tokenValidAfter; }
+    public void setTokenValidAfter(Instant tokenValidAfter) { this.tokenValidAfter = tokenValidAfter; }
 }

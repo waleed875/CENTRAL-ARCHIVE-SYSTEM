@@ -40,7 +40,8 @@ CREATE TABLE core.users (
     max_confidentiality_level_id UUID REFERENCES core.confidentiality_levels(id),
     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISABLED','LOCKED')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ
+    updated_at TIMESTAMPTZ,
+    token_valid_after TIMESTAMPTZ
 );
 
 CREATE TABLE core.roles (
@@ -93,7 +94,7 @@ CREATE TABLE project.projects (
     notes TEXT,
     table_of_contents TEXT,
     keywords TEXT,
-    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','IMPORTED','UNDER_REVIEW','NEEDS_CORRECTION','APPROVED','ARCHIVED')),
+    status VARCHAR(40) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','IMPORTED','UNDER_REVIEW','NEEDS_CORRECTION','REJECTED','APPROVED','ARCHIVED')),
     data_completion_status VARCHAR(40) CHECK (data_completion_status IS NULL OR data_completion_status IN ('COMPLETE','INCOMPLETE')),
     review_notes TEXT,
     source_type VARCHAR(40) NOT NULL DEFAULT 'MANUAL' CHECK (source_type IN ('MANUAL','BRANCH_PACKAGE','MIGRATION')),
@@ -113,7 +114,8 @@ CREATE TABLE project.project_members (
     person_name VARCHAR(200) NOT NULL,
     organization_name VARCHAR(200),
     role_name VARCHAR(120),
-    notes TEXT
+    notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE project.file_categories (
@@ -147,7 +149,7 @@ CREATE TABLE project.files (
     extension VARCHAR(20),
     mime_type VARCHAR(150),
     size_bytes BIGINT CHECK (size_bytes IS NULL OR size_bytes >= 0),
-    checksum_sha256 CHAR(64),
+    checksum_sha256 VARCHAR(64),
     status VARCHAR(40) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DELETED','REPLACED')),
     uploaded_by UUID REFERENCES core.users(id),
     source_type VARCHAR(40) NOT NULL DEFAULT 'MANUAL' CHECK (source_type IN ('MANUAL','BRANCH_PACKAGE','MIGRATION')),
@@ -172,14 +174,21 @@ CREATE TABLE import.branch_packages (
     source_terminal_uuid UUID NOT NULL,
     source_username VARCHAR(120),
     package_name VARCHAR(300) NOT NULL,
-    package_hash CHAR(64) NOT NULL UNIQUE,
-    manifest_hash CHAR(64) NOT NULL,
+    package_hash VARCHAR(64) NOT NULL UNIQUE,
+    manifest_hash VARCHAR(64) NOT NULL,
     schema_version VARCHAR(30) NOT NULL,
     projects_count INTEGER NOT NULL DEFAULT 0,
     files_count INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(40) NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED','VERIFIED','IMPORTED','FAILED','DUPLICATE')),
     received_by UUID REFERENCES core.users(id),
-    received_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    verified_at TIMESTAMPTZ,
+    imported_at TIMESTAMPTZ,
+    error_message TEXT,
+    manifest_data TEXT,
+    target_organization_id UUID REFERENCES core.organizations(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ
 );
 
 CREATE TABLE import.package_projects (
@@ -187,7 +196,15 @@ CREATE TABLE import.package_projects (
     package_id UUID NOT NULL REFERENCES import.branch_packages(id) ON DELETE CASCADE,
     project_id UUID NOT NULL REFERENCES project.projects(id),
     local_project_uuid UUID NOT NULL,
+    source_project_number VARCHAR(80),
+    project_name VARCHAR(250),
+    project_year INTEGER,
     import_status VARCHAR(40) NOT NULL DEFAULT 'IMPORTED' CHECK (import_status IN ('IMPORTED','SKIPPED','FAILED','DUPLICATE')),
+    import_error TEXT,
+    files_count INTEGER NOT NULL DEFAULT 0,
+    files_imported INTEGER NOT NULL DEFAULT 0,
+    files_failed INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (package_id, project_id)
 );
 
@@ -200,6 +217,45 @@ CREATE TABLE import.import_operations (
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ
 );
+
+CREATE TABLE import.export_packages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    package_uuid UUID NOT NULL UNIQUE,
+    package_name VARCHAR(300) NOT NULL,
+    schema_version VARCHAR(30) NOT NULL,
+    source_organization_id UUID REFERENCES core.organizations(id),
+    source_username VARCHAR(120),
+    projects_count INTEGER NOT NULL DEFAULT 0,
+    files_count INTEGER NOT NULL DEFAULT 0,
+    package_hash VARCHAR(64),
+    manifest_hash VARCHAR(64),
+    package_object_key TEXT,
+    manifest_data TEXT,
+    status VARCHAR(40) NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED','EXPORTED','FAILED')),
+    exported_by UUID REFERENCES core.users(id),
+    exported_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+
+CREATE TABLE IF NOT EXISTS import.legacy_migration_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind VARCHAR(20) NOT NULL CHECK (kind IN ('PROJECT','FILE')),
+    source_key VARCHAR(255) NOT NULL,
+    source_id BIGINT,
+    target_id UUID,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING','RUNNING','DONE','SKIPPED','FAILED')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uk_legacy_item_kind_source UNIQUE (kind, source_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_legacy_migration_items_kind_status
+    ON import.legacy_migration_items(kind, status);
 
 CREATE TABLE import.migration_sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -341,7 +341,7 @@ erDiagram
 | `notes` | `TEXT` | `NULL` | ملاحظات عامة. |
 | `table_of_contents` | `TEXT` | `NULL` | جدول محتويات نصي حر في MVP. |
 | `keywords` | `TEXT` | `NULL` | كلمات مفتاحية للبحث. |
-| `status` | `VARCHAR(40)` | `CHECK` | إحدى القيم: `DRAFT`, `IMPORTED`, `UNDER_REVIEW`, `NEEDS_CORRECTION`, `APPROVED`, `ARCHIVED`. |
+| `status` | `VARCHAR(40)` | `CHECK` | إحدى القيم: `DRAFT`, `IMPORTED`, `UNDER_REVIEW`, `NEEDS_CORRECTION`, `REJECTED`, `APPROVED`, `ARCHIVED`. |
 | `data_completion_status` | `VARCHAR(40)` | `NULL` | `COMPLETE`, `INCOMPLETE`، أو `NULL` حسب الحاجة. |
 | `review_notes` | `TEXT` | `NULL` | ملاحظات المدقق أو سبب طلب التصحيح. |
 | `source_type` | `VARCHAR(40)` | `CHECK` | إحدى القيم: `MANUAL`, `BRANCH_PACKAGE`, `MIGRATION`. |

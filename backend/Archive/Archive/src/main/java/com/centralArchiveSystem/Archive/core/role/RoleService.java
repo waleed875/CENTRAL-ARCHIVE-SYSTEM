@@ -7,6 +7,8 @@ import com.centralArchiveSystem.Archive.common.exception.ConflictException;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleRequest;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleResponse;
+import com.centralArchiveSystem.Archive.core.role.dto.RoleUpdateRequest;
+import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,10 +24,22 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class RoleService {
 
-    private final RoleRepository roleRepository;
+    private static final Set<String> MVP_ROLE_CODES = Set.of(
+            "system_admin",
+            "central_data_entry",
+            "auditor",
+            "archive_officer",
+            "import_officer",
+            "export_officer",
+            "read_only"
+    );
 
-    public RoleService(RoleRepository roleRepository) {
+    private final RoleRepository roleRepository;
+    private final UserRepository userRepository;
+
+    public RoleService(RoleRepository roleRepository, UserRepository userRepository) {
         this.roleRepository = roleRepository;
+        this.userRepository = userRepository;
     }
 
     public PagedResponse<RoleResponse> list(String search, Boolean isActive, PageRequest pageRequest) {
@@ -34,19 +49,7 @@ public class RoleService {
             Sort.by(Sort.Direction.fromString(pageRequest.getOrder()), pageRequest.getSort())
         );
 
-        Page<Role> page;
-
-        if (search != null && !search.isBlank()) {
-            page = roleRepository.searchByNameOrCode(search, pageable);
-        } else if (isActive != null) {
-            List<Role> roles = roleRepository.findByIsActive(isActive);
-            int start = (int) pageable.getOffset();
-            int end = Math.min((start + pageable.getPageSize()), roles.size());
-            List<Role> sublist = start < roles.size() ? roles.subList(start, end) : List.of();
-            page = new org.springframework.data.domain.PageImpl<>(sublist, pageable, roles.size());
-        } else {
-            page = roleRepository.findAll(pageable);
-        }
+        Page<Role> page = roleRepository.searchFiltered(search, isActive, pageable);
 
         List<RoleResponse> content = page.getContent().stream()
             .map(this::toResponse)
@@ -62,6 +65,10 @@ public class RoleService {
 
     @Transactional
     public RoleResponse create(RoleRequest request) {
+        if (!MVP_ROLE_CODES.contains(request.code())) {
+            throw new BusinessRuleException(
+                    "Unsupported role code for MVP: " + request.code());
+        }
         if (roleRepository.existsByCode(request.code())) {
             throw new ConflictException("Role", "code", request.code());
         }
@@ -77,22 +84,20 @@ public class RoleService {
     }
 
     @Transactional
-    public RoleResponse update(UUID id, RoleRequest request) {
+    public RoleResponse update(UUID id, RoleUpdateRequest request) {
         Role role = findRoleOrThrow(id);
 
-        if (request.code() != null && !request.code().equals(role.getCode())) {
-            if (roleRepository.existsByCodeAndIdNot(request.code(), id)) {
-                throw new ConflictException("Role", "code", request.code());
-            }
-            role.setCode(request.code());
-        }
-
-        if (request.name() != null) {
+        if (request.name() != null && !request.name().isBlank()) {
             role.setName(request.name());
         }
-
         if (request.description() != null) {
             role.setDescription(request.description());
+        }
+        if (request.isActive() != null) {
+            if (!request.isActive()) {
+                ensureNoActiveUsers(role.getId());
+            }
+            role.setIsActive(request.isActive());
         }
 
         role = roleRepository.save(role);
@@ -102,19 +107,17 @@ public class RoleService {
     @Transactional
     public void delete(UUID id) {
         Role role = findRoleOrThrow(id);
-
-        if (Boolean.TRUE.equals(role.getIsActive())) {
-            throw new BusinessRuleException("Cannot deactivate an active role. Deactivate all users with this role first.");
-        }
-
-        roleRepository.delete(role);
-    }
-
-    @Transactional
-    public void softDeactivate(UUID id) {
-        Role role = findRoleOrThrow(id);
+        ensureNoActiveUsers(id);
         role.setIsActive(false);
         roleRepository.save(role);
+    }
+
+    private void ensureNoActiveUsers(UUID roleId) {
+        long activeUsers = userRepository.countActiveUsersByRoleId(roleId);
+        if (activeUsers > 0) {
+            throw new BusinessRuleException(
+                    "Cannot deactivate role while it is assigned to active users");
+        }
     }
 
     private Role findRoleOrThrow(UUID id) {
@@ -130,7 +133,7 @@ public class RoleService {
             role.getDescription(),
             role.getIsActive(),
             role.getCreatedAt(),
-            null
+            userRepository.countActiveUsersByRoleId(role.getId())
         );
     }
 }

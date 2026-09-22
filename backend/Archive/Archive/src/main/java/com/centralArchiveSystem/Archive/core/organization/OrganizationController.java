@@ -5,6 +5,7 @@ import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationRequest;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationTreeResponse;
+import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -28,11 +29,12 @@ public class OrganizationController {
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResponse<OrganizationResponse>>> list(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID parentId,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<OrganizationResponse> result = organizationService.list(search, type, isActive, page - 1, size);
+        Page<OrganizationResponse> result = organizationService.list(search, parentId, type, isActive, page - 1, size);
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
@@ -65,7 +67,7 @@ public class OrganizationController {
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<ApiResponse<OrganizationResponse>> update(@PathVariable UUID id, @Valid @RequestBody OrganizationRequest request) {
+    public ResponseEntity<ApiResponse<OrganizationResponse>> update(@PathVariable UUID id, @RequestBody OrganizationUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(organizationService.update(id, request), "Organization updated"));
     }
 

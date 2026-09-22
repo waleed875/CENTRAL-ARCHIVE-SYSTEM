@@ -5,6 +5,7 @@ import com.centralArchiveSystem.Archive.common.dto.PageRequest;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleRequest;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleResponse;
+import com.centralArchiveSystem.Archive.core.role.dto.RoleUpdateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -58,7 +59,7 @@ public class RoleController {
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing role")
-    public ApiResponse<RoleResponse> update(@PathVariable UUID id, @Valid @RequestBody RoleRequest request) {
+    public ApiResponse<RoleResponse> update(@PathVariable UUID id, @RequestBody RoleUpdateRequest request) {
         RoleResponse response = roleService.update(id, request);
         return ApiResponse.success(response, "Role updated successfully");
     }

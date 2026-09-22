@@ -14,13 +14,13 @@ import java.util.UUID;
 @Repository
 public interface BranchPackageRepository extends JpaRepository<BranchPackage, UUID> {
 
-    Optional<BranchPackage> findByPackageUuid(String packageUuid);
+    Optional<BranchPackage> findByPackageUuid(UUID packageUuid);
 
     Optional<BranchPackage> findByPackageHash(String packageHash);
 
     boolean existsByPackageHash(String packageHash);
 
-    boolean existsByPackageUuid(String packageUuid);
+    boolean existsByPackageUuid(UUID packageUuid);
 
     Page<BranchPackage> findByStatus(BranchPackage.PackageStatus status, Pageable pageable);
 
@@ -32,7 +32,7 @@ public interface BranchPackageRepository extends JpaRepository<BranchPackage, UU
     @Query("SELECT bp FROM BranchPackage bp WHERE " +
            "(:searchTerm IS NULL OR :searchTerm = '' OR " +
            "LOWER(bp.packageName) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
-           "LOWER(bp.packageUuid) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+           "LOWER(CAST(bp.packageUuid AS string)) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
            "LOWER(bp.sourceUsername) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) " +
            "AND (:status IS NULL OR bp.status = :status) " +
            "AND (:sourceOrganizationId IS NULL OR bp.sourceOrganizationId = :sourceOrganizationId)")

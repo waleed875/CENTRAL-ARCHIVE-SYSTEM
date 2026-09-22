@@ -1,7 +1,10 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
+import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
@@ -17,21 +20,25 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/packages")
-@Tag(name = "Branch Packages", description = "Branch package import/export endpoints")
+@Tag(name = "Branch Packages", description = "Offline branch package import workflow")
 public class BranchPackageController {
 
     private final BranchPackageService branchPackageService;
+    private final CurrentUserService currentUserService;
+    private final ImportOperationService importOperationService;
 
-    public BranchPackageController(BranchPackageService branchPackageService) {
+    public BranchPackageController(BranchPackageService branchPackageService,
+                                   CurrentUserService currentUserService,
+                                   ImportOperationService importOperationService) {
         this.branchPackageService = branchPackageService;
+        this.currentUserService = currentUserService;
+        this.importOperationService = importOperationService;
     }
 
     @GetMapping
@@ -50,28 +57,16 @@ public class BranchPackageController {
 
     @PostMapping(value = "/receive", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
-    @Operation(summary = "Receive a branch package by uploading manifest file")
+    @Operation(summary = "Receive an offline .pkg package from a terminal")
     public ResponseEntity<ApiResponse<PackageResponse>> receive(
-            @Parameter(description = "Manifest file (JSON)", required = true)
-            @RequestParam("file") MultipartFile file,
-            @Parameter(description = "Username of the receiver")
-            @RequestParam(value = "receivedBy", defaultValue = "system") String receivedBy) throws IOException {
+            @Parameter(description = "Package archive (.pkg)", required = true)
+            @RequestParam("package_file") MultipartFile packageFile) throws Exception {
 
-        String manifestJson = new String(file.getBytes(), StandardCharsets.UTF_8);
-        PackageResponse response = branchPackageService.receive(manifestJson, receivedBy);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(response, "Package received"));
-    }
+        PackageResponse response = branchPackageService.receive(
+                packageFile,
+                currentUserService.userId()
+        );
 
-    @PostMapping(value = "/receive/json", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
-    @Operation(summary = "Receive a branch package by submitting JSON manifest directly")
-    public ResponseEntity<ApiResponse<PackageResponse>> receiveJson(
-            @RequestBody String manifestJson,
-            @Parameter(description = "Username of the receiver")
-            @RequestParam(value = "receivedBy", defaultValue = "system") String receivedBy) {
-
-        PackageResponse response = branchPackageService.receive(manifestJson, receivedBy);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Package received"));
     }
@@ -84,31 +79,45 @@ public class BranchPackageController {
 
     @PostMapping("/{id}/verify")
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
-    @Operation(summary = "Verify package integrity and manifest")
+    @Operation(summary = "Verify stored package hash, manifest and file checksums")
     public ResponseEntity<ApiResponse<PackageVerifyResponse>> verify(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success(branchPackageService.verify(id), "Package verified"));
+        PackageVerifyResponse result = branchPackageService.verify(id);
+        String message = result.valid() ? "Package verified" : "Package verification failed";
+        return ResponseEntity.ok(ApiResponse.success(result, message));
     }
 
     @PostMapping("/{id}/import")
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
-    @Operation(summary = "Import package projects and files (background process)")
+    @Operation(summary = "Import a previously verified package")
     public ResponseEntity<ApiResponse<Map<String, String>>> importPackage(
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
-        branchPackageService.importPackage(id, request);
+        branchPackageService.assertImportable(id, request);
+
+        UUID importedBy = currentUserService.userId();
+        ImportOperation operation = importOperationService.create(id, importedBy);
+
+        branchPackageService.importPackage(
+                id,
+                request,
+                importedBy,
+                operation.getId()
+        );
+
         return ResponseEntity.accepted()
                 .body(ApiResponse.success(
                     Map.of(
-                        "message", "Import process started for package: " + id,
-                        "status", "ACCEPTED"
+                        "import_id", operation.getId().toString(),
+                        "status", ImportOperation.Status.STARTED.name(),
+                        "message", "Import process started for package: " + id
                     ),
                     "Import process started"
                 ));
     }
 
     @GetMapping("/{id}/projects")
-    @Operation(summary = "Get projects in a package")
+    @Operation(summary = "Get central project links created from a package")
     public ResponseEntity<ApiResponse<List<PackageProject>>> getProjects(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(branchPackageService.getProjects(id)));
     }

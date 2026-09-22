@@ -4,6 +4,8 @@ import com.centralArchiveSystem.Archive.common.exception.ConflictException;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeRequest;
 import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeResponse;
+import com.centralArchiveSystem.Archive.project.projecttype.dto.ProjectTypeUpdateRequest;
+import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -19,29 +21,22 @@ import java.util.stream.Collectors;
 public class ProjectTypeService {
 
     private final ProjectTypeRepository projectTypeRepository;
+    private final ProjectRepository projectRepository;
 
-    public ProjectTypeService(ProjectTypeRepository projectTypeRepository) {
+    public ProjectTypeService(ProjectTypeRepository projectTypeRepository,
+                              ProjectRepository projectRepository) {
         this.projectTypeRepository = projectTypeRepository;
+        this.projectRepository = projectRepository;
     }
 
     public Page<ProjectTypeResponse> list(Boolean isActive, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by("name").ascending());
 
-        List<ProjectType> types;
-        if (isActive != null) {
-            types = projectTypeRepository.findByIsActive(isActive);
-        } else {
-            types = projectTypeRepository.findAll();
-        }
+        Page<ProjectType> types = isActive != null
+                ? projectTypeRepository.findByIsActive(isActive, pageRequest)
+                : projectTypeRepository.findAll(pageRequest);
 
-        long total = types.size();
-        List<ProjectTypeResponse> content = types.stream()
-                .skip((long) page * size)
-                .limit(size)
-                .map(this::toResponse)
-                .collect(Collectors.toList());
-
-        return new org.springframework.data.domain.PageImpl<>(content, pageRequest, total);
+        return types.map(this::toResponse);
     }
 
     public List<ProjectTypeResponse> listAll() {
@@ -73,18 +68,19 @@ public class ProjectTypeService {
     }
 
     @Transactional
-    public ProjectTypeResponse update(UUID id, ProjectTypeRequest request) {
+    public ProjectTypeResponse update(UUID id, ProjectTypeUpdateRequest request) {
         ProjectType projectType = projectTypeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ProjectType", "id", id));
 
-        if (request.code() != null && !request.code().isBlank() &&
-            projectTypeRepository.existsByCodeAndIdNot(request.code(), id)) {
-            throw new ConflictException("ProjectType", "code", request.code());
+        if (request.name() != null && !request.name().isBlank()) {
+            projectType.setName(request.name());
         }
-
-        if (request.code() != null) projectType.setCode(request.code());
-        if (request.name() != null) projectType.setName(request.name());
-        if (request.description() != null) projectType.setDescription(request.description());
+        if (request.description() != null) {
+            projectType.setDescription(request.description());
+        }
+        if (request.isActive() != null) {
+            projectType.setIsActive(request.isActive());
+        }
 
         ProjectType saved = projectTypeRepository.save(projectType);
         return toResponse(saved);
@@ -95,7 +91,8 @@ public class ProjectTypeService {
         ProjectType projectType = projectTypeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ProjectType", "id", id));
 
-        projectTypeRepository.delete(projectType);
+        projectType.setIsActive(false);
+        projectTypeRepository.save(projectType);
     }
 
     private ProjectTypeResponse toResponse(ProjectType projectType) {
@@ -105,7 +102,8 @@ public class ProjectTypeService {
                 projectType.getName(),
                 projectType.getDescription(),
                 projectType.getIsActive(),
-                projectType.getCreatedAt()
+                projectType.getCreatedAt(),
+                projectRepository.countLatestByProjectTypeId(projectType.getId())
         );
     }
 }

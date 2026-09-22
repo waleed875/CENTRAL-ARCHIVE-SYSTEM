@@ -4,8 +4,8 @@ import com.centralArchiveSystem.Archive.auth.dto.ChangePasswordRequest;
 import com.centralArchiveSystem.Archive.auth.dto.LoginRequest;
 import com.centralArchiveSystem.Archive.auth.dto.LoginResponse;
 import com.centralArchiveSystem.Archive.core.user.User;
-import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import com.centralArchiveSystem.Archive.core.user.User.UserStatus;
+import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -18,8 +18,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
@@ -70,32 +70,26 @@ public class AuthService implements UserDetailsService {
         User user = userRepository.findByUsername(request.username())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + request.username()));
 
-        String token = tokenProvider.generateToken((UserDetails) authentication.getPrincipal());
-        String refreshToken = tokenProvider.generateRefreshToken((UserDetails) authentication.getPrincipal());
-
-        LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getOrganization() != null ? user.getOrganization().getName() : null,
-                user.getRoles().stream().map(role -> role.getCode()).collect(Collectors.toList()),
-                user.getMaxConfidentialityLevelId()
-        );
-
-        return new LoginResponse(
-                token,
-                tokenProvider.getExpirationMs() / 1000,
-                userInfo
-        );
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        return buildLoginResponse(user, userDetails);
     }
 
+    @Transactional
     public void logout() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            userRepository.findByUsername(authentication.getName()).ifPresent(user -> {
+                user.setTokenValidAfter(Instant.now());
+                user.setUpdatedAt(LocalDateTime.now());
+                userRepository.save(user);
+            });
+        }
         SecurityContextHolder.clearContext();
     }
 
     @Transactional
     public LoginResponse refreshToken(String refreshToken) {
-        if (!tokenProvider.validateToken(refreshToken)) {
+        if (!tokenProvider.validateRefreshToken(refreshToken)) {
             throw new IllegalArgumentException("Invalid refresh token");
         }
 
@@ -103,26 +97,24 @@ public class AuthService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new IllegalArgumentException("User account is not active");
+        }
+        if (!tokenProvider.isIssuedOnOrAfter(refreshToken, user.getTokenValidAfter())) {
+            throw new IllegalArgumentException("Refresh token has been revoked");
+        }
+
+        // Rotate the token family: all previously issued access/refresh tokens
+        // for this user become invalid before the new pair is minted.
+        user.setTokenValidAfter(Instant.now());
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+
         UserDetails userDetails = loadUserByUsername(username);
-        String newToken = tokenProvider.generateToken(userDetails);
-        String newRefreshToken = tokenProvider.generateRefreshToken(userDetails);
-
-        LoginResponse.UserInfo userInfo = new LoginResponse.UserInfo(
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getOrganization() != null ? user.getOrganization().getName() : null,
-                user.getRoles().stream().map(role -> role.getCode()).collect(Collectors.toList()),
-                user.getMaxConfidentialityLevelId()
-        );
-
-        return new LoginResponse(
-                newToken,
-                tokenProvider.getExpirationMs() / 1000,
-                userInfo
-        );
+        return buildLoginResponse(user, userDetails);
     }
 
+    @Transactional(readOnly = true)
     public LoginResponse.UserInfo getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
@@ -130,14 +122,7 @@ public class AuthService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
-        return new LoginResponse.UserInfo(
-                user.getId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getOrganization() != null ? user.getOrganization().getName() : null,
-                user.getRoles().stream().map(role -> role.getCode()).collect(Collectors.toList()),
-                user.getMaxConfidentialityLevelId()
-        );
+        return toUserInfo(user);
     }
 
     @Transactional
@@ -153,7 +138,32 @@ public class AuthService implements UserDetailsService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setTokenValidAfter(Instant.now());
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
+    }
+
+    private LoginResponse buildLoginResponse(User user, UserDetails userDetails) {
+        String accessToken = tokenProvider.generateToken(userDetails);
+        String refreshToken = tokenProvider.generateRefreshToken(userDetails);
+
+        return new LoginResponse(
+                accessToken,
+                refreshToken,
+                tokenProvider.getExpirationMs() / 1000,
+                tokenProvider.getRefreshExpirationMs() / 1000,
+                toUserInfo(user)
+        );
+    }
+
+    private LoginResponse.UserInfo toUserInfo(User user) {
+        return new LoginResponse.UserInfo(
+                user.getId(),
+                user.getUsername(),
+                user.getFullName(),
+                user.getOrganization() != null ? user.getOrganization().getName() : null,
+                user.getRoles().stream().map(role -> role.getCode()).collect(Collectors.toList()),
+                user.getMaxConfidentialityLevelId()
+        );
     }
 }

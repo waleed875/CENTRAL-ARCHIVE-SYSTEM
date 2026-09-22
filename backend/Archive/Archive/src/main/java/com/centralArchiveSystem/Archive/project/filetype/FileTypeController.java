@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeRequest;
 import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeResponse;
+import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -58,7 +59,7 @@ public class FileTypeController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileTypeResponse>> update(
             @PathVariable UUID id,
-            @Valid @RequestBody FileTypeRequest request) {
+            @RequestBody FileTypeUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileTypeService.update(id, request), "File type updated successfully"));
     }
 
@@ -66,6 +67,6 @@ public class FileTypeController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         fileTypeService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "File type deleted successfully"));
+        return ResponseEntity.ok(ApiResponse.success(null, "File type deactivated successfully"));
     }
 }

@@ -31,20 +31,146 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
 
     long countByTypeIdAndDeletedAtIsNull(UUID typeId);
 
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "(LOWER(f.originalName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(f.extension) LIKE LOWER(CONCAT('%', :query, '%')))")
-    Page<FileEntity> searchByProjectAndQuery(@Param("projectId") UUID projectId, @Param("query") String query, Pageable pageable);
+    boolean existsByProjectIdAndChecksumSha256AndDeletedAtIsNull(
+            UUID projectId,
+            String checksumSha256
+    );
 
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "f.categoryId = :categoryId")
-    Page<FileEntity> findByProjectAndCategory(@Param("projectId") UUID projectId, @Param("categoryId") UUID categoryId, Pageable pageable);
+    @Query("""
+           SELECT f FROM FileEntity f
+           WHERE f.projectId = :projectId
+             AND f.deletedAt IS NULL
+             AND (:categoryId IS NULL OR f.categoryId = :categoryId)
+             AND (:typeId IS NULL OR f.typeId = :typeId)
+             AND (:status IS NULL OR UPPER(f.status) = UPPER(:status))
+             AND (
+                  :search IS NULL OR :search = ''
+                  OR LOWER(f.originalName) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(f.extension) LIKE LOWER(CONCAT('%', :search, '%'))
+             )
+             AND (
+                  f.confidentialityLevelId IS NULL
+                  OR (
+                      :maxLevelOrder IS NOT NULL
+                      AND EXISTS (
+                          SELECT c.id
+                          FROM ConfidentialityLevel c
+                          WHERE c.id = f.confidentialityLevelId
+                            AND c.levelOrder <= :maxLevelOrder
+                      )
+                  )
+             )
+           """)
+    Page<FileEntity> searchAccessibleProjectFiles(
+            @Param("projectId") UUID projectId,
+            @Param("categoryId") UUID categoryId,
+            @Param("typeId") UUID typeId,
+            @Param("status") String status,
+            @Param("search") String search,
+            @Param("maxLevelOrder") Integer maxLevelOrder,
+            Pageable pageable);
 
-    @Query("SELECT f FROM FileEntity f WHERE f.projectId = :projectId AND f.deletedAt IS NULL AND " +
-           "f.typeId = :typeId")
-    Page<FileEntity> findByProjectAndType(@Param("projectId") UUID projectId, @Param("typeId") UUID typeId, Pageable pageable);
+    @Query("""
+           SELECT COUNT(f) FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    long countAccessibleActive(@Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT COALESCE(SUM(f.sizeBytes), 0) FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    long sumAccessibleActiveSize(@Param("maxLevelOrder") Integer maxLevelOrder);
+
+    @Query("""
+           SELECT f FROM FileEntity f
+           WHERE f.deletedAt IS NULL
+             AND (
+                 f.confidentialityLevelId IS NULL
+                 OR (
+                     :maxLevelOrder IS NOT NULL
+                     AND EXISTS (
+                         SELECT c.id FROM ConfidentialityLevel c
+                         WHERE c.id = f.confidentialityLevelId
+                           AND c.levelOrder <= :maxLevelOrder
+                     )
+                 )
+             )
+             AND EXISTS (
+                 SELECT p.id FROM Project p
+                 WHERE p.id = f.projectId
+                   AND (
+                       p.confidentialityLevelId IS NULL
+                       OR (
+                           :maxLevelOrder IS NOT NULL
+                           AND EXISTS (
+                               SELECT pc.id FROM ConfidentialityLevel pc
+                               WHERE pc.id = p.confidentialityLevelId
+                                 AND pc.levelOrder <= :maxLevelOrder
+                           )
+                       )
+                   )
+             )
+           """)
+    Page<FileEntity> findAccessibleRecent(
+            @Param("maxLevelOrder") Integer maxLevelOrder,
+            Pageable pageable);
 
     List<FileEntity> findByDeletedAtIsNotNull();
 
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
+
+    long countByConfidentialityLevelId(UUID confidentialityLevelId);
 }

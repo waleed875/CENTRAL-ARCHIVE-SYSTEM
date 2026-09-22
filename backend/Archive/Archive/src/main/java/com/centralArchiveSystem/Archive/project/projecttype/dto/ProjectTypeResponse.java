@@ -9,5 +9,6 @@ public record ProjectTypeResponse(
     String name,
     String description,
     Boolean isActive,
-    LocalDateTime createdAt
+    LocalDateTime createdAt,
+    Long projectsCount
 ) {}

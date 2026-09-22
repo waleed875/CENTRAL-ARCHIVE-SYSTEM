@@ -1,0 +1,99 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "backend/Archive/Archive/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/Archive/Archive/**"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compile-and-unit-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: central_archive
+          POSTGRES_USER: archive_user
+          POSTGRES_PASSWORD: archive_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U archive_user -d central_archive"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    defaults:
+      run:
+        working-directory: backend/Archive/Archive
+
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      DB_USERNAME: archive_user
+      DB_PASSWORD: archive_password
+      LEGACY_DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      LEGACY_DB_USERNAME: archive_user
+      LEGACY_DB_PASSWORD: archive_password
+      BOOTSTRAP_ADMIN_ENABLED: "false"
+      ARCHIVE_INSTANCE_UUID: 00000000-0000-0000-0000-000000000001
+      MINIO_ENDPOINT: http://localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin123
+      MINIO_BUCKET: archive-files-ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/Archive/Archive/pom.xml
+
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio-ci \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z server /data
+          for i in {1..30}; do
+            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs minio-ci
+          exit 1
+
+      - name: Compile backend
+        run: bash mvnw -B -DskipTests package
+
+      - name: Run focused unit tests
+        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,BranchPackageServiceTest,ImportOperationServiceTest,MigrationServiceTest,LegacyMigrationServiceFilePreparationTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,UserServiceTest,ConfidentialityLevelServiceTest,ProjectTypeServiceTest,FileContentInspectorTest,FileCategoryServiceTest,FileTypeServiceTest,FileServiceTest,RequestCorrelationFilterTest,DashboardServiceTest,AuditAspectTest test
+
+      - name: Run authentication and object authorization HTTP integration tests
+        run: bash mvnw -B -Dtest=AuthHttpIntegrationTest,ObjectAuthorizationHttpIntegrationTest test
+
+      - name: Run MinIO integration tests
+        run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
+
+      - name: Verify PostgreSQL schema invariants
+        run: bash mvnw -B -Dtest=PostgresSchemaIntegrationTest test
+
+      - name: Verify Flyway migrations and Hibernate schema
+        run: bash mvnw -B -Dtest=ArchiveApplicationTests test

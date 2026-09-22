@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryRequest;
 import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryResponse;
+import com.centralArchiveSystem.Archive.project.filecategory.dto.FileCategoryUpdateRequest;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -56,7 +57,7 @@ public class FileCategoryController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileCategoryResponse>> update(
             @PathVariable UUID id,
-            @Valid @RequestBody FileCategoryRequest request) {
+            @RequestBody FileCategoryUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileCategoryService.update(id, request), "File category updated successfully"));
     }
 
@@ -64,6 +65,6 @@ public class FileCategoryController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         fileCategoryService.delete(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "File category deleted successfully"));
+        return ResponseEntity.ok(ApiResponse.success(null, "File category deactivated successfully"));
     }
 }

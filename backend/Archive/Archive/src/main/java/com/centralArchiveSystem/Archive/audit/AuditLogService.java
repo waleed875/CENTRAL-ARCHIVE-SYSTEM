@@ -49,6 +49,38 @@ public class AuditLogService {
         return AuditLogResponse.fromEntity(saved);
     }
 
+    public AuditLogResponse log(UUID userId, String user, String action, String entityType,
+                                 String entityId, String oldValues, String newValues,
+                                 long executionTime, String status, String errorMessage,
+                                 String ipAddress) {
+        AuditLog auditLog = new AuditLog();
+        auditLog.setUserId(userId);
+        auditLog.setAction(action);
+        auditLog.setEntityType(entityType);
+        auditLog.setDescription(String.format("User: %s | Status: %s | Duration: %dms%s",
+                user != null ? user : "anonymous",
+                status,
+                executionTime,
+                errorMessage != null ? " | Error: " + errorMessage : ""));
+
+        if (entityId != null) {
+            try {
+                auditLog.setEntityId(UUID.fromString(entityId));
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid entityId format: {}", entityId);
+            }
+        }
+
+        auditLog.setOldValues(oldValues);
+        auditLog.setNewValues(newValues);
+        auditLog.setIpAddress(ipAddress);
+
+        AuditLog saved = auditLogRepository.save(auditLog);
+        logger.info("Audit log created: userId={}, action={}, entityType={}, entityId={}",
+                userId, action, entityType, entityId);
+        return AuditLogResponse.fromEntity(saved);
+    }
+
     public AuditLogResponse log(String user, String action, String entityType,
                                  String entityId, String oldValues, String newValues,
                                  long executionTime, String status, String errorMessage) {

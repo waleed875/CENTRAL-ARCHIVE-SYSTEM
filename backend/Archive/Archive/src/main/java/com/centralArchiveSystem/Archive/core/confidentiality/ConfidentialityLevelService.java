@@ -4,6 +4,8 @@ import com.centralArchiveSystem.Archive.common.exception.ConflictException;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelRequest;
 import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelResponse;
+import com.centralArchiveSystem.Archive.core.confidentiality.dto.ConfidentialityLevelUpdateRequest;
+import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import org.springframework.data.domain.Page;
@@ -22,13 +24,16 @@ public class ConfidentialityLevelService {
     private final ConfidentialityLevelRepository confidentialityLevelRepository;
     private final ProjectRepository projectRepository;
     private final FileRepository fileRepository;
+    private final UserRepository userRepository;
 
     public ConfidentialityLevelService(ConfidentialityLevelRepository confidentialityLevelRepository,
                                        ProjectRepository projectRepository,
-                                       FileRepository fileRepository) {
+                                       FileRepository fileRepository,
+                                       UserRepository userRepository) {
         this.confidentialityLevelRepository = confidentialityLevelRepository;
         this.projectRepository = projectRepository;
         this.fileRepository = fileRepository;
+        this.userRepository = userRepository;
     }
 
     public Page<ConfidentialityLevelResponse> list(int page, int size) {
@@ -65,18 +70,9 @@ public class ConfidentialityLevelService {
     }
 
     @Transactional
-    public ConfidentialityLevelResponse update(UUID id, ConfidentialityLevelRequest request) {
+    public ConfidentialityLevelResponse update(UUID id, ConfidentialityLevelUpdateRequest request) {
         ConfidentialityLevel level = confidentialityLevelRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("ConfidentialityLevel", "id", id));
-
-        if (request.code() != null && !request.code().isBlank()) {
-            confidentialityLevelRepository.findByCode(request.code())
-                    .filter(existing -> !existing.getId().equals(id))
-                    .ifPresent(existing -> {
-                        throw new ConflictException("ConfidentialityLevel", "code", request.code());
-                    });
-            level.setCode(request.code());
-        }
 
         if (request.levelOrder() != null) {
             confidentialityLevelRepository.findByLevelOrder(request.levelOrder())
@@ -109,10 +105,16 @@ public class ConfidentialityLevelService {
                     "Cannot delete confidentiality level that is referenced by " + projectsCount + " project(s)");
         }
 
-        long filesCount = fileRepository.countByConfidentialityLevelIdAndDeletedAtIsNull(id);
+        long filesCount = fileRepository.countByConfidentialityLevelId(id);
         if (filesCount > 0) {
             throw new IllegalStateException(
                     "Cannot delete confidentiality level that is referenced by " + filesCount + " file(s)");
+        }
+
+        long usersCount = userRepository.countByMaxConfidentialityLevelId(id);
+        if (usersCount > 0) {
+            throw new IllegalStateException(
+                    "Cannot delete confidentiality level that is referenced by " + usersCount + " user(s)");
         }
 
         confidentialityLevelRepository.delete(level);
@@ -120,7 +122,8 @@ public class ConfidentialityLevelService {
 
     private ConfidentialityLevelResponse toResponse(ConfidentialityLevel level) {
         long projectsCount = projectRepository.countByConfidentialityLevelId(level.getId());
-        long filesCount = fileRepository.countByConfidentialityLevelIdAndDeletedAtIsNull(level.getId());
+        long filesCount = fileRepository.countByConfidentialityLevelId(level.getId());
+        long usersCount = userRepository.countByMaxConfidentialityLevelId(level.getId());
 
         return new ConfidentialityLevelResponse(
                 level.getId(),
@@ -131,7 +134,7 @@ public class ConfidentialityLevelService {
                 level.getCreatedAt(),
                 projectsCount,
                 filesCount,
-                0L
+                usersCount
         );
     }
 }

@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * Automatic scheduling is gated by legacy.migration.enabled so the scheduler is
  * a no-op until explicitly turned on (prevents unwanted DB access/impact in
- * tests or during normal application operation). Manual triggers via
- * MigrationController.runBatch always attempt a run.
+ * tests or during normal application operation). Manual triggers are also
+ * rejected while migration is disabled.
  */
 @Component
 public class MigrationRunner {
@@ -36,6 +36,9 @@ public class MigrationRunner {
     @Value("${legacy.migration.enabled:false}")
     private boolean enabled;
 
+    @Value("${legacy.migration.schedule-enabled:false}")
+    private boolean scheduleEnabled;
+
     @Value("${legacy.migration.source-name:ARC2}")
     private String sourceName;
 
@@ -48,11 +51,12 @@ public class MigrationRunner {
     }
 
     /**
-     * Automatic trigger. Runs every 60 seconds; no-op unless migration is enabled.
+     * Optional automatic trigger. It remains disabled unless both migration
+     * execution and scheduling are explicitly enabled.
      */
     @Scheduled(fixedDelayString = "60000")
     public void scheduledTick() {
-        if (!enabled) {
+        if (!enabled || !scheduleEnabled) {
             return;
         }
         runOnce();
@@ -63,12 +67,29 @@ public class MigrationRunner {
      * run was (re)started by this call.
      */
     public boolean runOnce() {
+        ensureEnabled();
+        MigrationBatch batch = findOrCreateRunningBatch();
+        return runBatch(batch.getId());
+    }
+
+    public boolean runBatch(UUID batchId) {
+        ensureEnabled();
         if (!running.compareAndSet(false, true)) {
-            log.info("Legacy migration already running, skipped trigger");
+            log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
         }
+
         try {
-            MigrationBatch batch = findOrCreateRunningBatch();
+            MigrationBatch batch = batchRepository.findById(batchId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Migration batch not found: " + batchId));
+
+            if (batch.getStatus() != MigrationBatch.Status.RUNNING) {
+                throw new IllegalStateException(
+                        "Migration batch must be RUNNING before execution; current status: "
+                                + batch.getStatus());
+            }
+
             log.info("Legacy migration started, batch={}", batch.getId());
 
             try {
@@ -77,16 +98,19 @@ public class MigrationRunner {
                 LegacyMigrationService.LegacyFileSummary files =
                         legacyMigrationService.migrateFilesAsync(4).get();
 
-                long doneFiles = files.done;
-                long failedFiles = files.failed;
+                long doneFiles = files.done();
+                long failedFiles = files.failed();
 
                 batch.setProjectsCount(projects);
                 batch.setFilesCount((int) doneFiles);
-                batch.setStatus(failedFiles > 0 ? MigrationBatch.Status.PARTIAL : MigrationBatch.Status.SUCCESS);
+                batch.setStatus(failedFiles > 0
+                        ? MigrationBatch.Status.PARTIAL
+                        : MigrationBatch.Status.SUCCESS);
                 batch.setNotes("references=" + refs + ", projects=" + projects
-                        + ", files done=" + doneFiles + ", failed=" + failedFiles + ", skipped=" + files.skipped);
+                        + ", files done=" + doneFiles + ", failed=" + failedFiles
+                        + ", skipped=" + files.skipped());
             } catch (Exception e) {
-                log.error("Legacy migration failed", e);
+                log.error("Legacy migration failed, batch={}", batchId, e);
                 batch.setStatus(MigrationBatch.Status.FAILED);
                 batch.setNotes("FAILED: " + e.getMessage());
             } finally {
@@ -99,6 +123,13 @@ public class MigrationRunner {
         }
     }
 
+    private void ensureEnabled() {
+        if (!enabled) {
+            throw new IllegalStateException(
+                    "Legacy migration is disabled. Enable it only during a controlled migration window");
+        }
+    }
+
     private MigrationBatch findOrCreateRunningBatch() {
         java.util.List<MigrationBatch> runningBatches = batchRepository.findByStatus(MigrationBatch.Status.RUNNING);
         if (!runningBatches.isEmpty()) {
@@ -106,7 +137,7 @@ public class MigrationRunner {
         }
         MigrationBatch batch = new MigrationBatch();
         batch.setMigrationSourceId(ensureSourceId());
-        batch.setBatchNumber(1);
+        batch.setBatchNumber("AUTO-" + System.currentTimeMillis());
         batch.setStatus(MigrationBatch.Status.RUNNING);
         batch.setStartedAt(LocalDateTime.now());
         batch.setNotes("Legacy migration from staging database");

@@ -3,6 +3,8 @@ package com.centralArchiveSystem.Archive.core.organization;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationRequest;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationTreeResponse;
+import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationUpdateRequest;
+import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,9 +21,12 @@ import java.util.stream.Collectors;
 public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
+    private final ProjectRepository projectRepository;
 
-    public OrganizationService(OrganizationRepository organizationRepository) {
+    public OrganizationService(OrganizationRepository organizationRepository,
+                               ProjectRepository projectRepository) {
         this.organizationRepository = organizationRepository;
+        this.projectRepository = projectRepository;
     }
 
     public OrganizationResponse getById(UUID id) {
@@ -30,37 +35,21 @@ public class OrganizationService {
         return toResponse(organization);
     }
 
-    public Page<OrganizationResponse> list(String search, String type, Boolean isActive, int page, int size) {
+    public Page<OrganizationResponse> list(String search, UUID parentId, String type,
+                                           Boolean isActive, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("name").ascending());
+        Organization.OrganizationType orgType =
+                type == null || type.isBlank()
+                        ? null
+                        : Organization.OrganizationType.valueOf(type.toUpperCase());
 
-        Page<Organization> organizations;
-
-        if (search != null && !search.isBlank()) {
-            organizations = organizationRepository.searchByNameOrCode(search, pageable);
-        } else {
-            organizations = organizationRepository.findAll(pageable);
-        }
-
-        if (type != null && !type.isBlank()) {
-            Organization.OrganizationType orgType = Organization.OrganizationType.valueOf(type.toUpperCase());
-            organizations = organizations.getContent().stream()
-                    .filter(o -> o.getType() == orgType)
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        if (isActive != null) {
-            organizations = organizations.getContent().stream()
-                    .filter(o -> o.getIsActive().equals(isActive))
-                    .collect(Collectors.collectingAndThen(
-                            Collectors.toList(),
-                            list -> new org.springframework.data.domain.PageImpl<>(list, pageable, list.size())
-                    ));
-        }
-
-        return organizations.map(this::toResponse);
+        return organizationRepository.searchFiltered(
+                search,
+                parentId,
+                orgType,
+                isActive,
+                pageable
+        ).map(this::toResponse);
     }
 
     public List<OrganizationTreeResponse> getTree() {
@@ -114,6 +103,8 @@ public class OrganizationService {
             throw new IllegalArgumentException("Organization code already exists: " + request.code());
         }
 
+        validateHierarchy(type, request.parentId(), null);
+
         Organization organization = new Organization();
         organization.setParentId(request.parentId());
         organization.setName(request.name());
@@ -127,22 +118,22 @@ public class OrganizationService {
     }
 
     @Transactional
-    public OrganizationResponse update(UUID id, OrganizationRequest request) {
+    public OrganizationResponse update(UUID id, OrganizationUpdateRequest request) {
         Organization organization = organizationRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Organization not found with id: " + id));
 
-        if (request.code() != null && !request.code().isBlank() &&
-            organizationRepository.existsByCodeAndIdNot(request.code(), id)) {
-            throw new IllegalArgumentException("Organization code already exists: " + request.code());
+        if (request.name() != null && !request.name().isBlank()) {
+            organization.setName(request.name());
         }
-
-        if (request.name() != null) organization.setName(request.name());
-        if (request.code() != null) organization.setCode(request.code());
-        if (request.type() != null) {
-            organization.setType(Organization.OrganizationType.valueOf(request.type().toUpperCase()));
+        if (request.description() != null) {
+            organization.setDescription(request.description());
         }
-        if (request.description() != null) organization.setDescription(request.description());
-        if (request.parentId() != null) organization.setParentId(request.parentId());
+        if (request.isActive() != null) {
+            if (!request.isActive()) {
+                validateDeactivation(id);
+            }
+            organization.setIsActive(request.isActive());
+        }
 
         Organization saved = organizationRepository.save(organization);
         return toResponse(saved);
@@ -153,10 +144,7 @@ public class OrganizationService {
         Organization organization = organizationRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Organization not found with id: " + id));
 
-        long childrenCount = organizationRepository.countByParentId(id);
-        if (childrenCount > 0) {
-            throw new IllegalStateException("Cannot deactivate organization with active children. Deactivate children first.");
-        }
+        validateDeactivation(id);
 
         organization.setIsActive(false);
         organizationRepository.save(organization);
@@ -192,7 +180,74 @@ public class OrganizationService {
                 org.getIsActive(),
                 org.getCreatedAt(),
                 childrenCount,
-                0
+                projectRepository.countByOrganizationId(org.getId())
         );
+    }
+
+    private void validateHierarchy(Organization.OrganizationType type, UUID parentId, UUID currentId) {
+        if (type == Organization.OrganizationType.COMPANY) {
+            if (parentId != null) {
+                throw new IllegalArgumentException("COMPANY organizations cannot have a parent");
+            }
+            return;
+        }
+
+        if (parentId == null) {
+            throw new IllegalArgumentException(type + " organizations require a parent");
+        }
+        if (currentId != null && currentId.equals(parentId)) {
+            throw new IllegalArgumentException("Organization cannot be its own parent");
+        }
+
+        Organization parent = organizationRepository.findById(parentId)
+                .orElseThrow(() -> new EntityNotFoundException("Parent organization not found with id: " + parentId));
+
+        if (!Boolean.TRUE.equals(parent.getIsActive())) {
+            throw new IllegalArgumentException("Parent organization must be active");
+        }
+
+        Organization.OrganizationType expectedParent = switch (type) {
+            case FACTORY -> Organization.OrganizationType.COMPANY;
+            case LINE -> Organization.OrganizationType.FACTORY;
+            case DEPARTMENT -> Organization.OrganizationType.LINE;
+            case COMPANY -> null;
+        };
+
+        if (parent.getType() != expectedParent) {
+            throw new IllegalArgumentException(
+                    type + " must have a parent of type " + expectedParent);
+        }
+
+        if (currentId != null) {
+            UUID cursor = parent.getParentId();
+            Set<UUID> visited = new HashSet<>();
+            visited.add(parent.getId());
+            while (cursor != null) {
+                if (!visited.add(cursor) || currentId.equals(cursor)) {
+                    throw new IllegalArgumentException("Organization hierarchy cycle detected");
+                }
+                UUID ancestorId = cursor;
+                Organization ancestor = organizationRepository.findById(ancestorId)
+                        .orElseThrow(() -> new EntityNotFoundException(
+                                "Ancestor organization not found with id: " + ancestorId));
+                cursor = ancestor.getParentId();
+            }
+        }
+    }
+
+    private void validateDeactivation(UUID id) {
+        long activeChildren = organizationRepository.findByParentId(id).stream()
+                .filter(child -> Boolean.TRUE.equals(child.getIsActive()))
+                .count();
+        if (activeChildren > 0) {
+            throw new IllegalStateException(
+                    "Cannot deactivate organization with active children. Deactivate children first.");
+        }
+
+        long activeProjects = projectRepository.countActiveProjectsByOrganizationId(id);
+        if (activeProjects > 0) {
+            throw new IllegalStateException(
+                    "Cannot deactivate organization with active projects");
+        }
     }
 }

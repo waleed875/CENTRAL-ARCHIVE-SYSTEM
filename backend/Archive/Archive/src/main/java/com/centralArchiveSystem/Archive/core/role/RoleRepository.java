@@ -22,8 +22,15 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
 
     boolean existsByCodeAndIdNot(String code, UUID id);
 
-    @Query("SELECT r FROM Role r WHERE " +
-           "LOWER(r.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           "LOWER(r.code) LIKE LOWER(CONCAT('%', :search, '%'))")
-    Page<Role> searchByNameOrCode(@Param("search") String search, Pageable pageable);
+    @Query("""
+           SELECT r FROM Role r
+           WHERE (:search IS NULL OR :search = ''
+                  OR LOWER(r.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                  OR LOWER(r.code) LIKE LOWER(CONCAT('%', :search, '%')))
+             AND (:isActive IS NULL OR r.isActive = :isActive)
+           """)
+    Page<Role> searchFiltered(
+            @Param("search") String search,
+            @Param("isActive") Boolean isActive,
+            Pageable pageable);
 }

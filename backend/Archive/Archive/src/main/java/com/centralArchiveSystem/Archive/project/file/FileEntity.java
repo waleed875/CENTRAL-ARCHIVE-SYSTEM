@@ -1,7 +1,7 @@
 package com.centralArchiveSystem.Archive.project.file;
 
 import jakarta.persistence.*;
-import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.UuidGenerator;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -11,8 +11,7 @@ import java.util.UUID;
 public class FileEntity {
 
     @Id
-    @GeneratedValue(generator = "UUID")
-    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @UuidGenerator
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
@@ -22,7 +21,7 @@ public class FileEntity {
     @Column(name = "category_id", nullable = false)
     private UUID categoryId;
 
-    @Column(name = "type_id", nullable = false)
+    @Column(name = "type_id")
     private UUID typeId;
 
     @Column(name = "confidentiality_level_id")
@@ -49,7 +48,7 @@ public class FileEntity {
     @Column(name = "size_bytes", nullable = false)
     private Long sizeBytes;
 
-    @Column(name = "checksum_sha256")
+    @Column(name = "checksum_sha256", length = 64)
     private String checksumSha256;
 
     @Column(name = "status", nullable = false)

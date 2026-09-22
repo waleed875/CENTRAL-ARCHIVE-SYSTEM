@@ -22,6 +22,6 @@ public record UserResponse(
     @Schema(description = "Confidentiality level summary") ConfidentialityLevelSummary maxConfidentialityLevel
 ) {
     public record OrganizationSummary(UUID id, String name, String code) {}
-    public record RoleSummary(UUID id, String name, String description) {}
+    public record RoleSummary(UUID id, String code, String name, String description) {}
     public record ConfidentialityLevelSummary(UUID id, String name, Integer level) {}
 }

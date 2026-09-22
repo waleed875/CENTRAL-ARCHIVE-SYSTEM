@@ -1,6 +1,8 @@
 package com.centralArchiveSystem.Archive.auth;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,11 +11,18 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
 public class JwtTokenProvider {
+
+    private static final String TOKEN_TYPE_CLAIM = "token_type";
+    private static final String ACCESS_TOKEN_TYPE = "access";
+    private static final String REFRESH_TOKEN_TYPE = "refresh";
+    private static final String ISSUED_AT_MS_CLAIM = "issued_at_ms";
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -40,6 +49,8 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim("roles", roles)
+                .claim(TOKEN_TYPE_CLAIM, ACCESS_TOKEN_TYPE)
+                .claim(ISSUED_AT_MS_CLAIM, now.getTime())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -52,48 +63,70 @@ public class JwtTokenProvider {
 
         return Jwts.builder()
                 .subject(userDetails.getUsername())
+                .claim(TOKEN_TYPE_CLAIM, REFRESH_TOKEN_TYPE)
+                .claim(ISSUED_AT_MS_CLAIM, now.getTime())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
                 .compact();
     }
 
-    public boolean validateToken(String token) {
+    public boolean validateAccessToken(String token) {
+        return validateTokenType(token, ACCESS_TOKEN_TYPE);
+    }
+
+    public boolean validateRefreshToken(String token) {
+        return validateTokenType(token, REFRESH_TOKEN_TYPE);
+    }
+
+    private boolean validateTokenType(String token, String expectedType) {
         try {
-            Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token);
-            return true;
+            Claims claims = parseClaims(token);
+            return expectedType.equals(claims.get(TOKEN_TYPE_CLAIM, String.class));
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }
 
-    public String getUsernameFromToken(String token) {
+    private Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()
                 .parseSignedClaims(token)
-                .getPayload()
-                .getSubject();
+                .getPayload();
     }
 
-    public java.util.List<String> getRolesFromToken(String token) {
-        String roles = Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload()
-                .get("roles", String.class);
+    public String getUsernameFromToken(String token) {
+        return parseClaims(token).getSubject();
+    }
 
-        if (roles == null || roles.isEmpty()) {
-            return java.util.List.of();
+    public Instant getIssuedAtInstant(String token) {
+        Claims claims = parseClaims(token);
+        Number issuedAtMs = claims.get(ISSUED_AT_MS_CLAIM, Number.class);
+        if (issuedAtMs != null) {
+            return Instant.ofEpochMilli(issuedAtMs.longValue());
         }
-        return java.util.List.of(roles.split(","));
+        Date issuedAt = claims.getIssuedAt();
+        return issuedAt != null ? issuedAt.toInstant() : Instant.EPOCH;
+    }
+
+    public boolean isIssuedOnOrAfter(String token, Instant cutoff) {
+        return cutoff == null || !getIssuedAtInstant(token).isBefore(cutoff);
+    }
+
+    public List<String> getRolesFromToken(String token) {
+        String roles = parseClaims(token).get("roles", String.class);
+        if (roles == null || roles.isEmpty()) {
+            return List.of();
+        }
+        return List.of(roles.split(","));
     }
 
     public long getExpirationMs() {
         return jwtExpirationMs;
+    }
+
+    public long getRefreshExpirationMs() {
+        return jwtRefreshExpirationMs;
     }
 }

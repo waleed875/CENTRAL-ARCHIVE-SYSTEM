@@ -9,7 +9,7 @@ import java.util.UUID;
 @Schema(description = "Full project response DTO")
 public record ProjectResponse(
     @Schema(description = "Project ID") UUID id,
-    @Schema(description = "Project UID") String projectUid,
+    @Schema(description = "Project UID") UUID projectUid,
     @Schema(description = "Version number") Integer versionNo,
     @Schema(description = "Previous project version ID") UUID previousProjectId,
     @Schema(description = "Whether this is the latest version") Boolean isLatestVersion,
@@ -31,8 +31,8 @@ public record ProjectResponse(
     @Schema(description = "Review notes") String reviewNotes,
     @Schema(description = "Source type") Project.SourceType sourceType,
     @Schema(description = "Source reference") String sourceReference,
-    @Schema(description = "Created by user") String createdBy,
-    @Schema(description = "Approved by user") String approvedBy,
+    @Schema(description = "Created by user ID") UUID createdBy,
+    @Schema(description = "Approved by user ID") UUID approvedBy,
     @Schema(description = "Approval timestamp") LocalDateTime approvedAt,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt,
     @Schema(description = "Last update timestamp") LocalDateTime updatedAt

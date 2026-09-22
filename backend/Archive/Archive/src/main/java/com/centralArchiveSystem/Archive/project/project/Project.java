@@ -9,7 +9,14 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "project.projects")
+@Table(
+    name = "projects",
+    schema = "project",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_projects_project_uid_version",
+        columnNames = {"project_uid", "version_no"}
+    )
+)
 @Schema(name = "project.projects")
 public class Project {
 
@@ -17,8 +24,8 @@ public class Project {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "project_uid", nullable = false, unique = true)
-    private String projectUid;
+    @Column(name = "project_uid", nullable = false)
+    private UUID projectUid;
 
     @Column(name = "version_no", nullable = false)
     private Integer versionNo = 1;
@@ -87,10 +94,10 @@ public class Project {
     private String sourceReference;
 
     @Column(name = "created_by")
-    private String createdBy;
+    private UUID createdBy;
 
     @Column(name = "approved_by")
-    private String approvedBy;
+    private UUID approvedBy;
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
@@ -117,7 +124,7 @@ public class Project {
 
     public Project() {}
 
-    public Project(UUID id, String projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, String createdBy, String approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
+    public Project(UUID id, UUID projectUid, Integer versionNo, UUID previousProjectId, Boolean isLatestVersion, UUID organizationId, UUID projectTypeId, UUID confidentialityLevelId, String projectNumber, String projectCode, String name, Integer year, String executingEntity, String supervisorName, String description, String notes, String tableOfContents, String keywords, ProjectStatus status, DataCompletionStatus dataCompletionStatus, String reviewNotes, SourceType sourceType, String sourceReference, UUID createdBy, UUID approvedBy, LocalDateTime approvedAt, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.projectUid = projectUid;
         this.versionNo = versionNo;
@@ -151,8 +158,8 @@ public class Project {
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
-    public String getProjectUid() { return projectUid; }
-    public void setProjectUid(String projectUid) { this.projectUid = projectUid; }
+    public UUID getProjectUid() { return projectUid; }
+    public void setProjectUid(UUID projectUid) { this.projectUid = projectUid; }
 
     public Integer getVersionNo() { return versionNo; }
     public void setVersionNo(Integer versionNo) { this.versionNo = versionNo; }
@@ -217,11 +224,11 @@ public class Project {
     public String getSourceReference() { return sourceReference; }
     public void setSourceReference(String sourceReference) { this.sourceReference = sourceReference; }
 
-    public String getCreatedBy() { return createdBy; }
-    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public UUID getCreatedBy() { return createdBy; }
+    public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
 
-    public String getApprovedBy() { return approvedBy; }
-    public void setApprovedBy(String approvedBy) { this.approvedBy = approvedBy; }
+    public UUID getApprovedBy() { return approvedBy; }
+    public void setApprovedBy(UUID approvedBy) { this.approvedBy = approvedBy; }
 
     public LocalDateTime getApprovedAt() { return approvedAt; }
     public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }

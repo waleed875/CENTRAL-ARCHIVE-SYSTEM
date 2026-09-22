@@ -1,7 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project.dto;
 
 import com.centralArchiveSystem.Archive.project.project.Project;
-import com.centralArchiveSystem.Archive.project.member.dto.MemberRequest;
+import com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import jakarta.validation.Valid;
@@ -9,7 +9,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 
-@Schema(description = "Request DTO for creating and updating projects")
+@Schema(description = "Request DTO for manually creating projects. Provenance and creator are assigned by the server.")
 public record ProjectRequest(
     @Schema(description = "Organization ID", example = "550e8400-e29b-41d4-a716-446655440000")
     @NotNull(message = "Organization ID is required") UUID organizationId,
@@ -50,12 +50,6 @@ public record ProjectRequest(
 
     @Schema(description = "Data completion status") Project.DataCompletionStatus dataCompletionStatus,
 
-    @Schema(description = "Source type") Project.SourceType sourceType,
-
-    @Schema(description = "Source reference") String sourceReference,
-
-    @Schema(description = "Created by user") String createdBy,
-
     @Schema(description = "Optional project members created with the project. Manage later changes through the member endpoints.")
-    List<@Valid MemberRequest> members
+    List<@Valid MemberCreateRequest> members
 ) {}

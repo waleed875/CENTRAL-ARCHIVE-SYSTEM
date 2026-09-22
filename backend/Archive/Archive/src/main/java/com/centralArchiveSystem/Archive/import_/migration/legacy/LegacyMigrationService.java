@@ -5,6 +5,7 @@ import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLeve
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
+import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
 import com.centralArchiveSystem.Archive.project.file.FileEntity;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
@@ -22,9 +23,14 @@ import org.springframework.core.env.Environment;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
-import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.List;
@@ -33,6 +39,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Migrates data from the legacy staging database (restored from the 600GB
@@ -52,7 +59,8 @@ public class LegacyMigrationService {
     private static final Logger log = LoggerFactory.getLogger(LegacyMigrationService.class);
 
     private static final String LEGACY_DB_SCHEMA = "public";
-    private static final String DEFAULT_MIME = "application/octet-stream";
+    private static final String LEGACY_CATEGORY_CODE = "LEGACY";
+    private static final String LEGACY_TYPE_CODE = "LEGACY-FILE";
 
     private final JdbcTemplate legacyJdbc;
     private final MinioService minioService;
@@ -64,6 +72,7 @@ public class LegacyMigrationService {
     private final FileTypeRepository fileTypeRepository;
     private final ConfidentialityLevelRepository confidentialityLevelRepository;
     private final LegacyMigrationItemRepository itemRepository;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${legacy.migration.default-year:2000}")
     private int defaultYear;
@@ -73,6 +82,9 @@ public class LegacyMigrationService {
 
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
+
+    @Value("${legacy.migration.default-confidentiality-code:}")
+    private String defaultConfidentialityCode;
 
     public LegacyMigrationService(
             Environment env,
@@ -84,7 +96,8 @@ public class LegacyMigrationService {
             FileCategoryRepository fileCategoryRepository,
             FileTypeRepository fileTypeRepository,
             ConfidentialityLevelRepository confidentialityLevelRepository,
-            LegacyMigrationItemRepository itemRepository) {
+            LegacyMigrationItemRepository itemRepository,
+            PlatformTransactionManager transactionManager) {
         this.legacyJdbc = buildLegacyJdbc(env);
         this.minioService = minioService;
         this.minioConfig = minioConfig;
@@ -95,6 +108,7 @@ public class LegacyMigrationService {
         this.fileTypeRepository = fileTypeRepository;
         this.confidentialityLevelRepository = confidentialityLevelRepository;
         this.itemRepository = itemRepository;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -110,6 +124,9 @@ public class LegacyMigrationService {
         ds.setPassword(env.getProperty("legacy.datasource.password"));
         ds.setDriverClassName(env.getProperty("legacy.datasource.driver-class-name"));
         ds.setInitializationFailTimeout(-1);
+        ds.setReadOnly(true);
+        ds.setAutoCommit(false);
+        ds.setMaximumPoolSize(8);
         return new JdbcTemplate(ds);
     }
 
@@ -182,7 +199,7 @@ public class LegacyMigrationService {
 
             Project project = new Project();
             project.setId(UUID.randomUUID());
-            project.setProjectUid("LEGACY-" + oldId);
+            project.setProjectUid(UUID.nameUUIDFromBytes(("LEGACY-" + oldId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             project.setVersionNo(1);
             project.setIsLatestVersion(true);
             project.setOrganizationId(organizationId);
@@ -229,6 +246,10 @@ public class LegacyMigrationService {
     public LegacyFileSummary migrateFiles(ExecutorService pool) {
         LegacyFileSummary summary = new LegacyFileSummary();
 
+        UUID defaultCategoryId = resolveDefaultCategoryId();
+        UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
+        UUID defaultConfidentialityId = resolveDefaultConfidentialityId();
+
         List<Map<String, Object>> projects = legacyJdbc.queryForList(
                 "SELECT idproject FROM " + LEGACY_DB_SCHEMA + ".tbl_project");
 
@@ -236,7 +257,15 @@ public class LegacyMigrationService {
         for (Map<String, Object> projectRow : projects) {
             int legacyProjectId = ((Number) projectRow.get("idproject")).intValue();
             CompletableFuture<Void> future = CompletableFuture.runAsync(
-                    () -> migrateFilesForProject(legacyProjectId, summary), pool);
+                    () -> migrateFilesForProject(
+                            legacyProjectId,
+                            summary,
+                            defaultCategoryId,
+                            defaultTypeId,
+                            defaultConfidentialityId
+                    ),
+                    pool
+            );
             futures.add(future);
         }
 
@@ -245,13 +274,25 @@ public class LegacyMigrationService {
         } catch (Exception e) {
             log.error("Parallel file migration failed", e);
         }
-        log.info("Legacy files migrated: {} done, {} failed, {} skipped", summary.done, summary.failed, summary.skipped);
+        log.info(
+                "Legacy files migrated: {} done, {} failed, {} skipped",
+                summary.done(),
+                summary.failed(),
+                summary.skipped()
+        );
         return summary;
     }
 
-    private void migrateFilesForProject(int legacyProjectId, LegacyFileSummary summary) {
+    private void migrateFilesForProject(int legacyProjectId,
+                                        LegacyFileSummary summary,
+                                        UUID defaultCategoryId,
+                                        UUID defaultTypeId,
+                                        UUID defaultConfidentialityId) {
         String projectSourceKey = "PROJECT-" + legacyProjectId;
-        UUID targetProjectId = itemRepository.findByKindAndSourceKey(LegacyMigrationItem.Kind.PROJECT, projectSourceKey)
+        UUID targetProjectId = itemRepository.findByKindAndSourceKey(
+                        LegacyMigrationItem.Kind.PROJECT,
+                        projectSourceKey
+                )
                 .map(LegacyMigrationItem::getTargetId)
                 .orElse(null);
 
@@ -260,77 +301,297 @@ public class LegacyMigrationService {
             return;
         }
 
-        List<Map<String, Object>> files = legacyJdbc.queryForList(
-                "SELECT idfile, filename, filesuffix, filebinary FROM " + LEGACY_DB_SCHEMA
-                        + ".tbl_files WHERE idproject = ? ORDER BY idfile", legacyProjectId);
+        legacyJdbc.query(
+                "SELECT idfile, filename, filesuffix, filebinary FROM "
+                        + LEGACY_DB_SCHEMA
+                        + ".tbl_files WHERE idproject = ? ORDER BY idfile",
+                preparedStatement -> {
+                    preparedStatement.setInt(1, legacyProjectId);
+                    preparedStatement.setFetchSize(Math.max(1, batchSize));
+                },
+                resultSet -> {
+                    int idfile = resultSet.getInt("idfile");
+                    String sourceKey = "FILE-" + idfile;
 
-        for (Map<String, Object> fileRow : files) {
-            int idfile = ((Number) fileRow.get("idfile")).intValue();
-            String sourceKey = "FILE-" + idfile;
-            if (itemRepository.existsByKindAndSourceKey(LegacyMigrationItem.Kind.FILE, sourceKey)) {
-                summary.skipped++;
-                continue;
-            }
-            migrateOneFile(idfile, sourceKey, targetProjectId, fileRow, summary);
-        }
+                    if (itemRepository.existsByKindAndSourceKey(
+                            LegacyMigrationItem.Kind.FILE,
+                            sourceKey
+                    )) {
+                        summary.incrementSkipped();
+                        return;
+                    }
+
+                    String originalName = resultSet.getString("filename");
+                    String suffix = resultSet.getString("filesuffix");
+
+                    InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
+                    try {
+                        migrateOneFile(
+                                idfile,
+                                sourceKey,
+                                targetProjectId,
+                                originalName,
+                                suffix,
+                                encodedBase64,
+                                summary,
+                                defaultCategoryId,
+                                defaultTypeId,
+                                defaultConfidentialityId
+                        );
+                    } finally {
+                        if (encodedBase64 != null) {
+                            try {
+                                encodedBase64.close();
+                            } catch (Exception closeError) {
+                                log.warn(
+                                        "Failed to close legacy file stream for id={}",
+                                        idfile,
+                                        closeError
+                                );
+                            }
+                        }
+                    }
+                }
+        );
     }
 
-    private void migrateOneFile(int idfile, String sourceKey, UUID targetProjectId,
-                                Map<String, Object> fileRow, LegacyFileSummary summary) {
-        LegacyMigrationItem item = trackingItem(LegacyMigrationItem.Kind.FILE, sourceKey, (long) idfile, null);
+    private void migrateOneFile(int idfile,
+                                String sourceKey,
+                                UUID targetProjectId,
+                                String originalName,
+                                String suffix,
+                                InputStream encodedBase64,
+                                LegacyFileSummary summary,
+                                UUID defaultCategoryId,
+                                UUID defaultTypeId,
+                                UUID defaultConfidentialityId) {
+        LegacyMigrationItem item = trackingItem(
+                LegacyMigrationItem.Kind.FILE,
+                sourceKey,
+                (long) idfile,
+                null
+        );
         item.setStatus(LegacyMigrationItem.Status.RUNNING);
         item.setStartedAt(java.time.LocalDateTime.now());
         itemRepository.save(item);
 
+        Path spool = null;
+        String bucket = minioConfig.getBucket();
+        String objectKey = null;
+        boolean uploadedToObjectStorage = false;
+
         try {
-            String originalName = (String) fileRow.get("filename");
-            String suffix = (String) fileRow.get("filesuffix");
-            String base64Content = (String) fileRow.get("filebinary");
+            PreparedLegacyFile prepared = prepareLegacyFile(
+                    encodedBase64,
+                    originalName,
+                    suffix
+            );
+            spool = prepared.path();
 
-            String storedName = UUID.randomUUID() + (suffix != null ? suffix : "");
-            String bucket = minioConfig.getBucket();
-            String objectKey = minioPrefix + "/" + targetProjectId + "/" + storedName;
+            String storedName = UUID.randomUUID() + "." + prepared.extension();
+            objectKey = minioPrefix + "/" + targetProjectId + "/" + storedName;
 
-            byte[] content = base64Content != null ? Base64.getDecoder().decode(base64Content) : new byte[0];
-            String checksum = sha256(content);
-            String mime = resolveMime(suffix);
-
-            minioService.uploadRaw(new ByteArrayInputStream(content), bucket, objectKey, mime, content.length);
+            try (InputStream uploadInput = Files.newInputStream(spool)) {
+                minioService.uploadRaw(
+                        uploadInput,
+                        bucket,
+                        objectKey,
+                        prepared.mimeType(),
+                        prepared.sizeBytes()
+                );
+            }
+            uploadedToObjectStorage = true;
 
             FileEntity file = new FileEntity();
             file.setProjectId(targetProjectId);
-            file.setCategoryId(resolveDefaultCategoryId());
-            file.setTypeId(resolveDefaultTypeId());
-            file.setConfidentialityLevelId(resolveDefaultConfidentialityId());
-            file.setOriginalName(originalName != null ? originalName : ("legacy-" + idfile));
+            file.setCategoryId(defaultCategoryId);
+            file.setTypeId(defaultTypeId);
+            file.setConfidentialityLevelId(defaultConfidentialityId);
+            file.setOriginalName(
+                    originalName != null && !originalName.isBlank()
+                            ? originalName
+                            : ("legacy-" + idfile + "." + prepared.extension())
+            );
             file.setStoredName(storedName);
             file.setBucketName(bucket);
             file.setObjectKey(objectKey);
-            file.setExtension(suffix != null && suffix.startsWith(".") ? suffix.substring(1).toLowerCase() : suffix);
-            file.setMimeType(mime);
-            file.setSizeBytes((long) content.length);
-            file.setChecksumSha256(checksum);
+            file.setExtension(prepared.extension());
+            file.setMimeType(prepared.mimeType());
+            file.setSizeBytes(prepared.sizeBytes());
+            file.setChecksumSha256(prepared.checksumSha256());
             file.setStatus("ACTIVE");
             file.setSourceType("MIGRATION");
             file.setSourceReference("ARC2:tbl_files:" + idfile);
 
-            FileEntity saved = fileRepository.save(file);
+            FileEntity saved = transactionTemplate.execute(status -> {
+                FileEntity persisted = fileRepository.save(file);
 
-            item.setTargetId(saved.getId());
-            item.setStatus(LegacyMigrationItem.Status.DONE);
-            item.setFinishedAt(java.time.LocalDateTime.now());
-            itemRepository.save(item);
-            summary.done++;
+                item.setTargetId(persisted.getId());
+                item.setStatus(LegacyMigrationItem.Status.DONE);
+                item.setFinishedAt(java.time.LocalDateTime.now());
+                itemRepository.save(item);
+
+                return persisted;
+            });
+
+            if (saved == null) {
+                throw new IllegalStateException(
+                        "Legacy file metadata transaction returned no saved file");
+            }
+
+            summary.incrementDone();
         } catch (Exception e) {
-            log.error("Failed to migrate file {} ({}): {}", idfile, fileRow.get("filename"), e.getMessage(), e);
+            log.error(
+                    "Failed to migrate file {} ({}): {}",
+                    idfile,
+                    originalName,
+                    e.getMessage(),
+                    e
+            );
+
+            if (uploadedToObjectStorage && objectKey != null) {
+                try {
+                    minioService.deleteFile(bucket, objectKey);
+                } catch (Exception cleanupError) {
+                    log.error(
+                            "Failed to remove orphan legacy migration object: {}",
+                            objectKey,
+                            cleanupError
+                    );
+                }
+            }
+
             item.setStatus(LegacyMigrationItem.Status.FAILED);
             item.setError(e.getMessage());
             item.setFinishedAt(java.time.LocalDateTime.now());
             item.setAttempts((item.getAttempts() == null ? 0 : item.getAttempts()) + 1);
             itemRepository.save(item);
-            summary.failed++;
+            summary.incrementFailed();
+        } finally {
+            if (spool != null) {
+                try {
+                    Files.deleteIfExists(spool);
+                } catch (Exception cleanupError) {
+                    log.warn("Failed to remove legacy migration spool file: {}", spool, cleanupError);
+                }
+            }
         }
     }
+
+    static PreparedLegacyFile prepareLegacyFile(InputStream encodedBase64,
+                                                String originalName,
+                                                String suffix) throws Exception {
+        if (encodedBase64 == null) {
+            throw new IllegalArgumentException("Legacy file content is missing");
+        }
+
+        String extension = normalizeLegacyExtension(suffix, originalName);
+        Path spool = Files.createTempFile("legacy-archive-migration-", "." + extension);
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] prefix = new byte[FileContentInspector.SNIFF_BYTES];
+        int prefixLength = 0;
+        long totalBytes = 0L;
+
+        try {
+            try (InputStream decoded = Base64.getMimeDecoder().wrap(encodedBase64);
+                 OutputStream output = Files.newOutputStream(spool)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+
+                while ((read = decoded.read(buffer)) != -1) {
+                    output.write(buffer, 0, read);
+                    digest.update(buffer, 0, read);
+
+                    if (prefixLength < prefix.length) {
+                        int copyLength = Math.min(
+                                read,
+                                prefix.length - prefixLength
+                        );
+                        System.arraycopy(
+                                buffer,
+                                0,
+                                prefix,
+                                prefixLength,
+                                copyLength
+                        );
+                        prefixLength += copyLength;
+                    }
+
+                    totalBytes += read;
+                }
+            }
+
+            if (totalBytes == 0) {
+                throw new IllegalArgumentException("Legacy file content is empty");
+            }
+
+            byte[] actualPrefix = java.util.Arrays.copyOf(prefix, prefixLength);
+            String mimeType = FileContentInspector.validatePackageEntry(
+                    actualPrefix,
+                    extension,
+                    spool
+            );
+
+            return new PreparedLegacyFile(
+                    spool,
+                    totalBytes,
+                    toHex(digest.digest()),
+                    mimeType,
+                    extension
+            );
+        } catch (Exception e) {
+            Files.deleteIfExists(spool);
+            throw e;
+        }
+    }
+
+    private static String normalizeLegacyExtension(String suffix, String originalName) {
+        String nameExtension = FileContentInspector.extensionFromName(originalName);
+        String candidate = suffix;
+
+        if (candidate == null || candidate.isBlank()) {
+            candidate = nameExtension;
+        }
+
+        if (candidate == null || candidate.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Legacy file has no resolvable extension: " + originalName);
+        }
+
+        String normalized = candidate.trim().toLowerCase(java.util.Locale.ROOT);
+        while (normalized.startsWith(".")) {
+            normalized = normalized.substring(1);
+        }
+
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Legacy file has no resolvable extension: " + originalName);
+        }
+
+        if (nameExtension != null
+                && !FileContentInspector.extensionsEquivalent(normalized, nameExtension)) {
+            throw new IllegalArgumentException(
+                    "Legacy file suffix does not match original filename: " + originalName);
+        }
+
+        return normalized;
+    }
+
+    private static String toHex(byte[] hash) {
+        StringBuilder hex = new StringBuilder(hash.length * 2);
+        for (byte value : hash) {
+            hex.append(String.format("%02x", value));
+        }
+        return hex.toString();
+    }
+
+    record PreparedLegacyFile(
+            Path path,
+            long sizeBytes,
+            String checksumSha256,
+            String mimeType,
+            String extension
+    ) {}
 
     // ------------------------------------------------------------------
     // Helpers
@@ -362,33 +623,36 @@ public class LegacyMigrationService {
     }
 
     private UUID resolveDefaultCategoryId() {
-        return fileCategoryRepository.findAll().stream()
-                .findFirst()
+        return fileCategoryRepository.findByCode(LEGACY_CATEGORY_CODE)
                 .map(FileCategory::getId)
                 .orElseGet(this::createDefaultCategory);
     }
 
     private UUID createDefaultCategory() {
         FileCategory category = new FileCategory();
-        category.setCode("LEGACY");
+        category.setCode(LEGACY_CATEGORY_CODE);
         category.setName("Legacy Migration");
         category.setDescription("Default category for files migrated from the legacy system");
         category.setIsActive(true);
         return fileCategoryRepository.save(category).getId();
     }
 
-    private UUID resolveDefaultTypeId() {
-        return fileTypeRepository.findAll().stream()
-                .findFirst()
-                .map(FileType::getId)
-                .orElseGet(this::createDefaultType);
+    private UUID resolveDefaultTypeId(UUID categoryId) {
+        return fileTypeRepository.findByCode(LEGACY_TYPE_CODE)
+                .map(existing -> {
+                    if (!categoryId.equals(existing.getCategoryId())) {
+                        throw new IllegalStateException(
+                                "Existing LEGACY-FILE type is linked to an unexpected category");
+                    }
+                    return existing.getId();
+                })
+                .orElseGet(() -> createDefaultType(categoryId));
     }
 
-    private UUID createDefaultType() {
-        UUID categoryId = resolveDefaultCategoryId();
+    private UUID createDefaultType(UUID categoryId) {
         FileType type = new FileType();
         type.setCategoryId(categoryId);
-        type.setCode("LEGACY-FILE");
+        type.setCode(LEGACY_TYPE_CODE);
         type.setName("Legacy File");
         type.setDefaultExtension("*");
         type.setDescription("Default type for files migrated from the legacy system");
@@ -397,10 +661,16 @@ public class LegacyMigrationService {
     }
 
     private UUID resolveDefaultConfidentialityId() {
-        return confidentialityLevelRepository.findAllByOrderByLevelOrderAsc().stream()
-                .findFirst()
+        if (defaultConfidentialityCode == null || defaultConfidentialityCode.isBlank()) {
+            throw new IllegalStateException(
+                    "LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE must be configured before migrating files");
+        }
+
+        return confidentialityLevelRepository.findByCode(defaultConfidentialityCode.trim())
                 .map(ConfidentialityLevel::getId)
-                .orElse(null);
+                .orElseThrow(() -> new IllegalStateException(
+                        "Configured legacy migration confidentiality code does not exist: "
+                                + defaultConfidentialityCode));
     }
 
     private int parseYearSanitized(Object rawYear) {
@@ -431,38 +701,33 @@ public class LegacyMigrationService {
         return "LEGACY-" + sideId;
     }
 
-    private String sha256(byte[] data) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(data);
-        StringBuilder hex = new StringBuilder();
-        for (byte b : hash) {
-            String h = Integer.toHexString(0xff & b);
-            if (h.length() == 1) hex.append('0');
-            hex.append(h);
-        }
-        return hex.toString();
-    }
-
-    private String resolveMime(String suffix) {
-        if (suffix == null) return DEFAULT_MIME;
-        String s = suffix.toLowerCase();
-        return switch (s) {
-            case ".pdf" -> "application/pdf";
-            case ".xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-            case ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-            case ".pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            case ".txt" -> "text/plain";
-            case ".sql" -> "application/sql";
-            case ".rar" -> "application/vnd.rar";
-            case ".zip" -> "application/zip";
-            case ".exe" -> "application/x-msdownload";
-            default -> DEFAULT_MIME;
-        };
-    }
-
     public static class LegacyFileSummary {
-        public int done;
-        public int failed;
-        public int skipped;
+        private final AtomicInteger done = new AtomicInteger();
+        private final AtomicInteger failed = new AtomicInteger();
+        private final AtomicInteger skipped = new AtomicInteger();
+
+        public void incrementDone() {
+            done.incrementAndGet();
+        }
+
+        public void incrementFailed() {
+            failed.incrementAndGet();
+        }
+
+        public void incrementSkipped() {
+            skipped.incrementAndGet();
+        }
+
+        public int done() {
+            return done.get();
+        }
+
+        public int failed() {
+            return failed.get();
+        }
+
+        public int skipped() {
+            return skipped.get();
+        }
     }
 }

@@ -8,7 +8,14 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "migration_batches", schema = "import")
+@Table(
+        name = "migration_batches",
+        schema = "import",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_migration_batches_source_batch_number",
+                columnNames = {"migration_source_id", "batch_number"}
+        )
+)
 @Schema(name = "import.migration_batches")
 public class MigrationBatch {
 
@@ -26,7 +33,7 @@ public class MigrationBatch {
     private UUID migrationSourceId;
 
     @Column(name = "batch_number", nullable = false)
-    private Integer batchNumber;
+    private String batchNumber;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;
@@ -49,7 +56,7 @@ public class MigrationBatch {
 
     public MigrationBatch() {}
 
-    public MigrationBatch(UUID id, UUID migrationSourceId, Integer batchNumber, LocalDateTime startedAt, LocalDateTime completedAt, Status status, Integer projectsCount, Integer filesCount, String notes) {
+    public MigrationBatch(UUID id, UUID migrationSourceId, String batchNumber, LocalDateTime startedAt, LocalDateTime completedAt, Status status, Integer projectsCount, Integer filesCount, String notes) {
         this.id = id;
         this.migrationSourceId = migrationSourceId;
         this.batchNumber = batchNumber;
@@ -67,8 +74,8 @@ public class MigrationBatch {
     public UUID getMigrationSourceId() { return migrationSourceId; }
     public void setMigrationSourceId(UUID migrationSourceId) { this.migrationSourceId = migrationSourceId; }
 
-    public Integer getBatchNumber() { return batchNumber; }
-    public void setBatchNumber(Integer batchNumber) { this.batchNumber = batchNumber; }
+    public String getBatchNumber() { return batchNumber; }
+    public void setBatchNumber(String batchNumber) { this.batchNumber = batchNumber; }
 
     public LocalDateTime getStartedAt() { return startedAt; }
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }

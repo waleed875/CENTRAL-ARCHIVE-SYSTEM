@@ -6,6 +6,7 @@ import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.core.user.dto.ChangePasswordRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserResponse;
+import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -33,12 +34,13 @@ public class UserController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) UUID organizationId,
             @RequestParam(required = false) User.UserStatus status,
+            @RequestParam(required = false) String role,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "DESC") String order) {
         PageRequest pageRequest = PageRequest.of(page, limit, sort, order);
-        PagedResponse<UserResponse> response = userService.list(search, organizationId, status, pageRequest);
+        PagedResponse<UserResponse> response = userService.list(search, organizationId, status, role, pageRequest);
         return ApiResponse.success(response);
     }
 
@@ -61,7 +63,7 @@ public class UserController {
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing user")
-    public ApiResponse<UserResponse> update(@PathVariable UUID id, @Valid @RequestBody UserRequest request) {
+    public ApiResponse<UserResponse> update(@PathVariable UUID id, @RequestBody UserUpdateRequest request) {
         UserResponse response = userService.update(id, request);
         return ApiResponse.success(response, "User updated successfully");
     }

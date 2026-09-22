@@ -1,5 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project;
 
+import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
 import org.springframework.data.domain.Page;
@@ -19,41 +21,48 @@ public class ProjectService {
 
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
+    private final ConfidentialityAccessService confidentialityAccessService;
 
     public ProjectService(ProjectRepository projectRepository,
-                          ProjectMemberService projectMemberService) {
+                          ProjectMemberService projectMemberService,
+                          ConfidentialityAccessService confidentialityAccessService) {
         this.projectRepository = projectRepository;
         this.projectMemberService = projectMemberService;
+        this.confidentialityAccessService = confidentialityAccessService;
     }
 
     public Page<ProjectResponse> list(UUID organizationId, Integer year,
                                        Project.ProjectStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
-        if (organizationId != null && year != null && status != null) {
-            return projectRepository.findByOrganizationIdAndYearAndStatus(organizationId, year, status, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null && year != null) {
-            return projectRepository.findByOrganizationIdAndYearPaginated(organizationId, year, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null && status != null) {
-            return projectRepository.findByOrganizationIdAndStatus(organizationId, status, pageable)
-                    .map(ProjectResponse::fromEntity);
-        } else if (organizationId != null) {
-            return projectRepository.findByOrganizationId(organizationId, pageable)
-                    .map(ProjectResponse::fromEntity);
-        }
-
-        return projectRepository.findAll(pageable).map(ProjectResponse::fromEntity);
+        return projectRepository.searchAccessible(
+                null,
+                organizationId,
+                status,
+                year,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                maxLevelOrder,
+                pageable
+        ).map(ProjectResponse::fromEntity);
     }
 
     public ProjectResponse getById(UUID id) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
         return ProjectResponse.fromEntity(project);
     }
 
-    public ProjectResponse create(ProjectRequest request) {
+    public ProjectResponse create(ProjectRequest request, UUID createdBy) {
+        confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
+
         Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
                 request.projectNumber(), request.organizationId(), request.year());
 
@@ -63,17 +72,14 @@ public class ProjectService {
         }
 
         Project project = new Project();
-        project.setProjectUid(UUID.randomUUID().toString());
+        project.setProjectUid(UUID.randomUUID());
         project.setVersionNo(1);
         project.setIsLatestVersion(true);
         project.setStatus(Project.ProjectStatus.DRAFT);
         applyRequestToEntity(project, request);
 
-        if (request.sourceType() != null) {
-            project.setSourceType(request.sourceType());
-        } else {
-            project.setSourceType(Project.SourceType.MANUAL);
-        }
+        project.setSourceType(Project.SourceType.MANUAL);
+        project.setSourceReference(null);
 
         if (request.dataCompletionStatus() != null) {
             project.setDataCompletionStatus(request.dataCompletionStatus());
@@ -81,7 +87,7 @@ public class ProjectService {
             project.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
         }
 
-        project.setCreatedBy(request.createdBy());
+        project.setCreatedBy(createdBy);
 
         Project saved = projectRepository.save(project);
 
@@ -92,44 +98,86 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse update(UUID id, ProjectRequest request) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+    public ProjectResponse update(UUID id, ProjectUpdateRequest request) {
+        Project project = requireAccessibleProject(id);
+        if (request.confidentialityLevelId() != null) {
+            confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
+        }
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED ||
             project.getStatus() == Project.ProjectStatus.ARCHIVED) {
-            throw new IllegalStateException(
-                    "Cannot update project in " + project.getStatus() + " status");
+            throw new BusinessRuleException(
+                    "Cannot update project in " + project.getStatus() + " status; create a new version instead");
         }
 
-        if (!project.getProjectNumber().equals(request.projectNumber()) ||
-            !project.getYear().equals(request.year()) ||
-            !project.getOrganizationId().equals(request.organizationId())) {
+        if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW) {
+            if (hasRestrictedReviewChanges(request)) {
+                throw new BusinessRuleException(
+                        "UNDER_REVIEW projects only allow description and notes changes");
+            }
+            if (request.description() != null) {
+                project.setDescription(request.description());
+            }
+            if (request.notes() != null) {
+                project.setNotes(request.notes());
+            }
+            return ProjectResponse.fromEntity(projectRepository.save(project));
+        }
 
+        String effectiveProjectNumber = request.projectNumber() != null
+                ? request.projectNumber()
+                : project.getProjectNumber();
+        Integer effectiveYear = request.year() != null
+                ? request.year()
+                : project.getYear();
+        UUID effectiveOrganizationId = request.organizationId() != null
+                ? request.organizationId()
+                : project.getOrganizationId();
+
+        boolean identityChanged =
+                !project.getProjectNumber().equals(effectiveProjectNumber)
+                || !project.getYear().equals(effectiveYear)
+                || !project.getOrganizationId().equals(effectiveOrganizationId);
+
+        if (identityChanged) {
             Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
-                    request.projectNumber(), request.organizationId(), request.year());
+                    effectiveProjectNumber,
+                    effectiveOrganizationId,
+                    effectiveYear
+            );
 
             if (existing.isPresent() && !existing.get().getId().equals(id)) {
                 throw new IllegalArgumentException(
-                        "Project number '" + request.projectNumber() + "' already exists for this organization and year");
+                        "Project number '" + effectiveProjectNumber
+                                + "' already exists for this organization and year");
             }
         }
 
-        applyRequestToEntity(project, request);
+        applyUpdateToEntity(project, request);
         Project saved = projectRepository.save(project);
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse newVersion(UUID id) {
-        Project original = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+    public ProjectResponse newVersion(UUID id, UUID createdBy, ProjectUpdateRequest overrides) {
+        Project original = requireAccessibleProject(id);
+        if (overrides != null && overrides.confidentialityLevelId() != null) {
+            confidentialityAccessService.requireReadAccess(overrides.confidentialityLevelId());
+        }
+
+        if (original.getStatus() != Project.ProjectStatus.APPROVED
+                && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
+            throw new BusinessRuleException(
+                    "New versions can only be created from APPROVED or ARCHIVED projects");
+        }
 
         original.setIsLatestVersion(false);
         projectRepository.save(original);
 
         Project newVersionProject = new Project();
         newVersionProject.setProjectUid(original.getProjectUid());
-        newVersionProject.setVersionNo(original.getVersionNo() + 1);
+        newVersionProject.setVersionNo(
+                projectRepository.findMaxVersionNoByProjectUid(original.getProjectUid()) + 1
+        );
         newVersionProject.setPreviousProjectId(original.getId());
         newVersionProject.setIsLatestVersion(true);
         newVersionProject.setOrganizationId(original.getOrganizationId());
@@ -149,33 +197,37 @@ public class ProjectService {
         newVersionProject.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
         newVersionProject.setSourceType(original.getSourceType());
         newVersionProject.setSourceReference(original.getSourceReference());
-        newVersionProject.setCreatedBy(original.getCreatedBy());
+        newVersionProject.setCreatedBy(createdBy);
+
+        if (overrides != null) {
+            applyUpdateToEntity(newVersionProject, overrides);
+        }
 
         Project saved = projectRepository.save(newVersionProject);
+        projectMemberService.copyMembers(original.getId(), saved.getId());
         return ProjectResponse.fromEntity(saved);
     }
 
     public List<ProjectResponse> getVersions(UUID id) {
         Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
-        List<Project> versions = projectRepository.findAllVersionsByProjectNumberAndOrganizationIdAndYear(
-                project.getProjectNumber(), project.getOrganizationId(), project.getYear());
-
-        return versions.stream()
-                .sorted(Comparator.comparing(Project::getVersionNo).reversed())
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+        return projectRepository.findAccessibleVersions(project.getProjectUid(), maxLevelOrder)
+                .stream()
                 .map(ProjectResponse::fromEntity)
                 .collect(Collectors.toList());
     }
 
     public ProjectResponse submitForReview(UUID id) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
-        if (project.getStatus() != Project.ProjectStatus.DRAFT &&
-            project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
-            throw new IllegalStateException(
-                    "Can only submit DRAFT or NEEDS_CORRECTION projects for review");
+        if (project.getStatus() != Project.ProjectStatus.DRAFT
+                && project.getStatus() != Project.ProjectStatus.IMPORTED
+                && project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
+            throw new BusinessRuleException(
+                    "Can only submit DRAFT, IMPORTED or NEEDS_CORRECTION projects for review");
         }
 
         project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
@@ -185,11 +237,14 @@ public class ProjectService {
     }
 
     public ProjectResponse requestCorrection(UUID id, String reviewNotes) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (reviewNotes == null || reviewNotes.isBlank()) {
+            throw new IllegalArgumentException("review_notes is required");
+        }
+
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only request correction for UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only request correction for UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
@@ -198,12 +253,11 @@ public class ProjectService {
         return ProjectResponse.fromEntity(saved);
     }
 
-    public ProjectResponse approve(UUID id, String approvedBy) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+    public ProjectResponse approve(UUID id, UUID approvedBy) {
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only approve UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only approve UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.APPROVED);
@@ -214,11 +268,14 @@ public class ProjectService {
     }
 
     public ProjectResponse reject(UUID id, String rejectionReason) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (rejectionReason == null || rejectionReason.isBlank()) {
+            throw new IllegalArgumentException("rejection_reason is required");
+        }
+
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new IllegalStateException("Can only reject UNDER_REVIEW projects");
+            throw new BusinessRuleException("Can only reject UNDER_REVIEW projects");
         }
 
         project.setStatus(Project.ProjectStatus.REJECTED);
@@ -228,11 +285,10 @@ public class ProjectService {
     }
 
     public ProjectResponse archive(UUID id) {
-        Project project = projectRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.APPROVED) {
-            throw new IllegalStateException("Can only archive APPROVED projects");
+            throw new BusinessRuleException("Can only archive APPROVED projects");
         }
 
         project.setStatus(Project.ProjectStatus.ARCHIVED);
@@ -246,58 +302,129 @@ public class ProjectService {
                         ? Sort.Direction.DESC : Sort.Direction.ASC,
                         request.sortBy()));
 
-        return projectRepository.search(
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+
+        return projectRepository.searchAccessible(
                 request.searchTerm(),
                 request.organizationId(),
                 request.status(),
                 request.year(),
-                pageable).map(ProjectResponse::fromEntity);
+                request.projectTypeId(),
+                request.confidentialityLevelId(),
+                request.sourceType(),
+                request.projectUid(),
+                request.createdBy(),
+                request.approvedBy(),
+                request.isLatestVersion(),
+                maxLevelOrder,
+                pageable
+        ).map(ProjectResponse::fromEntity);
     }
 
     public ProjectStatsResponse getStats(UUID organizationId) {
-        long totalProjects;
+        Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
+
+        long totalProjects = projectRepository.countAccessibleLatest(
+                organizationId,
+                maxLevelOrder
+        );
+
         Map<String, Long> projectsByStatus = new LinkedHashMap<>();
-        Map<Integer, Long> projectsByYear = new LinkedHashMap<>();
-        long latestVersionCount;
-        long archivedCount;
-
-        if (organizationId != null) {
-            totalProjects = projectRepository.countByOrganizationId(organizationId);
-            latestVersionCount = totalProjects;
-
-            for (Project.ProjectStatus status : Project.ProjectStatus.values()) {
-                long count = projectRepository.countByOrganizationIdAndStatus(organizationId, status);
-                if (count > 0) {
-                    projectsByStatus.put(status.name(), count);
-                }
-            }
-
-            List<Object[]> yearCounts = projectRepository.countByYearForOrganization(organizationId);
-            for (Object[] row : yearCounts) {
-                projectsByYear.put((Integer) row[0], (Long) row[1]);
-            }
-
-            archivedCount = projectsByStatus.getOrDefault(Project.ProjectStatus.ARCHIVED.name(), 0L);
-        } else {
-            totalProjects = projectRepository.count();
-            latestVersionCount = projectRepository.findByIsLatestVersion(true).size();
-
-            for (Project.ProjectStatus status : Project.ProjectStatus.values()) {
-                long count = projectRepository.findByStatus(status).stream()
-                        .filter(p -> Boolean.TRUE.equals(p.getIsLatestVersion()))
-                        .count();
-                if (count > 0) {
-                    projectsByStatus.put(status.name(), count);
-                }
-            }
-
-            archivedCount = projectRepository.findByStatus(Project.ProjectStatus.ARCHIVED).stream()
-                    .filter(p -> Boolean.TRUE.equals(p.getIsLatestVersion()))
-                    .count();
+        for (Object[] row : projectRepository.countAccessibleByStatus(
+                organizationId,
+                maxLevelOrder
+        )) {
+            Project.ProjectStatus status = (Project.ProjectStatus) row[0];
+            projectsByStatus.put(status.name(), (Long) row[1]);
         }
 
-        return new ProjectStatsResponse(totalProjects, projectsByStatus, projectsByYear,
-                latestVersionCount, archivedCount);
+        Map<Integer, Long> projectsByYear = new LinkedHashMap<>();
+        for (Object[] row : projectRepository.countAccessibleByYear(
+                organizationId,
+                maxLevelOrder
+        )) {
+            projectsByYear.put((Integer) row[0], (Long) row[1]);
+        }
+
+        long archivedCount = projectsByStatus.getOrDefault(
+                Project.ProjectStatus.ARCHIVED.name(),
+                0L
+        );
+
+        return new ProjectStatsResponse(
+                totalProjects,
+                projectsByStatus,
+                projectsByYear,
+                totalProjects,
+                archivedCount
+        );
+    }
+
+    private Project requireAccessibleProject(UUID id) {
+        Project project = projectRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+        return project;
+    }
+
+    private boolean hasRestrictedReviewChanges(ProjectUpdateRequest request) {
+        return request.organizationId() != null
+                || request.projectTypeId() != null
+                || request.confidentialityLevelId() != null
+                || request.projectNumber() != null
+                || request.projectCode() != null
+                || request.name() != null
+                || request.year() != null
+                || request.executingEntity() != null
+                || request.supervisorName() != null
+                || request.tableOfContents() != null
+                || request.keywords() != null
+                || request.dataCompletionStatus() != null;
+    }
+
+    private void applyUpdateToEntity(Project project, ProjectUpdateRequest request) {
+        if (request.organizationId() != null) {
+            project.setOrganizationId(request.organizationId());
+        }
+        if (request.projectTypeId() != null) {
+            project.setProjectTypeId(request.projectTypeId());
+        }
+        if (request.confidentialityLevelId() != null) {
+            project.setConfidentialityLevelId(request.confidentialityLevelId());
+        }
+        if (request.projectNumber() != null) {
+            project.setProjectNumber(request.projectNumber());
+        }
+        if (request.projectCode() != null) {
+            project.setProjectCode(request.projectCode());
+        }
+        if (request.name() != null) {
+            project.setName(request.name());
+        }
+        if (request.year() != null) {
+            project.setYear(request.year());
+        }
+        if (request.executingEntity() != null) {
+            project.setExecutingEntity(request.executingEntity());
+        }
+        if (request.supervisorName() != null) {
+            project.setSupervisorName(request.supervisorName());
+        }
+        if (request.description() != null) {
+            project.setDescription(request.description());
+        }
+        if (request.notes() != null) {
+            project.setNotes(request.notes());
+        }
+        if (request.tableOfContents() != null) {
+            project.setTableOfContents(request.tableOfContents());
+        }
+        if (request.keywords() != null) {
+            project.setKeywords(request.keywords());
+        }
+        if (request.dataCompletionStatus() != null) {
+            project.setDataCompletionStatus(request.dataCompletionStatus());
+        }
     }
 
     private void applyRequestToEntity(Project project, ProjectRequest request) {
@@ -317,12 +444,5 @@ public class ProjectService {
 
         if (request.dataCompletionStatus() != null) {
             project.setDataCompletionStatus(request.dataCompletionStatus());
-        }
-        if (request.sourceType() != null) {
-            project.setSourceType(request.sourceType());
-        }
-        if (request.sourceReference() != null) {
-            project.setSourceReference(request.sourceReference());
-        }
-    }
+        }    }
 }

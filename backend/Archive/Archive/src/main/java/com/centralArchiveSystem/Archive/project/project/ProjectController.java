@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.project.project;
 
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
@@ -14,7 +15,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -23,9 +23,11 @@ import java.util.UUID;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final CurrentUserService currentUserService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, CurrentUserService currentUserService) {
         this.projectService = projectService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -45,7 +47,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new project")
     public ResponseEntity<ApiResponse<ProjectResponse>> create(@Valid @RequestBody ProjectRequest request) {
-        ProjectResponse response = projectService.create(request);
+        ProjectResponse response = projectService.create(request, currentUserService.userId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "Project created successfully"));
     }
@@ -61,7 +63,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Update a project")
     public ResponseEntity<ApiResponse<ProjectResponse>> update(@PathVariable UUID id,
-                                                   @Valid @RequestBody ProjectRequest request) {
+                                                   @Valid @RequestBody ProjectUpdateRequest request) {
         ProjectResponse response = projectService.update(id, request);
         return ResponseEntity.ok(ApiResponse.success(response, "Project updated successfully"));
     }
@@ -69,8 +71,14 @@ public class ProjectController {
     @PostMapping("/{id}/new-version")
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Create a new version of a project")
-    public ResponseEntity<ApiResponse<ProjectResponse>> newVersion(@PathVariable UUID id) {
-        ProjectResponse response = projectService.newVersion(id);
+    public ResponseEntity<ApiResponse<ProjectResponse>> newVersion(
+            @PathVariable UUID id,
+            @RequestBody(required = false) ProjectUpdateRequest overrides) {
+        ProjectResponse response = projectService.newVersion(
+                id,
+                currentUserService.userId(),
+                overrides
+        );
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(response, "New project version created"));
     }
@@ -95,20 +103,16 @@ public class ProjectController {
     @Operation(summary = "Request correction on a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> requestCorrection(
             @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String reviewNotes = body != null ? body.get("reviewNotes") : null;
-        ProjectResponse response = projectService.requestCorrection(id, reviewNotes);
+            @Valid @RequestBody ProjectCorrectionRequest request) {
+        ProjectResponse response = projectService.requestCorrection(id, request.reviewNotes());
         return ResponseEntity.ok(ApiResponse.success(response, "Correction requested"));
     }
 
     @PatchMapping("/{id}/approve")
     @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Approve a project under review")
-    public ResponseEntity<ApiResponse<ProjectResponse>> approve(
-            @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String approvedBy = body != null ? body.get("approvedBy") : null;
-        ProjectResponse response = projectService.approve(id, approvedBy);
+    public ResponseEntity<ApiResponse<ProjectResponse>> approve(@PathVariable UUID id) {
+        ProjectResponse response = projectService.approve(id, currentUserService.userId());
         return ResponseEntity.ok(ApiResponse.success(response, "Project approved"));
     }
 
@@ -117,9 +121,8 @@ public class ProjectController {
     @Operation(summary = "Reject a project under review")
     public ResponseEntity<ApiResponse<ProjectResponse>> reject(
             @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String rejectionReason = body != null ? body.get("rejectionReason") : null;
-        ProjectResponse response = projectService.reject(id, rejectionReason);
+            @Valid @RequestBody ProjectRejectionRequest request) {
+        ProjectResponse response = projectService.reject(id, request.rejectionReason());
         return ResponseEntity.ok(ApiResponse.success(response, "Project rejected"));
     }
 
@@ -138,13 +141,34 @@ public class ProjectController {
             @Parameter(description = "Organization ID") @RequestParam(required = false) UUID organizationId,
             @Parameter(description = "Status") @RequestParam(required = false) Project.ProjectStatus status,
             @Parameter(description = "Year") @RequestParam(required = false) Integer year,
+            @Parameter(description = "Project type ID") @RequestParam(required = false) UUID projectTypeId,
+            @Parameter(description = "Confidentiality level ID") @RequestParam(required = false) UUID confidentialityLevelId,
+            @Parameter(description = "Source type") @RequestParam(required = false) Project.SourceType sourceType,
+            @Parameter(description = "Project UID") @RequestParam(required = false) UUID projectUid,
+            @Parameter(description = "Created by user ID") @RequestParam(required = false) UUID createdBy,
+            @Parameter(description = "Approved by user ID") @RequestParam(required = false) UUID approvedBy,
+            @Parameter(description = "Latest version only") @RequestParam(defaultValue = "true") Boolean isLatestVersion,
             @Parameter(description = "Page number (1-based)") @RequestParam(defaultValue = "1") int page,
             @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size,
             @Parameter(description = "Sort by field") @RequestParam(defaultValue = "createdAt") String sortBy,
             @Parameter(description = "Sort direction") @RequestParam(defaultValue = "desc") String sortDirection) {
 
         ProjectSearchRequest searchRequest = new ProjectSearchRequest(
-                searchTerm, organizationId, status, year, null, null, sortBy, sortDirection
+                searchTerm,
+                organizationId,
+                status,
+                year,
+                projectTypeId,
+                confidentialityLevelId,
+                sourceType,
+                projectUid,
+                createdBy,
+                approvedBy,
+                isLatestVersion,
+                null,
+                null,
+                sortBy,
+                sortDirection
         );
 
         Page<ProjectResponse> results = projectService.search(searchRequest, page - 1, size);

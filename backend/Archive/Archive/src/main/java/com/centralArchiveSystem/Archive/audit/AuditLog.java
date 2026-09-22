@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.audit;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnTransformer;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
@@ -30,12 +31,15 @@ public class AuditLog {
     private String description;
 
     @Column(name = "old_values", columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String oldValues;
 
     @Column(name = "new_values", columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
     private String newValues;
 
     @Column(name = "ip_address", columnDefinition = "inet")
+    @ColumnTransformer(write = "?::inet")
     private String ipAddress;
 
     @CreationTimestamp
