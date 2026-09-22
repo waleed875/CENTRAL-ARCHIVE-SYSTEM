@@ -379,7 +379,7 @@
       "name": "Import Operations",
       "item": [
         {
-          "name": "List Operations By Package",
+          "name": "Get Package Operation Status & Statistics",
           "request": {
             "method": "GET",
             "header": [],
@@ -396,7 +396,7 @@
                 "operations"
               ]
             },
-            "description": "Read-only list of import operations for a package."
+            "description": "Returns package lifecycle status, timestamps, error details, importOperations, projectStats, manifestProjectsCount, and totalFilesCount."
           },
           "event": [
             {
@@ -404,7 +404,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200', () => pm.response.to.have.status(200));"
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "pm.test('Package operation summary present', () => data && data.packageId && data.status);",
+                  "pm.test('Import operations and project stats present', () => Array.isArray(data.importOperations) && data.projectStats);"
                 ]
               }
             }
