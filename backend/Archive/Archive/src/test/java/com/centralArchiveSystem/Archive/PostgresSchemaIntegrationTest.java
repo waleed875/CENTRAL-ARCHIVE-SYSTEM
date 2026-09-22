@@ -33,7 +33,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '11'
+                 WHERE version = '12'
                    AND success = true
                 """,
                 Integer.class
@@ -150,6 +150,46 @@ class PostgresSchemaIntegrationTest {
         assertEquals(Boolean.TRUE, index.get("is_unique"));
         String predicate = String.valueOf(index.get("predicate"));
         assertTrue(predicate.contains("RUNNING"));
+    }
+
+
+    @Test
+    void branchPackageSourceOrganizationRemainsAnExternalIdentifier() {
+        Integer sourceFkCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                  JOIN pg_attribute a
+                    ON a.attrelid = t.oid
+                   AND a.attnum = ANY(c.conkey)
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'branch_packages'
+                   AND c.contype = 'f'
+                   AND a.attname = 'source_organization_id'
+                """,
+                Integer.class
+        );
+        assertEquals(0, sourceFkCount);
+
+        Integer targetFkCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                  JOIN pg_attribute a
+                    ON a.attrelid = t.oid
+                   AND a.attnum = ANY(c.conkey)
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'branch_packages'
+                   AND c.contype = 'f'
+                   AND a.attname = 'target_organization_id'
+                """,
+                Integer.class
+        );
+        assertEquals(1, targetFkCount);
     }
 
     @Test
