@@ -8,7 +8,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "https://w0x89x36-8080.euw.devtunnels.ms",
+      "value": "http://localhost:8080",
       "type": "string"
     },
     {
@@ -59,8 +59,15 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/v1/auth/login",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "auth", "login"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "login"
+          ]
         },
         "description": "Authenticates a user. On success the access token and refresh token are stored as collection variables `{{token}}` and `{{refreshToken}}`."
       },
@@ -86,20 +93,37 @@
           "name": "Success 200",
           "originalRequest": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             }
           },
           "status": "OK",
           "code": 200,
-          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
           "body": "{\n  \"success\": true,\n  \"data\": {\n    \"token\": \"<jwt>\",\n    \"expiresIn\": 3600,\n    \"user\": {\n      \"id\": \"0595388c-2a43-4e14-abf8-918da1c56e64\",\n      \"username\": \"admin\",\n      \"fullName\": \"System Administrator\",\n      \"organization\": null,\n      \"roles\": [\"ADMIN\"],\n      \"maxConfidentialityLevelId\": null\n    }\n  },\n  \"meta\": { \"message\": \"Login successful\" }\n}"
         }
       ]
@@ -111,8 +135,15 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/v1/auth/me",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "auth", "me"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "me"
+          ]
         },
         "description": "Returns the authenticated user's info. Requires a valid Bearer token ({{token}})."
       },
@@ -149,8 +180,15 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/v1/auth/refresh",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "auth", "refresh"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "refresh"
+          ]
         },
         "description": "Exchanges a valid refresh token ({{refreshToken}}) for a new access/refresh token pair."
       },
@@ -187,8 +225,15 @@
         },
         "url": {
           "raw": "{{baseUrl}}/api/v1/auth/change-password",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "auth", "change-password"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "change-password"
+          ]
         },
         "description": "Changes the password of the currently authenticated user. New password must be 8-100 characters."
       },
@@ -212,8 +257,15 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/v1/auth/logout",
-          "host": ["{{baseUrl}}"],
-          "path": ["api", "v1", "auth", "logout"]
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "logout"
+          ]
         },
         "description": "Invalidates the current session / refresh token."
       },
