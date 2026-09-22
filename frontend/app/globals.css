@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: Arial, Tahoma, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Tahoma, sans-serif;
+}
+
+.login-pattern { background-image: radial-gradient(rgba(0, 38, 35, 0.06) 1px, transparent 1px); background-size: 24px 24px; }
+.seal { position: absolute; inset: 0; background: radial-gradient(circle at center, rgba(185, 167, 121, 0.08) 0%, transparent 70%); }
