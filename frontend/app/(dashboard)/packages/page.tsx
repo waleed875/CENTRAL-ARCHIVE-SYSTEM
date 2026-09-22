@@ -77,7 +77,7 @@ type OperationSummary = {
   totalFilesCount?: number;
 };
 
-function unwrap<T>(value: ApiEnvelope<T>): T | undefined {
+function unwrap<T>(value?: ApiEnvelope<T>): T | undefined {
   return value?.data;
 }
 
@@ -132,9 +132,7 @@ export default function PackagesPage() {
       }),
   });
 
-  const packages = unwrap(packagesQuery.data)?.data ?? [];
-  const organizations = unwrap(organizationsQuery.data)?.data ?? [];
-  const selectedPackage = useMemo(
+  const packages = useMemo(\n    () => unwrap(packagesQuery.data)?.data ?? [],\n    [packagesQuery.data],\n  );\n  const organizations = useMemo(\n    () => unwrap(organizationsQuery.data)?.data ?? [],\n    [organizationsQuery.data],\n  );\n  const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedId),
     [packages, selectedId],
   );
