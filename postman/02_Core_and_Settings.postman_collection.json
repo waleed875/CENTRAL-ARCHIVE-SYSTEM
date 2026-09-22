@@ -6,23 +6,75 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "https://w0x89x36-8080.euw.devtunnels.ms", "type": "string" },
-    { "key": "username", "value": "admin", "type": "string" },
-    { "key": "password", "value": "admin123", "type": "string" },
-    { "key": "token", "value": "", "type": "string" },
-    { "key": "refreshToken", "value": "", "type": "string" },
-    { "key": "orgId", "value": "", "type": "string" },
-    { "key": "roleId", "value": "", "type": "string" },
-    { "key": "userId", "value": "", "type": "string" },
-    { "key": "confLevelId", "value": "", "type": "string" },
-    { "key": "projectTypeId", "value": "", "type": "string" },
-    { "key": "fileCategoryId", "value": "", "type": "string" },
-    { "key": "fileTypeId", "value": "", "type": "string" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "admin123",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orgId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "roleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "confLevelId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "projectTypeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fileCategoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "fileTypeId",
+      "value": "",
+      "type": "string"
+    }
   ],
   "auth": {
     "type": "bearer",
     "bearer": [
-      { "key": "token", "value": "{{token}}", "type": "string" }
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
     ]
   },
   "item": [
@@ -34,7 +86,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -42,8 +97,15 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "login"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             },
             "description": "Run this first. Stores the access token into `{{token}}`."
           },
@@ -75,15 +137,46 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/organizations?search=&type=&isActive=&page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations"],
+              "raw": "{{baseUrl}}/api/v1/organizations?search=&parentId=&type=&isActive=&page=1&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations"
+              ],
               "query": [
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "type", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "parentId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "size",
+                  "value": "20",
+                  "disabled": false
+                }
               ]
             }
           },
@@ -92,7 +185,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -105,8 +200,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/tree",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "tree"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "tree"
+              ]
             }
           },
           "event": [
@@ -114,7 +216,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -125,7 +229,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -133,8 +240,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations"
+              ]
             },
             "description": "parentId is optional (null for top-level). On success stores the new id into `{{orgId}}`."
           },
@@ -161,8 +274,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "{{orgId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "{{orgId}}"
+              ]
             }
           },
           "event": [
@@ -170,7 +290,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -183,8 +305,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}/tree",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "{{orgId}}", "tree"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "{{orgId}}",
+                "tree"
+              ]
             }
           },
           "event": [
@@ -192,7 +322,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -205,8 +337,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}/path",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "{{orgId}}", "path"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "{{orgId}}",
+                "path"
+              ]
             }
           },
           "event": [
@@ -214,7 +354,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -225,16 +367,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"parentId\": null,\n  \"name\": \"Central Company (Updated)\",\n  \"code\": \"CC\",\n  \"type\": \"COMPANY\",\n  \"description\": \"Updated description\"\n}"
+              "raw": "{\n  \"name\": \"Central Company (Updated)\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "{{orgId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "{{orgId}}"
+              ]
             }
           },
           "event": [
@@ -242,7 +394,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -255,8 +409,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/organizations/{{orgId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "organizations", "{{orgId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "{{orgId}}"
+              ]
             }
           },
           "event": [
@@ -264,7 +425,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('204 or 200', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('204 or 200', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -282,15 +445,41 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles?search=&isActive=&page=1&limit=20&sort=createdAt&order=DESC",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roles"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles"
+              ],
               "query": [
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "sort", "value": "createdAt" },
-                { "key": "order", "value": "DESC" }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "createdAt"
+                },
+                {
+                  "key": "order",
+                  "value": "DESC"
+                }
               ]
             }
           },
@@ -299,7 +488,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -310,7 +501,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -318,8 +512,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roles"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles"
+              ]
             },
             "description": "Stores the new id into `{{roleId}}`."
           },
@@ -346,8 +546,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roles", "{{roleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "{{roleId}}"
+              ]
             }
           },
           "event": [
@@ -355,7 +562,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -366,16 +575,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"ADMIN\",\n  \"name\": \"Administrator\",\n  \"description\": \"Updated description\"\n}"
+              "raw": "{\n  \"name\": \"Administrator\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roles", "{{roleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "{{roleId}}"
+              ]
             }
           },
           "event": [
@@ -383,7 +602,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -396,8 +617,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roles/{{roleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roles", "{{roleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "{{roleId}}"
+              ]
             }
           },
           "event": [
@@ -405,7 +633,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -422,17 +652,56 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/users?search=&organizationId=&status=&page=1&limit=20&sort=createdAt&order=DESC",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users"],
+              "raw": "{{baseUrl}}/api/v1/users?search=&organizationId=&status=&role=&page=1&limit=20&sort=createdAt&order=DESC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
               "query": [
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "organizationId", "value": "", "disabled": true },
-                { "key": "status", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "limit", "value": "20" },
-                { "key": "sort", "value": "createdAt" },
-                { "key": "order", "value": "DESC" }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "organizationId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                },
+                {
+                  "key": "sort",
+                  "value": "createdAt",
+                  "disabled": false
+                },
+                {
+                  "key": "order",
+                  "value": "DESC",
+                  "disabled": false
+                }
               ]
             }
           },
@@ -441,7 +710,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -452,7 +723,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -460,8 +734,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ]
             },
             "description": "password is required only on create. On update you may omit it. Stores the new id into `{{userId}}`."
           },
@@ -488,8 +768,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}"
+              ]
             }
           },
           "event": [
@@ -497,7 +784,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -508,16 +797,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"jdoe\",\n  \"password\": null,\n  \"fullName\": \"Johnathan Doe\",\n  \"email\": \"jdoe2@example.com\",\n  \"organizationId\": \"{{orgId}}\",\n  \"maxConfidentialityLevelId\": null,\n  \"roleIds\": [\"{{roleId}}\"]\n}"
+              "raw": "{\n  \"fullName\": \"Johnathan Doe\",\n  \"email\": \"jdoe2@example.com\",\n  \"organizationId\": \"{{orgId}}\",\n  \"maxConfidentialityLevelId\": null,\n  \"status\": \"ACTIVE\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}"
+              ]
             }
           },
           "event": [
@@ -525,7 +824,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -538,8 +839,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}"
+              ]
             }
           },
           "event": [
@@ -547,7 +855,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -560,8 +870,16 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}", "roles"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}",
+                "roles"
+              ]
             }
           },
           "event": [
@@ -569,7 +887,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -582,10 +902,21 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles?roleId={{roleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}", "roles"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}",
+                "roles"
+              ],
               "query": [
-                { "key": "roleId", "value": "{{roleId}}" }
+                {
+                  "key": "roleId",
+                  "value": "{{roleId}}"
+                }
               ]
             }
           },
@@ -594,7 +925,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);"]
+                "exec": [
+                  "pm.test('200 or 201', () => pm.response.code === 200 || pm.response.code === 201);"
+                ]
               }
             }
           ],
@@ -607,8 +940,17 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/{{userId}}/roles/{{roleId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "{{userId}}", "roles", "{{roleId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{userId}}",
+                "roles",
+                "{{roleId}}"
+              ]
             }
           },
           "event": [
@@ -616,7 +958,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -634,11 +978,23 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/confidentiality-levels?page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "confidentiality-levels"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels"
+              ],
               "query": [
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
               ]
             }
           },
@@ -647,7 +1003,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -658,7 +1016,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -666,8 +1027,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/confidentiality-levels",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "confidentiality-levels"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels"
+              ]
             },
             "description": "Stores the new id into `{{confLevelId}}`."
           },
@@ -694,8 +1061,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels",
+                "{{confLevelId}}"
+              ]
             }
           },
           "event": [
@@ -703,7 +1077,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -714,16 +1090,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"TOP_SECRET\",\n  \"name\": \"Top Secret\",\n  \"levelOrder\": 1,\n  \"description\": \"Updated description\"\n}"
+              "raw": "{\n  \"name\": \"Top Secret\",\n  \"levelOrder\": 1,\n  \"description\": \"Updated description\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels",
+                "{{confLevelId}}"
+              ]
             }
           },
           "event": [
@@ -731,7 +1117,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -744,8 +1132,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/confidentiality-levels/{{confLevelId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "confidentiality-levels", "{{confLevelId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels",
+                "{{confLevelId}}"
+              ]
             }
           },
           "event": [
@@ -753,7 +1148,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -771,12 +1168,28 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types?isActive=&page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types"
+              ],
               "query": [
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
               ]
             }
           },
@@ -785,7 +1198,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -798,8 +1213,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types/all",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types", "all"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types",
+                "all"
+              ]
             }
           },
           "event": [
@@ -807,7 +1229,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -818,7 +1242,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -826,8 +1253,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types"
+              ]
             },
             "description": "Stores the new id into `{{projectTypeId}}`."
           },
@@ -854,8 +1287,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types",
+                "{{projectTypeId}}"
+              ]
             }
           },
           "event": [
@@ -863,7 +1303,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -874,16 +1316,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"INFRASTRUCTURE\",\n  \"name\": \"Infrastructure Project\",\n  \"description\": \"Updated description\"\n}"
+              "raw": "{\n  \"name\": \"Infrastructure Project\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types",
+                "{{projectTypeId}}"
+              ]
             }
           },
           "event": [
@@ -891,7 +1343,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -904,8 +1358,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/project-types/{{projectTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "project-types", "{{projectTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "project-types",
+                "{{projectTypeId}}"
+              ]
             }
           },
           "event": [
@@ -913,7 +1374,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -931,13 +1394,33 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories?search=&isActive=&page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories"
+              ],
               "query": [
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
               ]
             }
           },
@@ -946,7 +1429,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -959,10 +1444,21 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories/all?isActive=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories", "all"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories",
+                "all"
+              ],
               "query": [
-                { "key": "isActive", "value": "", "disabled": true }
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -971,7 +1467,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -982,7 +1480,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -990,8 +1491,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories"
+              ]
             },
             "description": "Stores the new id into `{{fileCategoryId}}`."
           },
@@ -1018,8 +1525,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories",
+                "{{fileCategoryId}}"
+              ]
             }
           },
           "event": [
@@ -1027,7 +1541,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1038,16 +1554,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"CONTRACTS\",\n  \"name\": \"Contracts\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+              "raw": "{\n  \"name\": \"Contracts\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories",
+                "{{fileCategoryId}}"
+              ]
             }
           },
           "event": [
@@ -1055,7 +1581,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1068,8 +1596,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-categories/{{fileCategoryId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-categories", "{{fileCategoryId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-categories",
+                "{{fileCategoryId}}"
+              ]
             }
           },
           "event": [
@@ -1077,7 +1612,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
@@ -1095,14 +1632,38 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types?categoryId=&search=&isActive=&page=1&size=20",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types"
+              ],
               "query": [
-                { "key": "categoryId", "value": "", "disabled": true },
-                { "key": "search", "value": "", "disabled": true },
-                { "key": "isActive", "value": "", "disabled": true },
-                { "key": "page", "value": "1" },
-                { "key": "size", "value": "20" }
+                {
+                  "key": "categoryId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
               ]
             }
           },
@@ -1111,7 +1672,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1124,10 +1687,22 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types/by-category/{{fileCategoryId}}?isActive=",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types", "by-category", "{{fileCategoryId}}"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types",
+                "by-category",
+                "{{fileCategoryId}}"
+              ],
               "query": [
-                { "key": "isActive", "value": "", "disabled": true }
+                {
+                  "key": "isActive",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           },
@@ -1136,7 +1711,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1147,7 +1724,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1155,8 +1735,14 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types"
+              ]
             },
             "description": "Stores the new id into `{{fileTypeId}}`."
           },
@@ -1183,8 +1769,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types",
+                "{{fileTypeId}}"
+              ]
             }
           },
           "event": [
@@ -1192,7 +1785,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1203,16 +1798,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"categoryId\": \"{{fileCategoryId}}\",\n  \"code\": \"PDF\",\n  \"name\": \"PDF Document\",\n  \"defaultExtension\": \".pdf\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
+              "raw": "{\n  \"name\": \"Contract PDF\",\n  \"defaultExtension\": \"pdf\",\n  \"description\": \"Updated description\",\n  \"isActive\": true\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types",
+                "{{fileTypeId}}"
+              ]
             }
           },
           "event": [
@@ -1220,7 +1825,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
               }
             }
           ],
@@ -1233,8 +1840,15 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/file-types/{{fileTypeId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "file-types", "{{fileTypeId}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types",
+                "{{fileTypeId}}"
+              ]
             }
           },
           "event": [
@@ -1242,7 +1856,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"]
+                "exec": [
+                  "pm.test('Deletion ok', () => pm.response.code === 200 || pm.response.code === 204);"
+                ]
               }
             }
           ],
