@@ -133,6 +133,6 @@ public class FlywayMigrationConfig {
         if (!identifier.matches("[A-Za-z_][A-Za-z0-9_]*")) {
             throw new IllegalArgumentException("Unsafe SQL identifier: " + identifier);
         }
-        return """ + identifier + """;
+        return "\\\"" + identifier + "\\\"";
     }
 }
