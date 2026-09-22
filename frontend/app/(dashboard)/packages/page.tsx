@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/api/client";
+import { ApiClientError, apiRequest } from "@/lib/api/client";
 
 type ApiEnvelope<T> = {
   success?: boolean;
@@ -296,9 +296,16 @@ export default function PackagesPage() {
           </button>
         </div>
         {uploadMutation.isError && (
-          <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
-            تعذر رفع الحزمة. تحقق من الملف وحالة MinIO وصلاحيات المستخدم.
-          </p>
+          <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+            <p className="font-semibold">فشل استلام الحزمة</p>
+            <p className="mt-1">
+              {uploadMutation.error instanceof ApiClientError
+                ? `HTTP ${uploadMutation.error.status}${uploadMutation.error.code ? ` · ${uploadMutation.error.code}` : ""}: ${uploadMutation.error.message}`
+                : uploadMutation.error instanceof Error
+                  ? uploadMutation.error.message
+                  : "تعذر رفع الحزمة."}
+            </p>
+          </div>
         )}
       </form>
 
@@ -522,10 +529,16 @@ export default function PackagesPage() {
               )}
 
             {importMutation.isError && (
-              <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
-                رفض الخادم بدء الاستيراد. تحقق من حالة الحزمة وربط المؤسسة
-                ومستوى السرية.
-              </p>
+              <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+                <p className="font-semibold">رفض الخادم بدء الاستيراد</p>
+                <p className="mt-1">
+                  {importMutation.error instanceof ApiClientError
+                    ? `HTTP ${importMutation.error.status}${importMutation.error.code ? ` · ${importMutation.error.code}` : ""}: ${importMutation.error.message}`
+                    : importMutation.error instanceof Error
+                      ? importMutation.error.message
+                      : "تعذر بدء الاستيراد."}
+                </p>
+              </div>
             )}
           </article>
         </aside>
