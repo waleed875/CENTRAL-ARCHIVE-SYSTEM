@@ -84,7 +84,7 @@ jobs:
         run: bash mvnw -B -DskipTests package
 
       - name: Run focused unit tests
-        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,BranchPackageServiceTest,ImportOperationServiceTest,MigrationServiceTest,LegacyMigrationServiceFilePreparationTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,UserServiceTest,ConfidentialityLevelServiceTest,ProjectTypeServiceTest,FileContentInspectorTest,FileCategoryServiceTest,FileTypeServiceTest,FileServiceTest,RequestCorrelationFilterTest,DashboardServiceTest,AuditAspectTest test
+        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,BranchPackageServiceTest,ImportOperationServiceTest,MigrationServiceTest,LegacyMigrationServiceFilePreparationTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,UserServiceTest,ConfidentialityLevelServiceTest,ProjectTypeServiceTest,FileContentInspectorTest,FileCategoryServiceTest,FileTypeServiceTest,FileServiceTest,RequestCorrelationFilterTest,DashboardServiceTest,AuditAspectTest,FlywayMigrationConfigTest test
 
       - name: Run authentication and object authorization HTTP integration tests
         run: bash mvnw -B -Dtest=AuthHttpIntegrationTest,ObjectAuthorizationHttpIntegrationTest test
