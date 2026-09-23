@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -121,6 +122,9 @@ public class UserService {
         }
 
         if (request.status() != null) {
+            if (request.status() != User.UserStatus.ACTIVE) {
+                user.setTokenValidAfter(Instant.now());
+            }
             user.setStatus(request.status());
         }
 
@@ -140,6 +144,7 @@ public class UserService {
                     "Cannot disable user while active import operations are running");
         }
         user.setStatus(User.UserStatus.DISABLED);
+        user.setTokenValidAfter(Instant.now());
         userRepository.save(user);
     }
 
@@ -160,6 +165,12 @@ public class UserService {
         User user = findUserOrThrow(userId);
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
+        if (!Boolean.TRUE.equals(role.getIsActive())) {
+            throw new BusinessRuleException("Cannot assign an inactive role");
+        }
+        if (user.getRoles().stream().anyMatch(existing -> roleId.equals(existing.getId()))) {
+            throw new ConflictException("UserRole", "role_id", roleId);
+        }
         user.getRoles().add(role);
         userRepository.save(user);
     }

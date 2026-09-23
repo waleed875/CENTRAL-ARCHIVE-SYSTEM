@@ -89,6 +89,11 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedAdminUser() {
+        if (!bootstrapAdminEnabled) {
+            log.info("Bootstrap admin provisioning is disabled");
+            return;
+        }
+
         Optional<User> existingAdmin = userRepository.findByUsername(bootstrapAdminUsername);
         Role systemAdminRole = roleRepository.findByCode("system_admin").orElse(null);
 
@@ -103,7 +108,7 @@ public class DataInitializer implements CommandLineRunner {
             return;
         }
 
-        if (!bootstrapAdminEnabled || existingAdmin.isPresent()) {
+        if (existingAdmin.isPresent()) {
             return;
         }
 

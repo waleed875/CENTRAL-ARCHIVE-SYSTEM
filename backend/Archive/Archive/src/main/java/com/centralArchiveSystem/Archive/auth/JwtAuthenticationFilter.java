@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.auth;
 
+import com.centralArchiveSystem.Archive.core.user.User;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -42,7 +43,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 && tokenProvider.validateAccessToken(token)) {
             String username = tokenProvider.getUsernameFromToken(token);
             boolean activeToken = userRepository.findByUsername(username)
-                    .map(user -> tokenProvider.isIssuedOnOrAfter(token, user.getTokenValidAfter()))
+                    .map(user -> user.getStatus() == User.UserStatus.ACTIVE
+                            && tokenProvider.isIssuedOnOrAfter(token, user.getTokenValidAfter()))
                     .orElse(false);
 
             if (!activeToken) {
