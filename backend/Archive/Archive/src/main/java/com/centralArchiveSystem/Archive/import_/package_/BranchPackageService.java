@@ -467,6 +467,7 @@ public class BranchPackageService {
         int failedProjects = 0;
 
         try {
+            importOperationService.heartbeat(operationId);
             JsonNode manifest = revalidateStoredPackageForImport(pkg);
             JsonNode projects = manifest.path("projects");
             if (!projects.isArray()) {
@@ -474,6 +475,7 @@ public class BranchPackageService {
             }
 
             for (JsonNode projectNode : projects) {
+                importOperationService.heartbeat(operationId);
                 List<StoredObject> projectObjects = new ArrayList<>();
                 try {
                     ImportProjectResult result = projectImportTransaction.execute(status -> {
@@ -503,6 +505,8 @@ public class BranchPackageService {
                     failedProjects++;
                     cleanupImportedObjects(projectObjects);
                     log.error("Failed to import project from package {}", id, e);
+                } finally {
+                    importOperationService.heartbeat(operationId);
                 }
             }
 
@@ -590,6 +594,18 @@ public class BranchPackageService {
                                               UUID importedBy,
                                               List<StoredObject> projectObjects) throws Exception {
         UUID sourceProjectUuid = requiredUuid(projectNode, "project_id");
+
+        var priorPackageProject = packageProjectRepository.findByPackageIdAndLocalProjectUuid(
+                pkg.getId(), sourceProjectUuid);
+        if (priorPackageProject.isPresent()) {
+            PackageProject prior = priorPackageProject.get();
+            boolean partial = prior.getFilesFailed() != null && prior.getFilesFailed() > 0;
+            log.info(
+                    "Skipping already processed project during import retry: package={}, sourceProject={}, centralProject={}",
+                    pkg.getId(), sourceProjectUuid, prior.getProjectId());
+            return new ImportProjectResult(false, partial, prior.getProjectId());
+        }
+
         String projectNumber = requiredText(projectNode, "project_number");
         int year = projectNode.path("year").asInt(0);
         if (year < 1900) {
