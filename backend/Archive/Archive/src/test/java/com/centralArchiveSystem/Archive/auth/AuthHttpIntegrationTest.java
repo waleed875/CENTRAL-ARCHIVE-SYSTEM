@@ -162,6 +162,23 @@ class AuthHttpIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void disablingUserImmediatelyInvalidatesExistingAccessToken() throws Exception {
+        String accessToken = loginAndGetAccessToken(username);
+
+        mockMvc.perform(get("/api/v1/auth/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk());
+
+        User user = userRepository.findByUsername(username).orElseThrow();
+        user.setStatus(User.UserStatus.DISABLED);
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get("/api/v1/auth/me")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+    }
+
     private String loginAndGetAccessToken(String loginUsername) throws Exception {
         String loginJson = """
                 {"username":"%s","password":"%s"}
