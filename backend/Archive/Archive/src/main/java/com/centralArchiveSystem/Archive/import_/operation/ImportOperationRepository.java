@@ -11,6 +11,8 @@ public interface ImportOperationRepository extends JpaRepository<ImportOperation
 
     List<ImportOperation> findByPackageIdOrderByStartedAtDesc(UUID packageId);
 
+    java.util.Optional<ImportOperation> findFirstByPackageIdOrderByStartedAtDesc(UUID packageId);
+
     List<ImportOperation> findByImportedByOrderByStartedAtDesc(UUID importedBy);
 
     List<ImportOperation> findByStatus(ImportOperation.Status status);
