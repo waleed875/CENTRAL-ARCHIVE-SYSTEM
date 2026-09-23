@@ -178,6 +178,80 @@ class BranchPackageServiceTest {
     }
 
     @Test
+    void importFailsIfStoredPackageHashChangesAfterVerification() throws Exception {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+        FileCategoryRepository fileCategories = mock(FileCategoryRepository.class);
+        FileTypeRepository fileTypes = mock(FileTypeRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID packageUuid = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID importedBy = UUID.randomUUID();
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setPackageUuid(packageUuid);
+        pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+        pkg.setPackageHash("expected-package-hash");
+        pkg.setManifestHash("manifest-hash");
+        pkg.setSchemaVersion("1.0");
+        pkg.setManifestData("{\"projects\":[]}");
+
+        ImportOperation operation = new ImportOperation();
+        operation.setId(operationId);
+        operation.setPackageId(packageId);
+        operation.setImportedBy(importedBy);
+        operation.setStatus(ImportOperation.Status.STARTED);
+
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+        when(operations.getById(operationId)).thenReturn(operation);
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(minio.downloadFile(
+                "archive-files",
+                "packages/" + packageUuid + "/original.pkg"))
+                .thenReturn(new ByteArrayInputStream(new byte[]{9, 9, 9}));
+        when(archive.sha256(any(java.io.InputStream.class)))
+                .thenReturn("tampered-package-hash");
+
+        BranchPackageService service = new BranchPackageService(
+                packages, packageProjects, objectMapper, projects, members, files,
+                minio, minioConfig, archive, operations, organizations,
+                projectTypes, fileCategories, fileTypes,
+                confidentiality, transactionManager
+        );
+
+        service.importPackage(
+                packageId,
+                new PackageImportRequest(Map.of(), null),
+                importedBy,
+                operationId
+        );
+
+        assertEquals(BranchPackage.PackageStatus.FAILED, pkg.getStatus());
+        assertTrue(pkg.getErrorMessage().contains("hash changed after verification"));
+        verify(operations).updateStatus(
+                eq(operationId),
+                eq(ImportOperation.Status.FAILED),
+                contains("hash changed after verification")
+        );
+        verifyNoInteractions(projects);
+        verify(archive, never()).verifyContents(any(), anyString(), anyString());
+    }
+
+    @Test
     void fileFailureProducesPartialOperationAndIncompleteImportedProject() throws Exception {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
@@ -230,6 +304,8 @@ class BranchPackageServiceTest {
         pkg.setPackageUuid(packageUuid);
         pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
         pkg.setManifestData(manifest);
+        stubSuccessfulPackageRevalidation(
+                archive, minio, minioConfig, objectMapper, pkg, manifest);
 
         ImportOperation operation = new ImportOperation();
         operation.setId(operationId);
@@ -489,7 +565,7 @@ class BranchPackageServiceTest {
     }
 
     @Test
-    void projectImportFailureRollsBackItsOwnTransaction() {
+    void projectImportFailureRollsBackItsOwnTransaction() throws Exception {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
         ObjectMapper objectMapper = new ObjectMapper();
@@ -538,6 +614,8 @@ class BranchPackageServiceTest {
         pkg.setPackageUuid(packageUuid);
         pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
         pkg.setManifestData(manifest);
+        stubSuccessfulPackageRevalidation(
+                archive, minio, minioConfig, objectMapper, pkg, manifest);
 
         ImportOperation operation = new ImportOperation();
         operation.setId(operationId);
@@ -595,5 +673,57 @@ class BranchPackageServiceTest {
                 contains("All projects failed")
         );
     }
+
+    private void stubSuccessfulPackageRevalidation(
+            PackageArchiveService archive,
+            MinioService minio,
+            MinioConfig minioConfig,
+            ObjectMapper objectMapper,
+            BranchPackage pkg,
+            String manifestJson) throws Exception {
+        pkg.setPackageHash("package-hash");
+        pkg.setManifestHash("manifest-hash");
+        pkg.setSchemaVersion("1.0");
+
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(minio.downloadFile(
+                eq("archive-files"),
+                eq("packages/" + pkg.getPackageUuid() + "/original.pkg")))
+                .thenAnswer(invocation ->
+                        new ByteArrayInputStream(new byte[]{1, 2, 3, 4}));
+        when(archive.sha256(any(java.io.InputStream.class)))
+                .thenReturn("package-hash");
+
+        var manifest = objectMapper.readTree(manifestJson);
+        int projectsCount = manifest.path("projects").isArray()
+                ? manifest.path("projects").size()
+                : 0;
+        int filesCount = 0;
+        if (manifest.path("projects").isArray()) {
+            for (var project : manifest.path("projects")) {
+                if (project.path("files").isArray()) {
+                    filesCount += project.path("files").size();
+                }
+            }
+        }
+
+        when(archive.verifyContents(
+                any(java.io.InputStream.class),
+                eq("manifest-hash"),
+                eq("1.0")))
+                .thenReturn(new PackageArchiveService.Verification(
+                        true,
+                        true,
+                        true,
+                        "1.0",
+                        projectsCount,
+                        filesCount,
+                        0L,
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        manifest
+                ));
+    }
+
 
 }
