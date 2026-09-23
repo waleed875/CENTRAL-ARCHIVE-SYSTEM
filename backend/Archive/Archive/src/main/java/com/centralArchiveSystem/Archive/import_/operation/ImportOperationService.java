@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -50,6 +51,7 @@ public class ImportOperationService {
         return saved;
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ImportOperation heartbeat(UUID id) {
         ImportOperation operation = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
