@@ -64,7 +64,7 @@ public class AuditAspect {
     public Object auditLog(ProceedingJoinPoint joinPoint) throws Throwable {
         long startTime = System.currentTimeMillis();
         Object result = null;
-        Exception exception = null;
+        Throwable failure = null;
 
         String action = determineAction(joinPoint);
         String entityType = determineEntityType(joinPoint);
@@ -82,8 +82,8 @@ public class AuditAspect {
         try {
             result = joinPoint.proceed();
             return result;
-        } catch (Exception ex) {
-            exception = ex;
+        } catch (Throwable ex) {
+            failure = ex;
             throw ex;
         } finally {
             try {
@@ -95,8 +95,7 @@ public class AuditAspect {
                         : getCurrentActor();
                 String newValues = determineNewValues(result);
                 long executionTime = System.currentTimeMillis() - startTime;
-                String status = exception == null ? "SUCCESS" : "FAILURE";
-                String errorMessage = exception != null ? exception.getMessage() : null;
+                AuditOutcome outcome = determineOutcome(result, failure);
 
                 auditLogService.log(
                         actor.userId(),
@@ -107,14 +106,47 @@ public class AuditAspect {
                         oldValues,
                         newValues,
                         executionTime,
-                        status,
-                        errorMessage,
+                        outcome.status(),
+                        outcome.errorMessage(),
                         currentRemoteAddress()
                 );
             } catch (Exception e) {
                 logger.error("Failed to create audit log", e);
             }
         }
+    }
+
+    private AuditOutcome determineOutcome(Object result, Throwable failure) {
+        if (failure != null) {
+            String message = failure.getMessage() != null
+                    ? failure.getMessage()
+                    : failure.getClass().getSimpleName();
+            return new AuditOutcome("FAILURE", message);
+        }
+
+        if (result instanceof ResponseEntity<?> responseEntity) {
+            if (!responseEntity.getStatusCode().is2xxSuccessful()) {
+                return new AuditOutcome(
+                        "FAILURE",
+                        "HTTP " + responseEntity.getStatusCode().value()
+                );
+            }
+
+            Object body = responseEntity.getBody();
+            if (body instanceof ApiResponse<?> apiResponse && !apiResponse.isSuccess()) {
+                String message = apiResponse.getMeta() != null
+                        ? apiResponse.getMeta().getMessage()
+                        : "API response reported failure";
+                return new AuditOutcome("FAILURE", message);
+            }
+        } else if (result instanceof ApiResponse<?> apiResponse && !apiResponse.isSuccess()) {
+            String message = apiResponse.getMeta() != null
+                    ? apiResponse.getMeta().getMessage()
+                    : "API response reported failure";
+            return new AuditOutcome("FAILURE", message);
+        }
+
+        return new AuditOutcome("SUCCESS", null);
     }
 
     private String currentRemoteAddress() {
@@ -333,6 +365,8 @@ public class AuditAspect {
     }
 
     private record Actor(UUID userId, String username) {}
+
+    private record AuditOutcome(String status, String errorMessage) {}
 
     private boolean isSensitiveField(String fieldName) {
         String normalized = fieldName.toLowerCase(Locale.ROOT);
