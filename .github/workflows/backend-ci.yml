@@ -92,6 +92,9 @@ jobs:
       - name: Run backend workflow HTTP E2E tests
         run: bash mvnw -B -Dtest=ProjectWorkflowHttpE2ETest,PackageImportHttpE2ETest test
 
+      - name: Run legacy migration E2E tests
+        run: bash mvnw -B -Dtest=LegacyMigrationHttpE2ETest test
+
       - name: Run MinIO integration tests
         run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
 
