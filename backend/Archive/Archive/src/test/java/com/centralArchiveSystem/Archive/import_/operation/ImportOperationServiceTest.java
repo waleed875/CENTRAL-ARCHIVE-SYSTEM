@@ -111,6 +111,32 @@ class ImportOperationServiceTest {
     }
 
     @Test
+    void recordsIndependentProjectOutcomeCounters() {
+        ImportOperationRepository repository = mock(ImportOperationRepository.class);
+        ImportOperation operation = new ImportOperation(UUID.randomUUID(), UUID.randomUUID());
+        operation.setId(UUID.randomUUID());
+
+        when(repository.findById(operation.getId())).thenReturn(Optional.of(operation));
+        when(repository.save(operation)).thenReturn(operation);
+
+        ImportOperationService service = new ImportOperationService(repository);
+
+        service.initializeProjectStatistics(operation.getId(), 5);
+        service.recordProjectOutcome(operation.getId(), ImportOperationService.ProjectOutcome.IMPORTED);
+        service.recordProjectOutcome(operation.getId(), ImportOperationService.ProjectOutcome.PARTIAL);
+        service.recordProjectOutcome(operation.getId(), ImportOperationService.ProjectOutcome.FAILED);
+        service.recordProjectOutcome(operation.getId(), ImportOperationService.ProjectOutcome.DUPLICATE);
+        service.recordProjectOutcome(operation.getId(), ImportOperationService.ProjectOutcome.SKIPPED);
+
+        assertEquals(5, operation.getProjectsTotal());
+        assertEquals(1, operation.getProjectsImported());
+        assertEquals(1, operation.getProjectsPartial());
+        assertEquals(1, operation.getProjectsFailed());
+        assertEquals(1, operation.getProjectsDuplicate());
+        assertEquals(1, operation.getProjectsSkipped());
+    }
+
+    @Test
     void terminalStatusRecordsCompletionAndHeartbeat() {
         ImportOperationRepository repository = mock(ImportOperationRepository.class);
         ImportOperation started = new ImportOperation(UUID.randomUUID(), UUID.randomUUID());

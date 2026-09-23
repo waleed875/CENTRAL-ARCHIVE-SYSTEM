@@ -16,6 +16,10 @@ import java.util.UUID;
 @Transactional
 public class ImportOperationService {
 
+    public enum ProjectOutcome {
+        IMPORTED, PARTIAL, FAILED, DUPLICATE, SKIPPED
+    }
+
     private static final Logger log = LoggerFactory.getLogger(ImportOperationService.class);
     private static final String RESTART_INTERRUPTION_MESSAGE =
             "Import interrupted by application restart before completion";
@@ -60,6 +64,30 @@ public class ImportOperationService {
             return operation;
         }
 
+        operation.setLastHeartbeatAt(LocalDateTime.now());
+        return repository.save(operation);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportOperation initializeProjectStatistics(UUID id, int totalProjects) {
+        ImportOperation operation = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
+        operation.setProjectsTotal(totalProjects);
+        return repository.save(operation);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportOperation recordProjectOutcome(UUID id, ProjectOutcome outcome) {
+        ImportOperation operation = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
+
+        switch (outcome) {
+            case IMPORTED -> operation.setProjectsImported(operation.getProjectsImported() + 1);
+            case PARTIAL -> operation.setProjectsPartial(operation.getProjectsPartial() + 1);
+            case FAILED -> operation.setProjectsFailed(operation.getProjectsFailed() + 1);
+            case DUPLICATE -> operation.setProjectsDuplicate(operation.getProjectsDuplicate() + 1);
+            case SKIPPED -> operation.setProjectsSkipped(operation.getProjectsSkipped() + 1);
+        }
         operation.setLastHeartbeatAt(LocalDateTime.now());
         return repository.save(operation);
     }

@@ -50,6 +50,24 @@ public class ImportOperation {
     @Column(name = "retry_of")
     private UUID retryOf;
 
+    @Column(name = "projects_total", nullable = false)
+    private int projectsTotal;
+
+    @Column(name = "projects_imported", nullable = false)
+    private int projectsImported;
+
+    @Column(name = "projects_partial", nullable = false)
+    private int projectsPartial;
+
+    @Column(name = "projects_failed", nullable = false)
+    private int projectsFailed;
+
+    @Column(name = "projects_duplicate", nullable = false)
+    private int projectsDuplicate;
+
+    @Column(name = "projects_skipped", nullable = false)
+    private int projectsSkipped;
+
     public ImportOperation() {}
 
     public ImportOperation(UUID packageId, UUID importedBy) {
@@ -89,4 +107,22 @@ public class ImportOperation {
 
     public UUID getRetryOf() { return retryOf; }
     public void setRetryOf(UUID retryOf) { this.retryOf = retryOf; }
+
+    public int getProjectsTotal() { return projectsTotal; }
+    public void setProjectsTotal(int projectsTotal) { this.projectsTotal = projectsTotal; }
+
+    public int getProjectsImported() { return projectsImported; }
+    public void setProjectsImported(int projectsImported) { this.projectsImported = projectsImported; }
+
+    public int getProjectsPartial() { return projectsPartial; }
+    public void setProjectsPartial(int projectsPartial) { this.projectsPartial = projectsPartial; }
+
+    public int getProjectsFailed() { return projectsFailed; }
+    public void setProjectsFailed(int projectsFailed) { this.projectsFailed = projectsFailed; }
+
+    public int getProjectsDuplicate() { return projectsDuplicate; }
+    public void setProjectsDuplicate(int projectsDuplicate) { this.projectsDuplicate = projectsDuplicate; }
+
+    public int getProjectsSkipped() { return projectsSkipped; }
+    public void setProjectsSkipped(int projectsSkipped) { this.projectsSkipped = projectsSkipped; }
 }

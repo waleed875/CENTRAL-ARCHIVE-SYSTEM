@@ -33,7 +33,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '13'
+                 WHERE version = '14'
                    AND success = true
                 """,
                 Integer.class
@@ -148,6 +148,50 @@ class PostgresSchemaIntegrationTest {
                 Integer.class
         );
         assertEquals(1, interruptedAllowed);
+    }
+
+    @Test
+    void importOperationProjectStatisticsColumnsExist() {
+        Map<String, String> types = jdbcTemplate.query(
+                """
+                SELECT column_name, data_type
+                  FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'import_operations'
+                   AND column_name IN (
+                       'projects_total',
+                       'projects_imported',
+                       'projects_partial',
+                       'projects_failed',
+                       'projects_duplicate',
+                       'projects_skipped'
+                   )
+                """,
+                rs -> {
+                    Map<String, String> result = new java.util.HashMap<>();
+                    while (rs.next()) {
+                        result.put(rs.getString("column_name"), rs.getString("data_type"));
+                    }
+                    return result;
+                }
+        );
+
+        assertEquals(6, types.size());
+        types.values().forEach(type -> assertEquals("integer", type));
+
+        Integer checkCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'import_operations'
+                   AND c.conname = 'chk_import_operation_project_counters_nonnegative'
+                """,
+                Integer.class
+        );
+        assertEquals(1, checkCount);
     }
 
     @Test
