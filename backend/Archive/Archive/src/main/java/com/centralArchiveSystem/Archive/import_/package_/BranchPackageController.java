@@ -8,6 +8,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,13 +33,16 @@ public class BranchPackageController {
     private final BranchPackageService branchPackageService;
     private final CurrentUserService currentUserService;
     private final ImportOperationService importOperationService;
+    private final ObjectMapper objectMapper;
 
     public BranchPackageController(BranchPackageService branchPackageService,
                                    CurrentUserService currentUserService,
-                                   ImportOperationService importOperationService) {
+                                   ImportOperationService importOperationService,
+                                   ObjectMapper objectMapper) {
         this.branchPackageService = branchPackageService;
         this.currentUserService = currentUserService;
         this.importOperationService = importOperationService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -96,7 +100,8 @@ public class BranchPackageController {
         branchPackageService.assertImportable(id, request);
 
         UUID importedBy = currentUserService.userId();
-        ImportOperation operation = importOperationService.create(id, importedBy);
+        String requestSnapshot = objectMapper.valueToTree(request).toString();
+        ImportOperation operation = importOperationService.create(id, importedBy, requestSnapshot);
 
         branchPackageService.importPackage(
                 id,

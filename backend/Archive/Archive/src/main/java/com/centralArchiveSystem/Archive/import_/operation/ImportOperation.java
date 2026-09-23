@@ -13,7 +13,7 @@ import java.util.UUID;
 public class ImportOperation {
 
     public enum Status {
-        STARTED, SUCCESS, FAILED, PARTIAL
+        STARTED, SUCCESS, FAILED, PARTIAL, INTERRUPTED
     }
 
     @Id
@@ -38,8 +38,17 @@ public class ImportOperation {
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
+    @Column(name = "last_heartbeat_at", nullable = false)
+    private LocalDateTime lastHeartbeatAt;
+
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
+
+    @Column(name = "request_snapshot", columnDefinition = "text")
+    private String requestSnapshot;
+
+    @Column(name = "retry_of")
+    private UUID retryOf;
 
     public ImportOperation() {}
 
@@ -48,16 +57,7 @@ public class ImportOperation {
         this.importedBy = importedBy;
         this.status = Status.STARTED;
         this.startedAt = LocalDateTime.now();
-    }
-
-    public ImportOperation(UUID id, UUID packageId, UUID importedBy, Status status, String errorMessage, LocalDateTime startedAt, LocalDateTime completedAt) {
-        this.id = id;
-        this.packageId = packageId;
-        this.importedBy = importedBy;
-        this.status = status;
-        this.errorMessage = errorMessage;
-        this.startedAt = startedAt;
-        this.completedAt = completedAt;
+        this.lastHeartbeatAt = this.startedAt;
     }
 
     public UUID getId() { return id; }
@@ -78,6 +78,15 @@ public class ImportOperation {
     public LocalDateTime getStartedAt() { return startedAt; }
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
 
+    public LocalDateTime getLastHeartbeatAt() { return lastHeartbeatAt; }
+    public void setLastHeartbeatAt(LocalDateTime lastHeartbeatAt) { this.lastHeartbeatAt = lastHeartbeatAt; }
+
     public LocalDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
+
+    public String getRequestSnapshot() { return requestSnapshot; }
+    public void setRequestSnapshot(String requestSnapshot) { this.requestSnapshot = requestSnapshot; }
+
+    public UUID getRetryOf() { return retryOf; }
+    public void setRetryOf(UUID retryOf) { this.retryOf = retryOf; }
 }

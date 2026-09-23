@@ -674,6 +674,105 @@ class BranchPackageServiceTest {
         );
     }
 
+    @Test
+    void retrySkipsProjectAlreadyCommittedBySamePackage() throws Exception {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+        FileCategoryRepository fileCategories = mock(FileCategoryRepository.class);
+        FileTypeRepository fileTypes = mock(FileTypeRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        UUID packageId = UUID.randomUUID();
+        UUID packageUuid = UUID.randomUUID();
+        UUID sourceProjectId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UUID importedBy = UUID.randomUUID();
+        UUID alreadyImportedProjectId = UUID.randomUUID();
+
+        String manifest = """
+                {
+                  "projects": [{
+                    "project_id": "%s",
+                    "project_number": "P-RETRY",
+                    "name": "Already Imported",
+                    "year": 2026,
+                    "files": []
+                  }]
+                }
+                """.formatted(sourceProjectId);
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setPackageUuid(packageUuid);
+        pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+        pkg.setManifestData(manifest);
+        stubSuccessfulPackageRevalidation(
+                archive, minio, minioConfig, objectMapper, pkg, manifest);
+
+        ImportOperation operation = new ImportOperation();
+        operation.setId(operationId);
+        operation.setPackageId(packageId);
+        operation.setImportedBy(importedBy);
+        operation.setStatus(ImportOperation.Status.STARTED);
+
+        PackageProject prior = new PackageProject();
+        prior.setPackageId(packageId);
+        prior.setProjectId(alreadyImportedProjectId);
+        prior.setLocalProjectUuid(sourceProjectId);
+        prior.setImportStatus(PackageProject.ImportStatus.IMPORTED);
+        prior.setFilesFailed(0);
+
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+        when(operations.getById(operationId)).thenReturn(operation);
+        when(packageProjects.findByPackageIdAndLocalProjectUuid(packageId, sourceProjectId))
+                .thenReturn(Optional.of(prior));
+
+        BranchPackageService service = new BranchPackageService(
+                packages,
+                packageProjects,
+                objectMapper,
+                projects,
+                members,
+                files,
+                minio,
+                minioConfig,
+                archive,
+                operations,
+                organizations,
+                projectTypes,
+                fileCategories,
+                fileTypes,
+                confidentiality,
+                transactionManager
+        );
+
+        service.importPackage(
+                packageId,
+                new PackageImportRequest(Map.of(), null),
+                importedBy,
+                operationId
+        );
+
+        assertEquals(BranchPackage.PackageStatus.IMPORTED, pkg.getStatus());
+        assertNotNull(pkg.getImportedAt());
+        verify(packageProjects, never()).save(any());
+        verifyNoInteractions(projects);
+        verify(operations).updateStatus(operationId, ImportOperation.Status.SUCCESS, null);
+    }
+
     private void stubSuccessfulPackageRevalidation(
             PackageArchiveService archive,
             MinioService minio,

@@ -2,7 +2,10 @@ package com.centralArchiveSystem.Archive.import_.operation;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -14,6 +17,8 @@ import java.util.UUID;
 public class ImportOperationService {
 
     private static final Logger log = LoggerFactory.getLogger(ImportOperationService.class);
+    private static final String RESTART_INTERRUPTION_MESSAGE =
+            "Import interrupted by application restart before completion";
 
     private final ImportOperationRepository repository;
 
@@ -22,16 +27,41 @@ public class ImportOperationService {
     }
 
     public ImportOperation create(UUID packageId, UUID importedBy) {
+        return create(packageId, importedBy, null);
+    }
+
+    public ImportOperation create(UUID packageId, UUID importedBy, String requestSnapshot) {
         if (repository.existsByPackageIdAndStatus(packageId, ImportOperation.Status.STARTED)) {
             throw new IllegalStateException(
                     "An import operation is already running for package: " + packageId);
         }
 
         ImportOperation operation = new ImportOperation(packageId, importedBy);
+        operation.setRequestSnapshot(requestSnapshot);
+
+        repository.findFirstByPackageIdOrderByStartedAtDesc(packageId)
+                .filter(previous -> previous.getStatus() == ImportOperation.Status.INTERRUPTED
+                        || previous.getStatus() == ImportOperation.Status.FAILED
+                        || previous.getStatus() == ImportOperation.Status.PARTIAL)
+                .ifPresent(previous -> operation.setRetryOf(previous.getId()));
+
         ImportOperation saved = repository.save(operation);
-        log.info("Created import operation: id={}, packageId={}, importedBy={}",
-                saved.getId(), packageId, importedBy);
+        log.info("Created import operation: id={}, packageId={}, importedBy={}, retryOf={}",
+                saved.getId(), packageId, importedBy, saved.getRetryOf());
         return saved;
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportOperation heartbeat(UUID id) {
+        ImportOperation operation = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
+
+        if (operation.getStatus() != ImportOperation.Status.STARTED) {
+            return operation;
+        }
+
+        operation.setLastHeartbeatAt(LocalDateTime.now());
+        return repository.save(operation);
     }
 
     public ImportOperation updateStatus(UUID id, ImportOperation.Status status, String errorMessage) {
@@ -39,9 +69,11 @@ public class ImportOperationService {
                 .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
 
         operation.setStatus(status);
+        operation.setLastHeartbeatAt(LocalDateTime.now());
         if (status == ImportOperation.Status.SUCCESS
                 || status == ImportOperation.Status.FAILED
-                || status == ImportOperation.Status.PARTIAL) {
+                || status == ImportOperation.Status.PARTIAL
+                || status == ImportOperation.Status.INTERRUPTED) {
             operation.setCompletedAt(LocalDateTime.now());
         }
         if (errorMessage != null) {
@@ -51,6 +83,24 @@ public class ImportOperationService {
         ImportOperation saved = repository.save(operation);
         log.info("Updated import operation: id={}, status={}", saved.getId(), status);
         return saved;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void recoverInterruptedOperationsAfterRestart() {
+        List<ImportOperation> started = repository.findByStatus(ImportOperation.Status.STARTED);
+        if (started.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        for (ImportOperation operation : started) {
+            operation.setStatus(ImportOperation.Status.INTERRUPTED);
+            operation.setLastHeartbeatAt(now);
+            operation.setCompletedAt(now);
+            operation.setErrorMessage(RESTART_INTERRUPTION_MESSAGE);
+        }
+        repository.saveAll(started);
+        log.warn("Recovered {} interrupted package import operation(s) after restart", started.size());
     }
 
     @Transactional(readOnly = true)
