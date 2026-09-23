@@ -97,4 +97,91 @@ class UserServiceTest {
                 ));
         verify(users, never()).save(any());
     }
+    @Test
+    void addRoleRejectsInactiveRole() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+
+        UUID userId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("user1");
+        user.setStatus(User.UserStatus.ACTIVE);
+
+        com.centralArchiveSystem.Archive.core.role.Role role =
+                new com.centralArchiveSystem.Archive.core.role.Role();
+        role.setId(roleId);
+        role.setCode("auditor");
+        role.setIsActive(false);
+
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+
+        UserService service = new UserService(users, roles, imports, encoder);
+
+        assertThrows(BusinessRuleException.class, () -> service.addRole(userId, roleId));
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void addRoleRejectsDuplicateAssignment() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+
+        UUID userId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+
+        com.centralArchiveSystem.Archive.core.role.Role role =
+                new com.centralArchiveSystem.Archive.core.role.Role();
+        role.setId(roleId);
+        role.setCode("auditor");
+        role.setIsActive(true);
+
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("user1");
+        user.setStatus(User.UserStatus.ACTIVE);
+        user.setRoles(new java.util.HashSet<>(Set.of(role)));
+
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(roles.findById(roleId)).thenReturn(Optional.of(role));
+
+        UserService service = new UserService(users, roles, imports, encoder);
+
+        assertThrows(ConflictException.class, () -> service.addRole(userId, roleId));
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void disablingUserAdvancesTokenCutoff() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("user1");
+        user.setStatus(User.UserStatus.ACTIVE);
+
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+
+        UserService service = new UserService(users, roles, imports, encoder);
+        service.update(
+                userId,
+                new UserUpdateRequest(null, null, null, null, User.UserStatus.DISABLED)
+        );
+
+        assertEquals(User.UserStatus.DISABLED, user.getStatus());
+        assertNotNull(user.getTokenValidAfter());
+        verify(users).save(user);
+    }
+
 }
