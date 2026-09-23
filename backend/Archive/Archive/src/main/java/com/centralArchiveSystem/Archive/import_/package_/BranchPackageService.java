@@ -473,6 +473,7 @@ public class BranchPackageService {
             if (!projects.isArray()) {
                 throw new IllegalStateException("Stored manifest has no projects array");
             }
+            importOperationService.initializeProjectStatistics(operationId, projects.size());
 
             for (JsonNode projectNode : projects) {
                 importOperationService.heartbeat(operationId);
@@ -501,8 +502,24 @@ public class BranchPackageService {
                     if (result.partial()) {
                         partialProjects++;
                     }
+
+                    ImportOperationService.ProjectOutcome outcome;
+                    if (result.duplicate()) {
+                        outcome = ImportOperationService.ProjectOutcome.DUPLICATE;
+                    } else if (result.skipped()) {
+                        outcome = ImportOperationService.ProjectOutcome.SKIPPED;
+                    } else if (result.partial()) {
+                        outcome = ImportOperationService.ProjectOutcome.PARTIAL;
+                    } else {
+                        outcome = ImportOperationService.ProjectOutcome.IMPORTED;
+                    }
+                    importOperationService.recordProjectOutcome(operationId, outcome);
                 } catch (Exception e) {
                     failedProjects++;
+                    importOperationService.recordProjectOutcome(
+                            operationId,
+                            ImportOperationService.ProjectOutcome.FAILED
+                    );
                     cleanupImportedObjects(projectObjects);
                     log.error("Failed to import project from package {}", id, e);
                 } finally {
@@ -603,7 +620,7 @@ public class BranchPackageService {
             log.info(
                     "Skipping already processed project during import retry: package={}, sourceProject={}, centralProject={}",
                     pkg.getId(), sourceProjectUuid, prior.getProjectId());
-            return new ImportProjectResult(false, partial, prior.getProjectId());
+            return new ImportProjectResult(false, partial, false, true, prior.getProjectId());
         }
 
         String projectNumber = requiredText(projectNode, "project_number");
@@ -629,12 +646,12 @@ public class BranchPackageService {
                     existing.get(),
                     sourceProjectUuid,
                     projectNode,
-                    PackageProject.ImportStatus.SKIPPED
+                    PackageProject.ImportStatus.DUPLICATE
             );
             packageProjectRepository.save(link);
             log.info("Skipped duplicate imported project: source={}, existing={}",
                     sourceProjectUuid, existing.get().getId());
-            return new ImportProjectResult(false, false, existing.get().getId());
+            return new ImportProjectResult(false, false, true, false, existing.get().getId());
         }
 
         Project project = buildProject(projectNode, resolvedOrgId, pkg, request, importedBy);
@@ -691,6 +708,8 @@ public class BranchPackageService {
         return new ImportProjectResult(
                 true,
                 failedFiles > 0,
+                false,
+                false,
                 savedProject.getId()
         );
     }
@@ -931,7 +950,29 @@ public class BranchPackageService {
         operations.put("verifiedAt", pkg.getVerifiedAt());
         operations.put("importedAt", pkg.getImportedAt());
         operations.put("errorMessage", pkg.getErrorMessage());
-        operations.put("importOperations", importOperationService.getByPackageId(id));
+        List<ImportOperation> importOperations = importOperationService.getByPackageId(id);
+        operations.put("importOperations", importOperations);
+
+        if (!importOperations.isEmpty()) {
+            ImportOperation latest = importOperations.get(0);
+            Map<String, Integer> projectStats = new LinkedHashMap<>();
+            projectStats.put("total", latest.getProjectsTotal());
+            projectStats.put("imported", latest.getProjectsImported());
+            projectStats.put("partial", latest.getProjectsPartial());
+            projectStats.put("failed", latest.getProjectsFailed());
+            projectStats.put("duplicate", latest.getProjectsDuplicate());
+            projectStats.put("skipped", latest.getProjectsSkipped());
+            operations.put("projectStats", projectStats);
+        } else {
+            operations.put("projectStats", Map.of(
+                    "total", 0,
+                    "imported", 0,
+                    "partial", 0,
+                    "failed", 0,
+                    "duplicate", 0,
+                    "skipped", 0
+            ));
+        }
 
         long totalProjects = packageProjectRepository.countByPackageId(id);
         long importedProjects = packageProjectRepository.countByPackageIdAndImportStatus(
@@ -943,14 +984,14 @@ public class BranchPackageService {
         long duplicateProjects = packageProjectRepository.countByPackageIdAndImportStatus(
                 id, PackageProject.ImportStatus.DUPLICATE);
 
-        Map<String, Long> projectStats = new LinkedHashMap<>();
-        projectStats.put("total", totalProjects);
-        projectStats.put("imported", importedProjects);
-        projectStats.put("skipped", skippedProjects);
-        projectStats.put("failed", failedProjects);
-        projectStats.put("duplicate", duplicateProjects);
+        Map<String, Long> linkedProjectStats = new LinkedHashMap<>();
+        linkedProjectStats.put("total", totalProjects);
+        linkedProjectStats.put("imported", importedProjects);
+        linkedProjectStats.put("skipped", skippedProjects);
+        linkedProjectStats.put("failed", failedProjects);
+        linkedProjectStats.put("duplicate", duplicateProjects);
 
-        operations.put("projectStats", projectStats);
+        operations.put("linkedProjectStats", linkedProjectStats);
         operations.put("manifestProjectsCount", pkg.getProjectsCount());
         operations.put("totalFilesCount", pkg.getFilesCount());
 
@@ -1050,6 +1091,8 @@ public class BranchPackageService {
     private record ImportProjectResult(
             boolean imported,
             boolean partial,
+            boolean duplicate,
+            boolean skipped,
             UUID centralProjectId
     ) {}
 }
