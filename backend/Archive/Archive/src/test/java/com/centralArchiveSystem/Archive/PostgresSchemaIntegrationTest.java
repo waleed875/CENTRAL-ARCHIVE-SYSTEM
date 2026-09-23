@@ -33,12 +33,45 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '14'
+                 WHERE version = '15'
                    AND success = true
                 """,
                 Integer.class
         );
         assertEquals(1, latestMigration);
+    }
+
+    @Test
+    void productionSearchIndexesAndPgTrgmExist() {
+        Integer extensionCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_extension WHERE extname = 'pg_trgm'",
+                Integer.class
+        );
+        assertEquals(1, extensionCount);
+
+        Integer indexCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_indexes
+                 WHERE schemaname = 'project'
+                   AND indexname IN (
+                       'idx_projects_name_trgm',
+                       'idx_projects_number_trgm',
+                       'idx_projects_code_trgm',
+                       'idx_projects_description_trgm',
+                       'idx_projects_keywords_trgm',
+                       'idx_projects_latest_org_year_status',
+                       'idx_projects_uid_version_desc',
+                       'idx_projects_confidentiality_latest',
+                       'idx_files_original_name_trgm',
+                       'idx_files_extension_trgm',
+                       'idx_files_project_active_filters',
+                       'idx_files_confidentiality_active'
+                   )
+                """,
+                Integer.class
+        );
+        assertEquals(12, indexCount);
     }
 
     @Test
