@@ -330,7 +330,7 @@ public class BranchPackageService {
         }
 
         try {
-            JsonNode manifest = objectMapper.readTree(pkg.getManifestData());
+            JsonNode manifest = revalidateStoredPackageForImport(pkg);
             JsonNode projects = manifest.path("projects");
             if (!projects.isArray()) {
                 throw new IllegalArgumentException("Stored manifest has no projects array");
@@ -545,6 +545,43 @@ public class BranchPackageService {
             branchPackageRepository.save(pkg);
             importOperationService.updateStatus(operation.getId(), ImportOperation.Status.FAILED, e.getMessage());
         }
+    }
+
+    private JsonNode revalidateStoredPackageForImport(BranchPackage pkg) throws Exception {
+        String bucket = minioConfig.getBucket();
+        String objectKey = packageObjectKey(pkg.getPackageUuid());
+
+        String actualPackageHash;
+        try (InputStream packageStream = minioService.downloadFile(bucket, objectKey)) {
+            actualPackageHash = packageArchiveService.sha256(packageStream);
+        }
+
+        if (!actualPackageHash.equalsIgnoreCase(pkg.getPackageHash())) {
+            throw new IllegalStateException("Package hash changed after verification");
+        }
+
+        PackageArchiveService.Verification verification;
+        try (InputStream packageStream = minioService.downloadFile(bucket, objectKey)) {
+            verification = packageArchiveService.verifyContents(
+                    packageStream,
+                    pkg.getManifestHash(),
+                    pkg.getSchemaVersion()
+            );
+        }
+
+        if (!verification.manifestHashValid()
+                || !verification.schemaVersionValid()
+                || !verification.filesValid()
+                || !verification.errors().isEmpty()
+                || verification.manifest() == null) {
+            String details = verification.errors().isEmpty()
+                    ? "stored package verification failed"
+                    : String.join("; ", verification.errors());
+            throw new IllegalStateException(
+                    "Package integrity verification failed before import: " + details);
+        }
+
+        return verification.manifest();
     }
 
     private ImportProjectResult importProject(JsonNode projectNode,
