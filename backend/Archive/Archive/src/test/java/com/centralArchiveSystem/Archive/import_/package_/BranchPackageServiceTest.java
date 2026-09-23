@@ -565,7 +565,7 @@ class BranchPackageServiceTest {
     }
 
     @Test
-    void projectImportFailureRollsBackItsOwnTransaction() {
+    void projectImportFailureRollsBackItsOwnTransaction() throws Exception {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
         PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
         ObjectMapper objectMapper = new ObjectMapper();
