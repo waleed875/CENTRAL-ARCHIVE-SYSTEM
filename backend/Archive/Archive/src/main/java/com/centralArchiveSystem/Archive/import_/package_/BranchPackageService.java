@@ -510,7 +510,7 @@ public class BranchPackageService {
                 }
             }
 
-            if (importedProjects > 0) {
+            if (importedProjects > 0 || (failedProjects == 0 && partialProjects == 0)) {
                 pkg.setImportedAt(LocalDateTime.now());
             }
 
