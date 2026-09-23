@@ -8,6 +8,7 @@ import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
+import com.centralArchiveSystem.Archive.project.project.dto.ProjectSearchRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectUpdateRequest;
 import org.junit.jupiter.api.Test;
@@ -267,6 +268,89 @@ class ProjectServiceTest {
         verify(repository).countAccessibleByYear(organizationId, 2);
     }
 
+
+    @Test
+    void searchFallsBackToSafeSortAndCapsPageSize() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        when(confidentiality.currentMaxLevelOrder()).thenReturn(3);
+        when(repository.searchAccessible(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        )).thenReturn(org.springframework.data.domain.Page.empty());
+
+        ProjectService service = newService(repository, memberService, confidentiality);
+        ProjectSearchRequest request = new ProjectSearchRequest(
+                "archive",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                null,
+                null,
+                "doesNotExist",
+                "sideways"
+        );
+
+        service.search(request, -5, 10_000);
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> pageableCaptor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        verify(repository).searchAccessible(
+                eq("archive"),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(true),
+                eq(3),
+                pageableCaptor.capture()
+        );
+
+        var pageable = pageableCaptor.getValue();
+        assertEquals(0, pageable.getPageNumber());
+        assertEquals(100, pageable.getPageSize());
+        assertEquals(org.springframework.data.domain.Sort.Direction.DESC,
+                pageable.getSort().getOrderFor("createdAt").getDirection());
+    }
+
+    @Test
+    void listUsesDefaultPageSizeWhenNonPositive() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        when(confidentiality.currentMaxLevelOrder()).thenReturn(1);
+        when(repository.searchAccessible(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        )).thenReturn(org.springframework.data.domain.Page.empty());
+
+        ProjectService service = newService(repository, memberService, confidentiality);
+        service.list(null, null, null, 0, 0);
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> pageableCaptor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        verify(repository).searchAccessible(
+                isNull(), isNull(), isNull(), isNull(),
+                isNull(), isNull(), isNull(), isNull(),
+                isNull(), isNull(), eq(true), eq(1),
+                pageableCaptor.capture()
+        );
+
+        assertEquals(20, pageableCaptor.getValue().getPageSize());
+    }
 
     @Test
     void projectWorkflowMutationRejectsProjectAboveUserClearance() {
