@@ -89,8 +89,8 @@ jobs:
       - name: Run authentication and object authorization HTTP integration tests
         run: bash mvnw -B -Dtest=AuthHttpIntegrationTest,ObjectAuthorizationHttpIntegrationTest test
 
-      - name: Run project workflow HTTP E2E tests
-        run: bash mvnw -B -Dtest=ProjectWorkflowHttpE2ETest test
+      - name: Run backend workflow HTTP E2E tests
+        run: bash mvnw -B -Dtest=ProjectWorkflowHttpE2ETest,PackageImportHttpE2ETest test
 
       - name: Run MinIO integration tests
         run: bash mvnw -B -Dtest=MinioServiceIntegrationTest test
