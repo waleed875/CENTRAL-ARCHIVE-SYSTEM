@@ -235,6 +235,7 @@ public class PackageArchiveService {
                 errors.add("Unsupported or inconsistent schema_version: " + schemaVersion);
             }
     
+            validateManifestSemantics(manifest, errors);
             Map<String, ExpectedFile> expectedFiles = expectedFiles(manifest, errors);
             boolean filesValid = errors.isEmpty();
             long verifiedFileBytes = 0L;
@@ -396,6 +397,91 @@ public class PackageArchiveService {
             }
         }
         throw new IllegalArgumentException("manifest.json was not found in the package");
+    }
+
+    private void validateManifestSemantics(JsonNode manifest, List<String> errors) {
+        validateRequiredUuid(manifest, "package_uuid", "manifest", errors);
+        validateRequiredUuid(manifest, "source_terminal_uuid", "manifest", errors);
+        validateOptionalUuid(manifest, "source_organization_id", "manifest", errors);
+
+        JsonNode projects = manifest.path("projects");
+        if (!projects.isArray()) {
+            if (errors.stream().noneMatch(error -> error.equals("Manifest projects must be an array"))) {
+                errors.add("Manifest projects must be an array");
+            }
+            return;
+        }
+
+        int index = 0;
+        for (JsonNode project : projects) {
+            String location = "projects[" + index + "]";
+            validateRequiredUuid(project, "project_id", location, errors);
+            validateRequiredText(project, "project_number", location, errors);
+            validateRequiredText(project, "name", location, errors);
+            validateOptionalUuid(project, "organization_id", location, errors);
+            validateOptionalUuid(project, "project_type_id", location, errors);
+            validateOptionalUuid(project, "confidentiality_level_id", location, errors);
+
+            if (!project.hasNonNull("year") || !project.path("year").canConvertToInt()) {
+                errors.add("Missing or invalid year in " + location);
+            } else {
+                int year = project.path("year").asInt();
+                if (year < 1900 || year > 2100) {
+                    errors.add("Project year out of range in " + location + ": " + year);
+                }
+            }
+
+            if (project.has("files") && !project.path("files").isArray()) {
+                errors.add("files must be an array in " + location);
+            }
+            if (project.has("members") && !project.path("members").isArray()) {
+                errors.add("members must be an array in " + location);
+            }
+            index++;
+        }
+    }
+
+    private void validateRequiredText(JsonNode node,
+                                      String field,
+                                      String location,
+                                      List<String> errors) {
+        String value = textOrNull(node, field);
+        if (value == null) {
+            errors.add("Missing required field " + field + " in " + location);
+        }
+    }
+
+    private void validateRequiredUuid(JsonNode node,
+                                      String field,
+                                      String location,
+                                      List<String> errors) {
+        String value = textOrNull(node, field);
+        if (value == null) {
+            errors.add("Missing required UUID field " + field + " in " + location);
+            return;
+        }
+        validateUuidValue(value, field, location, errors);
+    }
+
+    private void validateOptionalUuid(JsonNode node,
+                                      String field,
+                                      String location,
+                                      List<String> errors) {
+        String value = textOrNull(node, field);
+        if (value != null) {
+            validateUuidValue(value, field, location, errors);
+        }
+    }
+
+    private void validateUuidValue(String value,
+                                   String field,
+                                   String location,
+                                   List<String> errors) {
+        try {
+            java.util.UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            errors.add("Invalid UUID in " + field + " at " + location + ": " + value);
+        }
     }
 
     private Map<String, ExpectedFile> expectedFiles(JsonNode manifest, List<String> errors) {
