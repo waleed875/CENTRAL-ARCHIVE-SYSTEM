@@ -23,6 +23,18 @@ import java.util.stream.Collectors;
 @Transactional
 public class ProjectService {
 
+    private static final int MAX_PAGE_SIZE = 100;
+    private static final Set<String> ALLOWED_SORT_FIELDS = Set.of(
+            "createdAt",
+            "updatedAt",
+            "name",
+            "projectNumber",
+            "projectCode",
+            "year",
+            "status",
+            "versionNo"
+    );
+
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
     private final ConfidentialityAccessService confidentialityAccessService;
@@ -43,7 +55,11 @@ public class ProjectService {
 
     public Page<ProjectResponse> list(UUID organizationId, Integer year,
                                        Project.ProjectStatus status, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(
+                normalizePage(page),
+                normalizePageSize(size),
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
         Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
         return projectRepository.searchAccessible(
@@ -334,10 +350,18 @@ public class ProjectService {
     }
 
     public Page<ProjectResponse> search(ProjectSearchRequest request, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size,
-                Sort.by("desc".equalsIgnoreCase(request.sortDirection())
-                        ? Sort.Direction.DESC : Sort.Direction.ASC,
-                        request.sortBy()));
+        String sortField = ALLOWED_SORT_FIELDS.contains(request.sortBy())
+                ? request.sortBy()
+                : "createdAt";
+        Sort.Direction sortDirection = "asc".equalsIgnoreCase(request.sortDirection())
+                ? Sort.Direction.ASC
+                : Sort.Direction.DESC;
+
+        Pageable pageable = PageRequest.of(
+                normalizePage(page),
+                normalizePageSize(size),
+                Sort.by(sortDirection, sortField)
+        );
 
         Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
 
@@ -395,6 +419,17 @@ public class ProjectService {
                 totalProjects,
                 archivedCount
         );
+    }
+
+    private int normalizePage(int page) {
+        return Math.max(page, 0);
+    }
+
+    private int normalizePageSize(int size) {
+        if (size < 1) {
+            return 20;
+        }
+        return Math.min(size, MAX_PAGE_SIZE);
     }
 
     private void validateOrganizationReference(UUID organizationId) {
