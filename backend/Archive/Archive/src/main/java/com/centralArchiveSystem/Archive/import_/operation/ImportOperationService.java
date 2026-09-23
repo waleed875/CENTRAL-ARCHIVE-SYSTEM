@@ -92,6 +92,7 @@ public class ImportOperationService {
         return repository.save(operation);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ImportOperation updateStatus(UUID id, ImportOperation.Status status, String errorMessage) {
         ImportOperation operation = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Import operation not found: " + id));
