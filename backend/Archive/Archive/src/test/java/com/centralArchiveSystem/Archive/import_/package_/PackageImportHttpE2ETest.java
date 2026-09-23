@@ -167,17 +167,12 @@ class PackageImportHttpE2ETest {
                         .content(importBody))
                 .andExpect(status().isAccepted());
 
-        JsonNode operations = objectMapper.readTree(
-                mockMvc.perform(get("/api/v1/packages/{id}/operations", packageId)
-                                .header("Authorization", "Bearer " + token))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.data.status").value("IMPORTED"))
-                        .andExpect(jsonPath("$.data.projectStats.total").value(1))
-                        .andExpect(jsonPath("$.data.projectStats.imported").value(1))
-                        .andExpect(jsonPath("$.data.projectStats.failed").value(0))
-                        .andReturn().getResponse().getContentAsString()
-        );
+        JsonNode operations = awaitTerminalImport(packageId, token);
 
+        assertEquals("IMPORTED", operations.path("data").path("status").asText());
+        assertEquals(1, operations.path("data").path("projectStats").path("total").asInt());
+        assertEquals(1, operations.path("data").path("projectStats").path("imported").asInt());
+        assertEquals(0, operations.path("data").path("projectStats").path("failed").asInt());
         assertEquals("SUCCESS",
                 operations.path("data").path("importOperations").get(0).path("status").asText());
 
@@ -200,6 +195,37 @@ class PackageImportHttpE2ETest {
         assertEquals(fileHash, importedFiles.get(0).getChecksumSha256());
         assertEquals("BRANCH_PACKAGE", importedFiles.get(0).getSourceType());
         assertEquals(packageUuid.toString(), importedFiles.get(0).getSourceReference());
+    }
+
+    private JsonNode awaitTerminalImport(UUID packageId, String token) throws Exception {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(10).toNanos();
+        JsonNode latest = null;
+
+        while (System.nanoTime() < deadline) {
+            String response = mockMvc.perform(get("/api/v1/packages/{id}/operations", packageId)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+
+            latest = objectMapper.readTree(response);
+            String packageStatus = latest.path("data").path("status").asText();
+            JsonNode importOperations = latest.path("data").path("importOperations");
+            String operationStatus = importOperations.isArray() && !importOperations.isEmpty()
+                    ? importOperations.get(0).path("status").asText()
+                    : "";
+
+            if (("IMPORTED".equals(packageStatus) || "FAILED".equals(packageStatus))
+                    && ("SUCCESS".equals(operationStatus)
+                        || "PARTIAL".equals(operationStatus)
+                        || "FAILED".equals(operationStatus))) {
+                return latest;
+            }
+
+            Thread.sleep(100);
+        }
+
+        fail("Package import did not reach a terminal state within 10 seconds: " + latest);
+        return latest;
     }
 
     private String login() throws Exception {
