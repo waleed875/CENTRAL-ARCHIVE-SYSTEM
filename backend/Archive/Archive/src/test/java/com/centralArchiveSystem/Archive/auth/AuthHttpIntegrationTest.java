@@ -179,6 +179,24 @@ class AuthHttpIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void malformedUuidReturns400InsteadOf500() throws Exception {
+        String adminToken = loginAndGetAccessToken(adminUsername);
+
+        mockMvc.perform(get("/api/v1/organizations/not-a-uuid")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void missingJpaEntityReturns404InsteadOf500() throws Exception {
+        String adminToken = loginAndGetAccessToken(adminUsername);
+
+        mockMvc.perform(get("/api/v1/organizations/" + java.util.UUID.randomUUID())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isNotFound());
+    }
+
     private String loginAndGetAccessToken(String loginUsername) throws Exception {
         String loginJson = """
                 {"username":"%s","password":"%s"}
