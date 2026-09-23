@@ -172,6 +172,7 @@ class UserServiceTest {
         user.setStatus(User.UserStatus.ACTIVE);
 
         when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(users.save(user)).thenReturn(user);
 
         UserService service = new UserService(users, roles, imports, encoder);
         service.update(
