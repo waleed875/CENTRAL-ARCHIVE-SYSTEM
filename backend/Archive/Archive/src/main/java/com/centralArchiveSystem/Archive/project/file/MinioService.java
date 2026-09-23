@@ -2,12 +2,16 @@ package com.centralArchiveSystem.Archive.project.file;
 
 import io.minio.*;
 import io.minio.http.Method;
+import io.minio.errors.ErrorResponseException;
+import io.minio.messages.Item;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -69,6 +73,50 @@ public class MinioService {
         );
 
         log.info("File deleted successfully: bucket={}, objectKey={}", bucket, objectKey);
+    }
+
+    public boolean bucketExists(String bucket) throws Exception {
+        return minioClient.bucketExists(
+                BucketExistsArgs.builder()
+                        .bucket(bucket)
+                        .build()
+        );
+    }
+
+    public boolean objectExists(String bucket, String objectKey) throws Exception {
+        try {
+            minioClient.statObject(
+                    StatObjectArgs.builder()
+                            .bucket(bucket)
+                            .object(objectKey)
+                            .build()
+            );
+            return true;
+        } catch (ErrorResponseException e) {
+            String code = e.errorResponse() != null ? e.errorResponse().code() : null;
+            if ("NoSuchKey".equals(code)
+                    || "NoSuchObject".equals(code)
+                    || "NotFound".equals(code)) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    public List<String> listObjectKeys(String bucket, String prefix) throws Exception {
+        List<String> keys = new ArrayList<>();
+        Iterable<Result<Item>> results = minioClient.listObjects(
+                ListObjectsArgs.builder()
+                        .bucket(bucket)
+                        .prefix(prefix != null ? prefix : "")
+                        .recursive(true)
+                        .build()
+        );
+
+        for (Result<Item> result : results) {
+            keys.add(result.get().objectName());
+        }
+        return keys;
     }
 
     public String getPresignedUrl(String bucket, String objectKey, int expiryMinutes) throws Exception {
