@@ -159,7 +159,7 @@ class ProjectWorkflowHttpE2ETest {
         mockMvc.perform(patch("/api/v1/projects/{id}/request-correction", projectId)
                         .header("Authorization", "Bearer " + auditorToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reviewNotes\":\"Please add a member\"}"))
+                        .content("{\"review_notes\":\"Please add a member\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("NEEDS_CORRECTION"));
 
