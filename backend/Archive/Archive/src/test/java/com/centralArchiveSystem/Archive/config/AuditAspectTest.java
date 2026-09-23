@@ -91,6 +91,96 @@ class AuditAspectTest {
     }
 
     @Test
+    void marksNon2xxResponseAsAuditFailure() throws Exception {
+        AuditAspect aspect = new AuditAspect(
+                mock(AuditLogService.class),
+                new ObjectMapper(),
+                mock(UserRepository.class)
+        );
+
+        Method method = AuditAspect.class.getDeclaredMethod(
+                "determineOutcome",
+                Object.class,
+                Throwable.class
+        );
+        method.setAccessible(true);
+
+        Object outcome = method.invoke(
+                aspect,
+                ResponseEntity.status(409).body(ApiResponse.error("conflict")),
+                null
+        );
+
+        Method status = outcome.getClass().getDeclaredMethod("status");
+        status.setAccessible(true);
+        Method error = outcome.getClass().getDeclaredMethod("errorMessage");
+        error.setAccessible(true);
+
+        assertEquals("FAILURE", status.invoke(outcome));
+        assertEquals("HTTP 409", error.invoke(outcome));
+    }
+
+    @Test
+    void marksFailedApiResponseAsAuditFailureEvenWith2xx() throws Exception {
+        AuditAspect aspect = new AuditAspect(
+                mock(AuditLogService.class),
+                new ObjectMapper(),
+                mock(UserRepository.class)
+        );
+
+        Method method = AuditAspect.class.getDeclaredMethod(
+                "determineOutcome",
+                Object.class,
+                Throwable.class
+        );
+        method.setAccessible(true);
+
+        Object outcome = method.invoke(
+                aspect,
+                ResponseEntity.ok(ApiResponse.error("validation failed")),
+                null
+        );
+
+        Method status = outcome.getClass().getDeclaredMethod("status");
+        status.setAccessible(true);
+        Method error = outcome.getClass().getDeclaredMethod("errorMessage");
+        error.setAccessible(true);
+
+        assertEquals("FAILURE", status.invoke(outcome));
+        assertEquals("validation failed", error.invoke(outcome));
+    }
+
+    @Test
+    void throwableAlwaysProducesAuditFailure() throws Exception {
+        AuditAspect aspect = new AuditAspect(
+                mock(AuditLogService.class),
+                new ObjectMapper(),
+                mock(UserRepository.class)
+        );
+
+        Method method = AuditAspect.class.getDeclaredMethod(
+                "determineOutcome",
+                Object.class,
+                Throwable.class
+        );
+        method.setAccessible(true);
+
+        Object outcome = method.invoke(
+                aspect,
+                ResponseEntity.ok(ApiResponse.success("ignored")),
+                new AssertionError("rollback failure")
+        );
+
+        Method status = outcome.getClass().getDeclaredMethod("status");
+        status.setAccessible(true);
+        Method error = outcome.getClass().getDeclaredMethod("errorMessage");
+        error.setAccessible(true);
+
+        assertEquals("FAILURE", status.invoke(outcome));
+        assertEquals("rollback failure", error.invoke(outcome));
+    }
+
+    @Test
     void truncatesOversizedAuditJson() throws Exception {
         AuditAspect aspect = new AuditAspect(
                 mock(AuditLogService.class),
