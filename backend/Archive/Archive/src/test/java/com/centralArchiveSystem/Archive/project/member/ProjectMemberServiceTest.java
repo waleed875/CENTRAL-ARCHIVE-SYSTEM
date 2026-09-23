@@ -40,6 +40,40 @@ class ProjectMemberServiceTest {
     }
 
     @Test
+    void rejectsMemberChangesWhileProjectIsUnderReviewOrRejected() {
+        for (Project.ProjectStatus status : java.util.List.of(
+                Project.ProjectStatus.UNDER_REVIEW,
+                Project.ProjectStatus.REJECTED)) {
+            ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
+            ProjectRepository projectRepository = mock(ProjectRepository.class);
+            ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+            UUID projectId = UUID.randomUUID();
+            Project project = new Project();
+            project.setId(projectId);
+            project.setStatus(status);
+
+            when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+            ProjectMemberService service = new ProjectMemberService(
+                    memberRepository,
+                    projectRepository,
+                    confidentiality
+            );
+
+            assertThrows(BusinessRuleException.class,
+                    () -> service.create(
+                            projectId,
+                            new com.centralArchiveSystem.Archive.project.member.dto.MemberCreateRequest(
+                                    "Locked Member", null, null, null
+                            )
+                    ));
+
+            verify(memberRepository, never()).save(any());
+        }
+    }
+
+    @Test
     void memberMutationRejectsProjectAboveUserClearance() {
         ProjectMemberRepository memberRepository = mock(ProjectMemberRepository.class);
         ProjectRepository projectRepository = mock(ProjectRepository.class);

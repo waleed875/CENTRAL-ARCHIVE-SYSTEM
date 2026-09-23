@@ -125,7 +125,9 @@ public class ProjectMemberService {
         Project project = requireProject(projectId);
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
-        if (project.getStatus() == Project.ProjectStatus.APPROVED
+        if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW
+                || project.getStatus() == Project.ProjectStatus.REJECTED
+                || project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
             throw new BusinessRuleException(
                     "Project members cannot be modified when project status is " + project.getStatus());

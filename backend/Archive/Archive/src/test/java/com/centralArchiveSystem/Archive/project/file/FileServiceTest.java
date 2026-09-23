@@ -218,6 +218,54 @@ class FileServiceTest {
     }
 
     @Test
+    void rejectsFileChangesWhileProjectIsUnderReviewOrRejected() {
+        for (Project.ProjectStatus status : java.util.List.of(
+                Project.ProjectStatus.UNDER_REVIEW,
+                Project.ProjectStatus.REJECTED)) {
+            FileRepository fileRepository = mock(FileRepository.class);
+            FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+            FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+            MinioService minioService = mock(MinioService.class);
+            MinioConfig minioConfig = mock(MinioConfig.class);
+            ProjectRepository projectRepository = mock(ProjectRepository.class);
+            ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+            PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+            TransactionStatus transactionStatus = mock(TransactionStatus.class);
+            when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+            UUID fileId = UUID.randomUUID();
+            UUID projectId = UUID.randomUUID();
+
+            FileEntity file = new FileEntity();
+            file.setId(fileId);
+            file.setProjectId(projectId);
+
+            Project project = new Project();
+            project.setId(projectId);
+            project.setStatus(status);
+
+            when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+            when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+            FileService service = new FileService(
+                    fileRepository,
+                    categoryRepository,
+                    typeRepository,
+                    minioService,
+                    minioConfig,
+                    projectRepository,
+                    confidentiality,
+                    transactionManager
+            );
+
+            assertThrows(IllegalStateException.class,
+                    () -> service.softDelete(fileId, UUID.randomUUID(), "locked"));
+            verify(fileRepository, never()).save(any(FileEntity.class));
+            verifyNoInteractions(minioService);
+        }
+    }
+
+    @Test
     void duplicateChecksumIsRejectedBeforeObjectStorageUpload() throws Exception {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);

@@ -2,7 +2,11 @@ package com.centralArchiveSystem.Archive.project.project;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
+import com.centralArchiveSystem.Archive.core.organization.Organization;
+import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectUpdateRequest;
@@ -53,7 +57,7 @@ class ProjectServiceTest {
                 null
         );
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
         ProjectResponse response = service.create(request, createdBy);
 
         assertEquals(Project.SourceType.MANUAL, response.sourceType());
@@ -83,7 +87,7 @@ class ProjectServiceTest {
             return saved;
         });
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         ProjectUpdateRequest overrides = new ProjectUpdateRequest(
                 null, null, null, null, null, "Revised Project", null,
@@ -118,7 +122,7 @@ class ProjectServiceTest {
         project.setStatus(Project.ProjectStatus.DRAFT);
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(BusinessRuleException.class,
                 () -> service.newVersion(project.getId(), UUID.randomUUID(), null));
@@ -137,7 +141,7 @@ class ProjectServiceTest {
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
         when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         ProjectResponse response = service.submitForReview(project.getId());
 
@@ -150,7 +154,7 @@ class ProjectServiceTest {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.requestCorrection(UUID.randomUUID(), "   "));
@@ -162,7 +166,7 @@ class ProjectServiceTest {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);
         ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.reject(UUID.randomUUID(), ""));
@@ -181,7 +185,7 @@ class ProjectServiceTest {
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
         when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         ProjectUpdateRequest allowed = new ProjectUpdateRequest(
                 null, null, null, null, null, null, null,
@@ -214,7 +218,7 @@ class ProjectServiceTest {
 
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         ProjectUpdateRequest request = new ProjectUpdateRequest(
                 null, null, null, null, null, null, null,
@@ -249,7 +253,7 @@ class ProjectServiceTest {
                 )
         );
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
         var stats = service.getStats(organizationId);
 
         assertEquals(5L, stats.totalProjects());
@@ -279,7 +283,7 @@ class ProjectServiceTest {
         doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
                 .when(confidentiality).requireReadAccess(levelId);
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(
                 org.springframework.security.access.AccessDeniedException.class,
@@ -318,7 +322,7 @@ class ProjectServiceTest {
                 null
         );
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(
                 org.springframework.security.access.AccessDeniedException.class,
@@ -341,13 +345,111 @@ class ProjectServiceTest {
         doThrow(new org.springframework.security.access.AccessDeniedException("denied"))
                 .when(confidentiality).requireReadAccess(levelId);
 
-        ProjectService service = new ProjectService(repository, memberService, confidentiality);
+        ProjectService service = newService(repository, memberService, confidentiality);
 
         assertThrows(
                 org.springframework.security.access.AccessDeniedException.class,
                 () -> service.getById(project.getId())
         );
         verify(confidentiality).requireReadAccess(levelId);
+    }
+
+    @Test
+    void projectCreateRejectsInactiveOrganization() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+
+        UUID organizationId = UUID.randomUUID();
+        Organization inactive = new Organization();
+        inactive.setId(organizationId);
+        inactive.setIsActive(false);
+        when(organizations.findById(organizationId)).thenReturn(Optional.of(inactive));
+
+        ProjectRequest request = new ProjectRequest(
+                organizationId,
+                null,
+                null,
+                "PRJ-INACTIVE",
+                null,
+                "Inactive Org Project",
+                2026,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        ProjectService service = new ProjectService(
+                repository, memberService, confidentiality, organizations, projectTypes);
+
+        assertThrows(BusinessRuleException.class,
+                () -> service.create(request, UUID.randomUUID()));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void incompleteProjectCannotBeSubmittedForReview() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        project.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        ProjectService service = newService(repository, memberService, confidentiality);
+
+        assertThrows(BusinessRuleException.class,
+                () -> service.submitForReview(project.getId()));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void rejectedProjectIsImmutable() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.REJECTED);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        ProjectService service = newService(repository, memberService, confidentiality);
+        ProjectUpdateRequest request = new ProjectUpdateRequest(
+                null, null, null, null, null, null, null,
+                null, null, "changed", null,
+                null, null, null
+        );
+
+        assertThrows(BusinessRuleException.class,
+                () -> service.update(project.getId(), request));
+        verify(repository, never()).save(any(Project.class));
+    }
+
+    private ProjectService newService(ProjectRepository repository,
+                                      ProjectMemberService memberService,
+                                      ConfidentialityAccessService confidentiality) {
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+
+        Organization activeOrganization = new Organization();
+        activeOrganization.setIsActive(true);
+        when(organizations.findById(any(UUID.class))).thenReturn(Optional.of(activeOrganization));
+
+        ProjectType activeProjectType = new ProjectType();
+        activeProjectType.setIsActive(true);
+        when(projectTypes.findById(any(UUID.class))).thenReturn(Optional.of(activeProjectType));
+
+        return new ProjectService(
+                repository, memberService, confidentiality, organizations, projectTypes);
     }
 
     private Project baseProject() {

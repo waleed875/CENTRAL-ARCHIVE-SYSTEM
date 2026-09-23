@@ -2,7 +2,11 @@ package com.centralArchiveSystem.Archive.project.project;
 
 import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
+import com.centralArchiveSystem.Archive.core.organization.Organization;
+import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
+import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
 import com.centralArchiveSystem.Archive.project.project.dto.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -22,13 +26,19 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
     private final ConfidentialityAccessService confidentialityAccessService;
+    private final OrganizationRepository organizationRepository;
+    private final ProjectTypeRepository projectTypeRepository;
 
     public ProjectService(ProjectRepository projectRepository,
                           ProjectMemberService projectMemberService,
-                          ConfidentialityAccessService confidentialityAccessService) {
+                          ConfidentialityAccessService confidentialityAccessService,
+                          OrganizationRepository organizationRepository,
+                          ProjectTypeRepository projectTypeRepository) {
         this.projectRepository = projectRepository;
         this.projectMemberService = projectMemberService;
         this.confidentialityAccessService = confidentialityAccessService;
+        this.organizationRepository = organizationRepository;
+        this.projectTypeRepository = projectTypeRepository;
     }
 
     public Page<ProjectResponse> list(UUID organizationId, Integer year,
@@ -61,6 +71,8 @@ public class ProjectService {
     }
 
     public ProjectResponse create(ProjectRequest request, UUID createdBy) {
+        validateOrganizationReference(request.organizationId());
+        validateProjectTypeReference(request.projectTypeId());
         confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
 
         Optional<Project> existing = projectRepository.findActiveByProjectNumberAndOrganizationIdAndYear(
@@ -105,9 +117,14 @@ public class ProjectService {
         }
 
         if (project.getStatus() == Project.ProjectStatus.APPROVED ||
-            project.getStatus() == Project.ProjectStatus.ARCHIVED) {
+            project.getStatus() == Project.ProjectStatus.ARCHIVED ||
+            project.getStatus() == Project.ProjectStatus.REJECTED) {
             throw new BusinessRuleException(
-                    "Cannot update project in " + project.getStatus() + " status; create a new version instead");
+                    "Cannot update project in " + project.getStatus()
+                            + " status"
+                            + (project.getStatus() == Project.ProjectStatus.REJECTED
+                                ? "; rejection is final"
+                                : "; create a new version instead"));
         }
 
         if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW) {
@@ -133,6 +150,13 @@ public class ProjectService {
         UUID effectiveOrganizationId = request.organizationId() != null
                 ? request.organizationId()
                 : project.getOrganizationId();
+
+        if (request.organizationId() != null) {
+            validateOrganizationReference(request.organizationId());
+        }
+        if (request.projectTypeId() != null) {
+            validateProjectTypeReference(request.projectTypeId());
+        }
 
         boolean identityChanged =
                 !project.getProjectNumber().equals(effectiveProjectNumber)
@@ -163,6 +187,15 @@ public class ProjectService {
         if (overrides != null && overrides.confidentialityLevelId() != null) {
             confidentialityAccessService.requireReadAccess(overrides.confidentialityLevelId());
         }
+
+        UUID versionOrganizationId = overrides != null && overrides.organizationId() != null
+                ? overrides.organizationId()
+                : original.getOrganizationId();
+        UUID versionProjectTypeId = overrides != null && overrides.projectTypeId() != null
+                ? overrides.projectTypeId()
+                : original.getProjectTypeId();
+        validateOrganizationReference(versionOrganizationId);
+        validateProjectTypeReference(versionProjectTypeId);
 
         if (original.getStatus() != Project.ProjectStatus.APPROVED
                 && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
@@ -228,6 +261,10 @@ public class ProjectService {
                 && project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
             throw new BusinessRuleException(
                     "Can only submit DRAFT, IMPORTED or NEEDS_CORRECTION projects for review");
+        }
+        if (project.getDataCompletionStatus() != Project.DataCompletionStatus.COMPLETE) {
+            throw new BusinessRuleException(
+                    "Project must be COMPLETE before it can be submitted for review");
         }
 
         project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
@@ -358,6 +395,34 @@ public class ProjectService {
                 totalProjects,
                 archivedCount
         );
+    }
+
+    private void validateOrganizationReference(UUID organizationId) {
+        if (organizationId == null) {
+            throw new BusinessRuleException("Project organization is required");
+        }
+
+        Organization organization = organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new BusinessRuleException(
+                        "Project organization does not exist: " + organizationId));
+        if (!Boolean.TRUE.equals(organization.getIsActive())) {
+            throw new BusinessRuleException(
+                    "Project organization is inactive: " + organizationId);
+        }
+    }
+
+    private void validateProjectTypeReference(UUID projectTypeId) {
+        if (projectTypeId == null) {
+            return;
+        }
+
+        ProjectType projectType = projectTypeRepository.findById(projectTypeId)
+                .orElseThrow(() -> new BusinessRuleException(
+                        "Project type does not exist: " + projectTypeId));
+        if (!Boolean.TRUE.equals(projectType.getIsActive())) {
+            throw new BusinessRuleException(
+                    "Project type is inactive: " + projectTypeId);
+        }
     }
 
     private Project requireAccessibleProject(UUID id) {
