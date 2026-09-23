@@ -330,7 +330,7 @@ public class BranchPackageService {
         }
 
         try {
-            JsonNode manifest = revalidateStoredPackageForImport(pkg);
+            JsonNode manifest = objectMapper.readTree(pkg.getManifestData());
             JsonNode projects = manifest.path("projects");
             if (!projects.isArray()) {
                 throw new IllegalArgumentException("Stored manifest has no projects array");
