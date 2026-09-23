@@ -198,7 +198,6 @@ public class LegacyMigrationService {
             String originalYear = String.valueOf(row.get("year"));
 
             Project project = new Project();
-            project.setId(UUID.randomUUID());
             project.setProjectUid(UUID.nameUUIDFromBytes(("LEGACY-" + oldId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             project.setVersionNo(1);
             project.setIsLatestVersion(true);
