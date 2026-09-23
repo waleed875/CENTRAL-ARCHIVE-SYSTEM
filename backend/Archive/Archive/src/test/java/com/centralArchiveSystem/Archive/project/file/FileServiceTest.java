@@ -595,6 +595,125 @@ class FileServiceTest {
     }
 
     @Test
+    void importedFileWithoutCategoryOrTypeCanBeRead() {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        UUID fileId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        FileEntity file = new FileEntity();
+        file.setId(fileId);
+        file.setProjectId(projectId);
+        file.setStatus("ACTIVE");
+        file.setOriginalName("meeting_minutes.txt");
+        file.setStoredName("stored.txt");
+        file.setBucketName("archive-files");
+        file.setObjectKey("import/package/project/stored.txt");
+        file.setExtension("txt");
+        file.setMimeType("text/plain");
+        file.setSizeBytes(42L);
+        file.setChecksumSha256("abc123");
+        file.setSourceType("BRANCH_PACKAGE");
+        file.setSourceReference(UUID.randomUUID().toString());
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.IMPORTED);
+
+        when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality,
+                transactionManager
+        );
+
+        var response = service.getFileMetadata(fileId);
+
+        assertEquals(fileId, response.id());
+        assertEquals(projectId, response.projectId());
+        assertEquals("BRANCH_PACKAGE", response.sourceType());
+        assertEquals("meeting_minutes.txt", response.originalName());
+        assertEquals(null, response.categoryId());
+        assertEquals(null, response.categoryCode());
+        assertEquals(null, response.categoryName());
+        assertEquals(null, response.typeId());
+        assertEquals(null, response.typeCode());
+        assertEquals(null, response.typeName());
+
+        verifyNoInteractions(categoryRepository, typeRepository, minioService);
+    }
+
+    @Test
+    void importedFileWithoutCategoryOrTypeCanBeDownloaded() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        UUID fileId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        byte[] bytes = "imported package file".getBytes(StandardCharsets.UTF_8);
+
+        FileEntity file = new FileEntity();
+        file.setId(fileId);
+        file.setProjectId(projectId);
+        file.setStatus("ACTIVE");
+        file.setBucketName("archive-files");
+        file.setObjectKey("import/package/project/file.txt");
+        file.setSourceType("BRANCH_PACKAGE");
+
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.IMPORTED);
+
+        when(fileRepository.findById(fileId)).thenReturn(Optional.of(file));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(minioService.downloadFile("archive-files", "import/package/project/file.txt"))
+                .thenReturn(new java.io.ByteArrayInputStream(bytes));
+
+        FileService service = new FileService(
+                fileRepository,
+                categoryRepository,
+                typeRepository,
+                minioService,
+                minioConfig,
+                projectRepository,
+                confidentiality,
+                transactionManager
+        );
+
+        try (var stream = service.downloadFile(fileId)) {
+            assertEquals("imported package file",
+                    new String(stream.readAllBytes(), StandardCharsets.UTF_8));
+        }
+
+        verify(minioService).downloadFile("archive-files", "import/package/project/file.txt");
+        verifyNoInteractions(categoryRepository, typeRepository);
+    }
+
+    @Test
     void softDeletedFileCannotBeReadByDirectId() {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
