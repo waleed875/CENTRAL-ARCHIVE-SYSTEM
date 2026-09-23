@@ -33,7 +33,7 @@ class PostgresSchemaIntegrationTest {
                 """
                 SELECT COUNT(*)
                   FROM flyway_schema_history
-                 WHERE version = '12'
+                 WHERE version = '13'
                    AND success = true
                 """,
                 Integer.class
@@ -108,6 +108,46 @@ class PostgresSchemaIntegrationTest {
                 Integer.class
         );
         assertEquals(1, constraintCount);
+    }
+
+
+    @Test
+    void importOperationRecoveryMetadataExists() {
+        Map<String, String> types = jdbcTemplate.query(
+                """
+                SELECT column_name, data_type
+                  FROM information_schema.columns
+                 WHERE table_schema = 'import'
+                   AND table_name = 'import_operations'
+                   AND column_name IN ('last_heartbeat_at', 'request_snapshot', 'retry_of')
+                """,
+                rs -> {
+                    Map<String, String> result = new java.util.HashMap<>();
+                    while (rs.next()) {
+                        result.put(rs.getString("column_name"), rs.getString("data_type"));
+                    }
+                    return result;
+                }
+        );
+
+        assertEquals("timestamp with time zone", types.get("last_heartbeat_at"));
+        assertEquals("text", types.get("request_snapshot"));
+        assertEquals("uuid", types.get("retry_of"));
+
+        Integer interruptedAllowed = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'import_operations'
+                   AND c.conname = 'chk_import_operations_status'
+                   AND pg_get_constraintdef(c.oid) LIKE '%INTERRUPTED%'
+                """,
+                Integer.class
+        );
+        assertEquals(1, interruptedAllowed);
     }
 
     @Test
