@@ -366,7 +366,9 @@ public class FileService {
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
-        if (project.getStatus() == Project.ProjectStatus.APPROVED
+        if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW
+                || project.getStatus() == Project.ProjectStatus.REJECTED
+                || project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
             throw new IllegalStateException(
                     "Project files cannot be modified when project status is " + project.getStatus());
