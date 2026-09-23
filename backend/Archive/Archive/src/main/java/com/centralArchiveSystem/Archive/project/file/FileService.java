@@ -412,7 +412,9 @@ public class FileService {
     }
 
     private FileResponse toResponse(FileEntity file) {
-        FileCategory category = fileCategoryRepository.findById(file.getCategoryId()).orElse(null);
+        FileCategory category = file.getCategoryId() != null
+                ? fileCategoryRepository.findById(file.getCategoryId()).orElse(null)
+                : null;
         FileType fileType = file.getTypeId() != null
                 ? fileTypeRepository.findById(file.getTypeId()).orElse(null)
                 : null;
