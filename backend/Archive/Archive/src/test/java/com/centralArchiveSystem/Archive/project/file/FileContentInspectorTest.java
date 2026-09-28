@@ -106,6 +106,116 @@ class FileContentInspectorTest {
                 () -> FileContentInspector.validateMultipart(file, "txt"));
     }
 
+    @Test
+    void acceptsSqlByContent() {
+        byte[] bytes = "-- seed roles\nINSERT INTO core.roles (code) VALUES ('ADMIN');\n"
+                .getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "UpdateProject.sql",
+                "application/octet-stream",
+                bytes
+        );
+
+        assertEquals("application/sql",
+                FileContentInspector.validateMultipart(file, "sql"));
+    }
+
+    @Test
+    void acceptsUtf16SqlBecauseLegacyEditorWroteItThatWay() {
+        // The real ARC2 dumps store UpdateProject.sql as UTF-16LE with a BOM, so a plain NUL-byte
+        // rejection would refuse legitimate legacy content.
+        String sql = "USE central_archive;\nINSERT INTO core.roles (code) VALUES ('ADMIN');\n";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.writeBytes(new byte[]{(byte) 0xFF, (byte) 0xFE});
+        out.writeBytes(sql.getBytes(StandardCharsets.UTF_16LE));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "UpdateProject.sql",
+                "application/octet-stream",
+                out.toByteArray()
+        );
+
+        assertEquals("application/sql",
+                FileContentInspector.validateMultipart(file, "sql"));
+    }
+
+    @Test
+    void stillRejectsBinaryThatMerelyStartsWithUtf16Bom() {
+        byte[] bytes = new byte[]{
+                (byte) 0xFF, (byte) 0xFE, 0x01, (byte) 0xD8, 0x00, (byte) 0xC0
+        };
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "notes.txt",
+                "application/octet-stream",
+                bytes
+        );
+
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateMultipart(file, "txt"));
+    }
+
+    @Test
+    void rejectsBinaryPayloadForSqlExtension() {
+        byte[] bytes = new byte[]{0x00, 0x01, 0x02, 0x03};
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "UpdateProject.sql",
+                "application/octet-stream",
+                bytes
+        );
+
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateMultipart(file, "sql"));
+    }
+
+    @Test
+    void acceptsRar4ArchiveByContent() {
+        byte[] bytes = new byte[]{
+                0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00
+        };
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "archive.rar",
+                "application/octet-stream",
+                bytes
+        );
+
+        assertEquals("application/vnd.rar",
+                FileContentInspector.validateMultipart(file, "rar"));
+    }
+
+    @Test
+    void acceptsRar5ArchiveByContent() {
+        byte[] bytes = new byte[]{
+                0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00
+        };
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "archive.rar",
+                "application/octet-stream",
+                bytes
+        );
+
+        assertEquals("application/vnd.rar",
+                FileContentInspector.validateMultipart(file, "rar"));
+    }
+
+    @Test
+    void rejectsZipDisguisedAsRar() throws Exception {
+        byte[] bytes = zip("random.txt");
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "archive.rar",
+                "application/zip",
+                bytes
+        );
+
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateMultipart(file, "rar"));
+    }
+
     private byte[] zip(String... entries) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(output)) {

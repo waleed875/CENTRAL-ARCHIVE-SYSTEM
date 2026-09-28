@@ -24,10 +24,13 @@ public class ProjectController {
 
     private final ProjectService projectService;
     private final CurrentUserService currentUserService;
+    private final IncompleteProjectReportService incompleteProjectReportService;
 
-    public ProjectController(ProjectService projectService, CurrentUserService currentUserService) {
+    public ProjectController(ProjectService projectService, CurrentUserService currentUserService,
+                             IncompleteProjectReportService incompleteProjectReportService) {
         this.projectService = projectService;
         this.currentUserService = currentUserService;
+        this.incompleteProjectReportService = incompleteProjectReportService;
     }
 
     @GetMapping
@@ -181,5 +184,12 @@ public class ProjectController {
             @Parameter(description = "Organization ID to filter stats") @RequestParam(required = false) UUID organizationId) {
         ProjectStatsResponse stats = projectService.getStats(organizationId);
         return ResponseEntity.ok(ApiResponse.success(stats));
+    }
+
+    @GetMapping("/incomplete-report")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "List projects that entered the platform with missing mandatory fields")
+    public ResponseEntity<ApiResponse<IncompleteProjectReportResponse>> getIncompleteReport() {
+        return ResponseEntity.ok(ApiResponse.success(incompleteProjectReportService.buildReport()));
     }
 }
