@@ -66,11 +66,7 @@ jobs:
 
       - name: Start MinIO
         run: |
-          docker run -d --name minio-ci \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z server /data
+          docker run -d --name minio-ci             -p 9000:9000             -e MINIO_ROOT_USER=minioadmin             -e MINIO_ROOT_PASSWORD=minioadmin123             docker.io/minio/minio:RELEASE.2025-04-08T15-41-24Z server /data
           for i in {1..30}; do
             if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
               exit 0
