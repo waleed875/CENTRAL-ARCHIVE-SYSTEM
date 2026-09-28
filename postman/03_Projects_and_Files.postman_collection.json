@@ -687,6 +687,47 @@
           ],
           "response": []
         }
+,
+        {
+          "name": "Get Incomplete Project Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects/incomplete-report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "incomplete-report"
+              ]
+            }
+          },
+          "description": "system_admin only. Projects that entered the platform with a substituted mandatory field. A `year` of 1000 is the UNKNOWN_YEAR sentinel from a legacy record whose year was missing or implausible, and `missingFields` lists exactly which mandatory fields a migration had to substitute, so a reviewer knows what still needs a real value. Empty before any legacy migration runs.",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const d = json && json.data ? json.data : json;",
+                  "pm.test('returns counts that match the rows', () => {",
+                  "  pm.expect(d.totalIncomplete).to.be.a('number');",
+                  "  pm.expect(d.projects).to.be.an('array');",
+                  "  pm.expect(d.projects.length).to.eql(d.totalIncomplete);",
+                  "  pm.expect(d.fieldCounts).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
       ]
     },
     {
