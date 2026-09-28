@@ -68,7 +68,7 @@ jobs:
         run: |
           curl -fL --retry 5 --retry-delay 2 \
             -o /tmp/minio \
-            https://dl.min.io/server/minio/release/linux-amd64/archive/minio.RELEASE.2025-09-07T16-13-09Z
+            https://dl.min.io/community/server/minio/release/linux-amd64/archive/minio.RELEASE.2025-09-07T16-13-09Z
           chmod +x /tmp/minio
           MINIO_ROOT_USER=minioadmin \
           MINIO_ROOT_PASSWORD=minioadmin123 \
