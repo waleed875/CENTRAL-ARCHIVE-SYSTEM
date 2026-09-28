@@ -16,6 +16,14 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     Optional<Project> findByProjectUid(UUID projectUid);
 
+    /**
+     * Matches the projects_organization_id_project_number_year_version_no_key constraint. The legacy
+     * migration checks it before inserting so a duplicate is reported instead of aborting the
+     * surrounding transaction, which would discard the rows that had already migrated cleanly.
+     */
+    boolean existsByOrganizationIdAndProjectNumberAndYearAndVersionNo(
+            UUID organizationId, String projectNumber, Integer year, Integer versionNo);
+
     @Query("SELECT COALESCE(MAX(p.versionNo), 0) FROM Project p WHERE p.projectUid = :projectUid")
     int findMaxVersionNoByProjectUid(@Param("projectUid") UUID projectUid);
 
@@ -220,4 +228,11 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
              AND p.isLatestVersion = true
            """)
     long countLatestByProjectTypeId(@Param("projectTypeId") UUID projectTypeId);
+
+    /**
+     * Feeds the incomplete-data report. Only the latest version is listed so a re-migrated project
+     * is not counted once per version it went through.
+     */
+    List<Project> findByDataCompletionStatusAndIsLatestVersionTrueOrderByCreatedAtDesc(
+            Project.DataCompletionStatus status);
 }

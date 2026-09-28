@@ -2,7 +2,6 @@ package com.centralArchiveSystem.Archive.import_.migration.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.util.Map;
@@ -16,10 +15,11 @@ public record MigrationRunRequest(
     MigrationConfig migration_config
 ) {
     public record MigrationConfig(
-        @NotBlank(message = "Connection string is required for the current staging migration adapter")
         @Schema(
-            description = "Configured legacy staging JDBC URL. Dynamic source connections are not enabled in the current MVP.",
-            example = "jdbc:postgresql://legacy-staging:5432/ARC2"
+            description = "No longer used. Each office is read through the connection stored on its "
+                    + "migration source, so this must be omitted. A non-blank value is rejected "
+                    + "rather than ignored, so nobody assumes the URL was used.",
+            example = ""
         )
         String connection_string,
 

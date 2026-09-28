@@ -93,6 +93,14 @@ public class Project {
     @Column(name = "source_reference")
     private String sourceReference;
 
+    /**
+     * Comma separated names of the mandatory fields that had to be substituted during a migration,
+     * e.g. {@code year,name}. Empty when nothing was missing. The incomplete-data report is driven
+     * from this column so reviewers can see exactly what still needs a value.
+     */
+    @Column(name = "missing_fields", columnDefinition = "TEXT")
+    private String missingFields;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -223,6 +231,9 @@ public class Project {
 
     public String getSourceReference() { return sourceReference; }
     public void setSourceReference(String sourceReference) { this.sourceReference = sourceReference; }
+
+    public String getMissingFields() { return missingFields; }
+    public void setMissingFields(String missingFields) { this.missingFields = missingFields; }
 
     public UUID getCreatedBy() { return createdBy; }
     public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }

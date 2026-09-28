@@ -2,6 +2,8 @@ package com.centralArchiveSystem.Archive.import_.migration.legacy;
 
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevel;
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
 import com.centralArchiveSystem.Archive.project.project.Project;
@@ -46,6 +48,7 @@ class LegacyMigrationHttpE2ETest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired LegacyMigrationService migrationService;
     @Autowired LegacyMigrationItemRepository itemRepository;
+    @Autowired MigrationSourceRepository sourceRepository;
     @Autowired ConfidentialityLevelRepository confidentialityLevelRepository;
     @Autowired ProjectRepository projectRepository;
     @Autowired FileRepository fileRepository;
@@ -115,65 +118,89 @@ class LegacyMigrationHttpE2ETest {
 
     @Test
     void migratesLegacySideProjectAndBase64FileIntoCentralArchive() throws Exception {
-        assertEquals(1, migrationService.migrateReferences());
-        assertEquals(1, migrationService.migrateProjects());
+        // Every run is bound to one office's database, so the test opens a connection for it.
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            assertEquals(1, migrationService.migrateReferences(connection));
+            assertEquals(1, migrationService.migrateProjects(connection));
 
-        ExecutorService workers = Executors.newFixedThreadPool(2);
-        LegacyMigrationService.LegacyFileSummary summary;
-        try {
-            summary = migrationService.migrateFiles(workers);
-        } finally {
-            workers.shutdown();
+            ExecutorService workers = Executors.newFixedThreadPool(2);
+            LegacyMigrationService.LegacyFileSummary summary;
+            try {
+                summary = migrationService.migrateFiles(connection, workers);
+            } finally {
+                workers.shutdown();
+            }
+
+            assertEquals(1, summary.done());
+            assertEquals(0, summary.failed());
+
+            UUID sourceId = source.getId();
+            LegacyMigrationItem sideItem = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    sourceId,
+                    LegacyMigrationItem.Kind.PROJECT,
+                    "SIDE-" + legacySideId
+            ).orElseThrow();
+
+            LegacyMigrationItem projectItem = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    sourceId,
+                    LegacyMigrationItem.Kind.PROJECT,
+                    "PROJECT-" + legacyProjectId
+            ).orElseThrow();
+
+            LegacyMigrationItem fileItem = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    sourceId,
+                    LegacyMigrationItem.Kind.FILE,
+                    "FILE-" + legacyFileId
+            ).orElseThrow();
+
+            assertEquals(LegacyMigrationItem.Status.DONE, sideItem.getStatus());
+            assertEquals(LegacyMigrationItem.Status.DONE, projectItem.getStatus());
+            assertEquals(LegacyMigrationItem.Status.DONE, fileItem.getStatus());
+
+            Project project = projectRepository.findById(projectItem.getTargetId()).orElseThrow();
+            assertEquals(sideItem.getTargetId(), project.getOrganizationId());
+            assertEquals("Legacy Project " + legacyProjectId, project.getName());
+            assertEquals("LEG-" + legacyProjectId, project.getProjectNumber());
+            assertEquals("CODE-" + legacyProjectId, project.getProjectCode());
+            assertEquals(2024, project.getYear());
+            assertEquals("Legacy Administrator", project.getExecutingEntity());
+            assertEquals("Legacy project details", project.getDescription());
+            assertEquals("Legacy project note", project.getNotes());
+            assertEquals(Project.ProjectStatus.ARCHIVED, project.getStatus());
+            assertEquals(Project.SourceType.MIGRATION, project.getSourceType());
+            // The reference carries the office, not a hard-coded database name.
+            assertEquals(source.getOfficeName() + ":tbl_project:" + legacyProjectId, project.getSourceReference());
+
+            var file = fileRepository.findById(fileItem.getTargetId()).orElseThrow();
+            assertEquals(project.getId(), file.getProjectId());
+            assertEquals("legacy-note.txt", file.getOriginalName());
+            assertEquals("txt", file.getExtension());
+            assertEquals("text/plain", file.getMimeType());
+            assertEquals((long) decodedFile.length, file.getSizeBytes());
+            assertEquals(sha256(decodedFile), file.getChecksumSha256());
+            assertEquals("MIGRATION", file.getSourceType());
+            assertEquals(source.getOfficeName() + ":tbl_files:" + legacyFileId, file.getSourceReference());
+
+            try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
+                assertArrayEquals(decodedFile, input.readAllBytes());
+            }
         }
+    }
 
-        assertEquals(1, summary.done());
-        assertEquals(0, summary.failed());
-
-        LegacyMigrationItem sideItem = itemRepository.findByKindAndSourceKey(
-                LegacyMigrationItem.Kind.PROJECT,
-                "SIDE-" + legacySideId
-        ).orElseThrow();
-
-        LegacyMigrationItem projectItem = itemRepository.findByKindAndSourceKey(
-                LegacyMigrationItem.Kind.PROJECT,
-                "PROJECT-" + legacyProjectId
-        ).orElseThrow();
-
-        LegacyMigrationItem fileItem = itemRepository.findByKindAndSourceKey(
-                LegacyMigrationItem.Kind.FILE,
-                "FILE-" + legacyFileId
-        ).orElseThrow();
-
-        assertEquals(LegacyMigrationItem.Status.DONE, sideItem.getStatus());
-        assertEquals(LegacyMigrationItem.Status.DONE, projectItem.getStatus());
-        assertEquals(LegacyMigrationItem.Status.DONE, fileItem.getStatus());
-
-        Project project = projectRepository.findById(projectItem.getTargetId()).orElseThrow();
-        assertEquals(sideItem.getTargetId(), project.getOrganizationId());
-        assertEquals("Legacy Project " + legacyProjectId, project.getName());
-        assertEquals("LEG-" + legacyProjectId, project.getProjectNumber());
-        assertEquals("CODE-" + legacyProjectId, project.getProjectCode());
-        assertEquals(2024, project.getYear());
-        assertEquals("Legacy Administrator", project.getExecutingEntity());
-        assertEquals("Legacy project details", project.getDescription());
-        assertEquals("Legacy project note", project.getNotes());
-        assertEquals(Project.ProjectStatus.ARCHIVED, project.getStatus());
-        assertEquals(Project.SourceType.MIGRATION, project.getSourceType());
-        assertEquals("ARC2:tbl_project:" + legacyProjectId, project.getSourceReference());
-
-        var file = fileRepository.findById(fileItem.getTargetId()).orElseThrow();
-        assertEquals(project.getId(), file.getProjectId());
-        assertEquals("legacy-note.txt", file.getOriginalName());
-        assertEquals("txt", file.getExtension());
-        assertEquals("text/plain", file.getMimeType());
-        assertEquals((long) decodedFile.length, file.getSizeBytes());
-        assertEquals(sha256(decodedFile), file.getChecksumSha256());
-        assertEquals("MIGRATION", file.getSourceType());
-        assertEquals("ARC2:tbl_files:" + legacyFileId, file.getSourceReference());
-
-        try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
-            assertArrayEquals(decodedFile, input.readAllBytes());
-        }
+    /**
+     * A source with its own office and no stored connection, so the run falls back to the
+     * environment-configured legacy datasource the same way a real single-database setup does.
+     */
+    private MigrationSource source() {
+        String office = "E2E-" + Math.abs(UUID.randomUUID().hashCode() % 1_000_000);
+        MigrationSource source = new MigrationSource();
+        source.setName(office);
+        source.setSourceType("LEGACY_DB");
+        source.setDatabaseName(office);
+        source.setOfficeName(office);
+        source.setDescription("Legacy migration end-to-end test source");
+        return sourceRepository.save(source);
     }
 
     private void ensureLegacyTables() {

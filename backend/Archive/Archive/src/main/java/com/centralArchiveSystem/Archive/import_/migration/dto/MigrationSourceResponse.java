@@ -12,6 +12,10 @@ public record MigrationSourceResponse(
     @Schema(description = "Type of source") String sourceType,
     @Schema(description = "Database name") String databaseName,
     @Schema(description = "Office name") String officeName,
+    @Schema(description = "Legacy database host") String host,
+    @Schema(description = "Legacy database port") Integer port,
+    @Schema(description = "Legacy database user") String username,
+    @Schema(description = "True when this source carries its own connection instead of the environment default") Boolean hasStoredConnection,
     @Schema(description = "Description") String description,
     @Schema(description = "Number of migration batches") Long batchesCount,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt

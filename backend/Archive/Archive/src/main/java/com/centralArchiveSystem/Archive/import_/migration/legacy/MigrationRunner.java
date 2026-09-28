@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.import_.migration.MigrationBatchReposito
 import com.centralArchiveSystem.Archive.import_.migration.MigrationBatch;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
+import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,10 +32,9 @@ public class MigrationRunner {
     private final LegacyMigrationService legacyMigrationService;
     private final MigrationBatchRepository batchRepository;
     private final MigrationSourceRepository sourceRepository;
+    private final LegacyMigrationItemRepository itemRepository;
+    private final MigrationSettingsService migrationSettingsService;
     private final AtomicBoolean running = new AtomicBoolean(false);
-
-    @Value("${legacy.migration.enabled:false}")
-    private boolean enabled;
 
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
@@ -44,10 +44,14 @@ public class MigrationRunner {
 
     public MigrationRunner(LegacyMigrationService legacyMigrationService,
                            MigrationBatchRepository batchRepository,
-                           MigrationSourceRepository sourceRepository) {
+                           MigrationSourceRepository sourceRepository,
+                           LegacyMigrationItemRepository itemRepository,
+                           MigrationSettingsService migrationSettingsService) {
         this.legacyMigrationService = legacyMigrationService;
         this.batchRepository = batchRepository;
         this.sourceRepository = sourceRepository;
+        this.itemRepository = itemRepository;
+        this.migrationSettingsService = migrationSettingsService;
     }
 
     /**
@@ -56,7 +60,7 @@ public class MigrationRunner {
      */
     @Scheduled(fixedDelayString = "60000")
     public void scheduledTick() {
-        if (!enabled || !scheduleEnabled) {
+        if (!scheduleEnabled || !migrationSettingsService.isMigrationEnabled()) {
             return;
         }
         runOnce();
@@ -92,23 +96,39 @@ public class MigrationRunner {
 
             log.info("Legacy migration started, batch={}", batch.getId());
 
-            try {
-                int refs = legacyMigrationService.migrateReferences();
-                int projects = legacyMigrationService.migrateProjects();
+            // Each batch reads exactly one organisation's database, so the connection is opened
+            // per batch from the source record and closed when the batch finishes.
+            MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Migration source not found: " + batch.getMigrationSourceId()));
+
+            try (LegacyMigrationService.LegacyConnection connection =
+                         legacyMigrationService.openConnection(source)) {
+                int refs = legacyMigrationService.migrateReferences(connection);
+                int projects = legacyMigrationService.migrateProjects(connection);
                 LegacyMigrationService.LegacyFileSummary files =
-                        legacyMigrationService.migrateFilesAsync(4).get();
+                        legacyMigrationService.migrateFilesAsync(connection, 4).get();
 
                 long doneFiles = files.done();
                 long failedFiles = files.failed();
 
+                // A project that violates a unique constraint is tracked as FAILED rather than
+                // skipped, so the batch must not be reported as SUCCESS while rows are missing.
+                long failedItems = itemRepository.countByMigrationSourceIdAndStatus(
+                        source.getId(), LegacyMigrationItem.Status.FAILED);
+                long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
+                        source.getId(), LegacyMigrationItem.Status.SKIPPED);
+
                 batch.setProjectsCount(projects);
                 batch.setFilesCount((int) doneFiles);
-                batch.setStatus(failedFiles > 0
+                batch.setStatus(failedFiles > 0 || failedItems > 0
                         ? MigrationBatch.Status.PARTIAL
                         : MigrationBatch.Status.SUCCESS);
-                batch.setNotes("references=" + refs + ", projects=" + projects
+                batch.setNotes("office=" + connection.office()
+                        + ", references=" + refs + ", projects=" + projects
                         + ", files done=" + doneFiles + ", failed=" + failedFiles
-                        + ", skipped=" + files.skipped());
+                        + ", skipped=" + files.skipped()
+                        + ", failed rows=" + failedItems + ", skipped rows=" + skippedItems);
             } catch (Exception e) {
                 log.error("Legacy migration failed, batch={}", batchId, e);
                 batch.setStatus(MigrationBatch.Status.FAILED);
@@ -124,9 +144,10 @@ public class MigrationRunner {
     }
 
     private void ensureEnabled() {
-        if (!enabled) {
+        if (!migrationSettingsService.isMigrationEnabled()) {
             throw new IllegalStateException(
-                    "Legacy migration is disabled. Enable it only during a controlled migration window");
+                    "Legacy migration is disabled. Enable it from the migration settings screen, "
+                            + "or set LEGACY_MIGRATION_ENABLED=true, only during a controlled migration window");
         }
     }
 

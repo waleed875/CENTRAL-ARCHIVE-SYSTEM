@@ -13,5 +13,7 @@ public interface MigrationSourceRepository extends JpaRepository<MigrationSource
 
     List<MigrationSource> findByOfficeName(String officeName);
 
+    boolean existsByOfficeName(String officeName);
+
     List<MigrationSource> findByNameContainingIgnoreCase(String name);
 }

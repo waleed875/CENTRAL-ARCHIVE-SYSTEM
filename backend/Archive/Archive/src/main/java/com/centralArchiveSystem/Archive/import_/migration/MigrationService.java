@@ -1,16 +1,19 @@
 package com.centralArchiveSystem.Archive.import_.migration;
 
 import com.centralArchiveSystem.Archive.import_.migration.dto.*;
+import com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItemRepository;
 import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationRunner;
+import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSettingsService;
+import com.centralArchiveSystem.Archive.import_.migration.setting.SettingsCrypto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,19 +26,22 @@ public class MigrationService {
     private final MigrationSourceRepository sourceRepository;
     private final MigrationBatchRepository batchRepository;
     private final MigrationExecutionService migrationExecutionService;
-    private final String configuredLegacyJdbcUrl;
-    private final boolean legacyMigrationEnabled;
+    private final MigrationSettingsService migrationSettingsService;
+    private final SettingsCrypto settingsCrypto;
+    private final LegacyMigrationItemRepository itemRepository;
 
     public MigrationService(MigrationSourceRepository sourceRepository,
                             MigrationBatchRepository batchRepository,
                             MigrationExecutionService migrationExecutionService,
-                            @Value("${legacy.datasource.url}") String configuredLegacyJdbcUrl,
-                            @Value("${legacy.migration.enabled:false}") boolean legacyMigrationEnabled) {
+                            MigrationSettingsService migrationSettingsService,
+                            SettingsCrypto settingsCrypto,
+                            LegacyMigrationItemRepository itemRepository) {
         this.sourceRepository = sourceRepository;
         this.batchRepository = batchRepository;
         this.migrationExecutionService = migrationExecutionService;
-        this.configuredLegacyJdbcUrl = configuredLegacyJdbcUrl;
-        this.legacyMigrationEnabled = legacyMigrationEnabled;
+        this.migrationSettingsService = migrationSettingsService;
+        this.settingsCrypto = settingsCrypto;
+        this.itemRepository = itemRepository;
     }
 
     @Transactional(readOnly = true)
@@ -57,10 +63,16 @@ public class MigrationService {
         source.setName(request.name());
         source.setSourceType(request.sourceType());
         source.setDatabaseName(request.databaseName());
-        source.setOfficeName(request.officeName());
+        source.setOfficeName(request.officeName().trim());
         source.setDescription(request.description());
+        if (sourceRepository.existsByOfficeName(source.getOfficeName())) {
+            throw new IllegalArgumentException(
+                    "A migration source for office '" + source.getOfficeName() + "' already exists");
+        }
+        applyConnection(source, request.host(), request.port(), request.username(), request.password());
+        requireCompleteConnection(source);
         MigrationSource saved = sourceRepository.save(source);
-        log.info("Created migration source: {}", saved.getId());
+        log.info("Created migration source: {} for office {}", saved.getId(), saved.getOfficeName());
         return toSourceResponse(saved);
     }
 
@@ -70,11 +82,88 @@ public class MigrationService {
         if (request.name() != null) source.setName(request.name());
         if (request.sourceType() != null) source.setSourceType(request.sourceType());
         if (request.databaseName() != null) source.setDatabaseName(request.databaseName());
-        if (request.officeName() != null) source.setOfficeName(request.officeName());
         if (request.description() != null) source.setDescription(request.description());
+
+        if (request.officeName() != null && !request.officeName().isBlank()
+                && !request.officeName().trim().equals(source.getOfficeName())) {
+            // Renaming the office rewrites the identity of everything already migrated under it.
+            // A source that has migrated nothing can still be corrected, otherwise a source created
+            // with a placeholder office name could never be fixed.
+            long migrated = itemRepository.countByMigrationSourceId(id);
+            if (migrated > 0) {
+                throw new IllegalArgumentException(
+                        "The office cannot be changed once " + migrated + " rows have been migrated from "
+                                + "this source. It is part of every migrated project reference, so changing it "
+                                + "would orphan them. Create a new source for the other office instead.");
+            }
+            source.setOfficeName(request.officeName().trim());
+        }
+
+        // A blank password keeps the stored one so an editor can fix the host without retyping it.
+        boolean connectionTouched = request.host() != null
+                || request.port() != null
+                || request.username() != null
+                || (request.password() != null && !request.password().isBlank());
+        if (connectionTouched) {
+            applyConnection(
+                    source,
+                    request.host() != null ? request.host() : source.getHost(),
+                    request.port() != null ? request.port() : source.getPort(),
+                    request.username() != null ? request.username() : source.getUsername(),
+                    request.password());
+            requireCompleteConnection(source);
+        }
+
         MigrationSource saved = sourceRepository.save(source);
         log.info("Updated migration source: {}", saved.getId());
         return toSourceResponse(saved);
+    }
+
+    /**
+     * Stores the per-office connection. The password is encrypted before it reaches the database,
+     * and a blank password never overwrites an existing one.
+     */
+    private void applyConnection(MigrationSource source, String host, Integer port, String username, String password) {
+        if (host != null) source.setHost(host.isBlank() ? null : host.trim());
+        if (port != null) source.setPort(port);
+        if (username != null) source.setUsername(username.isBlank() ? null : username.trim());
+        if (password != null && !password.isBlank()) {
+            source.setPasswordEncrypted(settingsCrypto.encrypt(password));
+        }
+    }
+
+    /**
+     * A half-filled connection is rejected instead of being stored. {@code hasStoredConnection()} only
+     * looks at host, database and password, so a source with a host but no username would be treated
+     * as configured and would build an unusable JDBC URL at migration time, far from the form that
+     * caused it. Either every field is present, or the source keeps using the environment default.
+     */
+    private void requireCompleteConnection(MigrationSource source) {
+        boolean anyPresent = isPresent(source.getHost())
+                || source.getPort() != null
+                || isPresent(source.getUsername())
+                || isPresent(source.getPasswordEncrypted());
+        if (!anyPresent) {
+            return;
+        }
+
+        List<String> missing = new ArrayList<>();
+        if (!isPresent(source.getHost())) missing.add("host");
+        if (source.getPort() == null) missing.add("port");
+        if (!isPresent(source.getDatabaseName())) missing.add("databaseName");
+        if (!isPresent(source.getUsername())) missing.add("username");
+        if (!isPresent(source.getPasswordEncrypted())) missing.add("password");
+
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "The connection for office '" + source.getOfficeName() + "' is incomplete, missing: "
+                            + String.join(", ", missing) + ". Enter all connection fields for this source, "
+                            + "or clear the host to keep using the default legacy.datasource.url connection.");
+        }
+    }
+
+    private static boolean isPresent(String value) {
+        return value != null && !value.isBlank();
     }
 
     public void deleteSource(UUID id) {
@@ -202,9 +291,10 @@ public class MigrationService {
     private void validateSupportedRunConfiguration(
             MigrationBatch batch,
             MigrationRunRequest runRequest) {
-        if (!legacyMigrationEnabled) {
+        if (!migrationSettingsService.isMigrationEnabled()) {
             throw new IllegalStateException(
-                    "Legacy migration is disabled. Set LEGACY_MIGRATION_ENABLED=true only during a controlled migration window");
+                    "Legacy migration is disabled. Enable it from the migration settings screen, "
+                            + "or set LEGACY_MIGRATION_ENABLED=true, only during a controlled migration window");
         }
 
         MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
@@ -213,9 +303,29 @@ public class MigrationService {
 
         MigrationRunRequest.MigrationConfig config = runRequest.migration_config();
 
-        if (!configuredLegacyJdbcUrl.equals(config.connection_string())) {
+        // The connection comes from the source record, so each organisation is read from its own
+        // database. A source with no stored connection still falls back to the environment default,
+        // which keeps a single-database setup working without extra configuration.
+        String office = source.getOfficeName();
+        if (office == null || office.isBlank()) {
+            throw new IllegalStateException(
+                    "Migration source " + source.getId() + " has no office name. It is required because it "
+                            + "scopes every migrated id, otherwise two offices would collide on the same "
+                            + "legacy project numbers.");
+        }
+
+        if (source.hasStoredConnection() && source.getPort() == null) {
+            throw new IllegalStateException(
+                    "Migration source " + source.getId() + " stores a host but no port. Set the port on the source.");
+        }
+
+        if (config.connection_string() != null && !config.connection_string().isBlank()) {
+            // Rejected rather than ignored, so nobody believes a URL typed into the run dialog is
+            // being used. The connection belongs to the source record, which is encrypted at rest.
             throw new IllegalArgumentException(
-                    "Dynamic migration connections are not enabled. Use the configured legacy staging datasource");
+                    "A connection string cannot be supplied when running a batch. The connection is read "
+                            + "from migration source " + source.getId() + " (office " + office + "). "
+                            + "Configure host, port, database and credentials on the source instead.");
         }
 
         if (config.file_path() != null && !config.file_path().isBlank()) {
@@ -274,6 +384,10 @@ public class MigrationService {
                 entity.getSourceType(),
                 entity.getDatabaseName(),
                 entity.getOfficeName(),
+                entity.getHost(),
+                entity.getPort(),
+                entity.getUsername(),
+                entity.hasStoredConnection(),
                 entity.getDescription(),
                 batchRepository.countByMigrationSourceId(entity.getId()),
                 entity.getCreatedAt()

@@ -28,8 +28,28 @@ public class MigrationSource {
     @Column(name = "database_name")
     private String databaseName;
 
-    @Column(name = "office_name")
+    @Column(name = "office_name", nullable = false)
     private String officeName;
+
+    @Column(name = "host")
+    private String host;
+
+    @Column(name = "port")
+    private Integer port;
+
+    @Column(name = "username")
+    private String username;
+
+    @Column(name = "password_encrypted")
+    private String passwordEncrypted;
+
+    /**
+     * Write-only plaintext password accepted by the settings endpoints. It is encrypted into
+     * {@link #passwordEncrypted} on the way in and never populated when reading, so a response
+     * can never echo the stored secret back to a client.
+     */
+    @Transient
+    private String password;
 
     @Column(columnDefinition = "text")
     private String description;
@@ -64,6 +84,29 @@ public class MigrationSource {
 
     public String getOfficeName() { return officeName; }
     public void setOfficeName(String officeName) { this.officeName = officeName; }
+
+    public String getHost() { return host; }
+    public void setHost(String host) { this.host = host; }
+
+    public Integer getPort() { return port; }
+    public void setPort(Integer port) { this.port = port; }
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    public String getPasswordEncrypted() { return passwordEncrypted; }
+    public void setPasswordEncrypted(String passwordEncrypted) { this.passwordEncrypted = passwordEncrypted; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    /** True when this source carries its own connection instead of deferring to the environment. */
+    @Transient
+    public boolean hasStoredConnection() {
+        return host != null && !host.isBlank()
+                && databaseName != null && !databaseName.isBlank()
+                && passwordEncrypted != null && !passwordEncrypted.isBlank();
+    }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

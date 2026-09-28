@@ -11,11 +11,15 @@ import java.util.UUID;
  * Tracks a single legacy item (a project or a file) as it is migrated from the
  * legacy staging database into the new system. Enables resumability: on restart
  * we continue from PENDING/RUNNING items instead of re-migrating everything.
+ *
+ * <p>{@code sourceKey} is only unique within a migration source. The legacy system runs once per
+ * organisation and every organisation numbers its rows from the same small sequence, so
+ * {@code PROJECT-23} exists in many organisations and the source is what keeps them apart.
  */
 @Entity
 @Table(name = "legacy_migration_items", schema = "import",
-        uniqueConstraints = @UniqueConstraint(name = "uk_legacy_item_kind_source",
-                columnNames = {"kind", "source_key"}))
+        uniqueConstraints = @UniqueConstraint(name = "uk_legacy_item_source_kind_source",
+                columnNames = {"migration_source_id", "kind", "source_key"}))
 @Schema(name = "import.legacy_migration_items")
 public class LegacyMigrationItem {
 
@@ -35,6 +39,9 @@ public class LegacyMigrationItem {
 
     @Column(name = "source_key", nullable = false, length = 255)
     private String sourceKey;
+
+    @Column(name = "migration_source_id", nullable = false, columnDefinition = "uuid")
+    private UUID migrationSourceId;
 
     @Column(name = "source_id")
     private Long sourceId;
@@ -71,6 +78,9 @@ public class LegacyMigrationItem {
 
     public String getSourceKey() { return sourceKey; }
     public void setSourceKey(String sourceKey) { this.sourceKey = sourceKey; }
+
+    public UUID getMigrationSourceId() { return migrationSourceId; }
+    public void setMigrationSourceId(UUID migrationSourceId) { this.migrationSourceId = migrationSourceId; }
 
     public Long getSourceId() { return sourceId; }
     public void setSourceId(Long sourceId) { this.sourceId = sourceId; }

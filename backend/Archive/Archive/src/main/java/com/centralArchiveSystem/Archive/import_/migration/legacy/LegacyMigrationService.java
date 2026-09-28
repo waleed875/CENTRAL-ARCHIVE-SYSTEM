@@ -1,6 +1,9 @@
 package com.centralArchiveSystem.Archive.import_.migration.legacy;
 
 import com.centralArchiveSystem.Archive.config.MinioConfig;
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
+import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSettingsService;
+import com.centralArchiveSystem.Archive.import_.migration.setting.SettingsCrypto;
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevel;
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
@@ -32,6 +35,8 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Year;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -42,16 +47,19 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Migrates data from the legacy staging database (restored from the 600GB
- * pg_dump backup) into the new archive system.
+ * Migrates data from a legacy office database into the new archive system.
+ *
+ * <p>The legacy system is installed once per organisation and each installation owns its own
+ * database, all sharing the same ERD. A run is therefore always bound to a single
+ * {@link LegacyConnection}, which carries that source's identity into every row it produces.
  *
  * Phases (run in order):
  *   1. references  -> tbl_side            -> core.organizations
  *   2. projects    -> tbl_project         -> project.projects
  *   3. files       -> tbl_files           -> MinIO + project.files
  *
- * Every item is tracked in import.legacy_migration_items so the process is
- * resumable: on restart we continue from PENDING/RUNNING items.
+ * Every item is tracked in import.legacy_migration_items, scoped by source, so the process is
+ * resumable and two organisations never shadow each other.
  */
 @Service
 public class LegacyMigrationService {
@@ -62,7 +70,7 @@ public class LegacyMigrationService {
     private static final String LEGACY_CATEGORY_CODE = "LEGACY";
     private static final String LEGACY_TYPE_CODE = "LEGACY-FILE";
 
-    private final JdbcTemplate legacyJdbc;
+    private final Environment env;
     private final MinioService minioService;
     private final MinioConfig minioConfig;
     private final OrganizationRepository organizationRepository;
@@ -73,8 +81,18 @@ public class LegacyMigrationService {
     private final ConfidentialityLevelRepository confidentialityLevelRepository;
     private final LegacyMigrationItemRepository itemRepository;
     private final TransactionTemplate transactionTemplate;
+    private final SettingsCrypto settingsCrypto;
 
-    @Value("${legacy.migration.default-year:2000}")
+    /**
+     * Sentinel stored when the legacy row has no usable year. 1000 is below the 1900 floor that
+     * {@link #parseYearSanitized} accepts, so a real year can never collide with it and the
+     * incomplete-data report can treat it as "year still missing".
+     */
+    public static final int UNKNOWN_YEAR = 1000;
+
+    private static final int MIN_PLAUSIBLE_YEAR = 1900;
+
+    @Value("${legacy.migration.default-year:1000}")
     private int defaultYear;
 
     @Value("${legacy.migration.batch-size:200}")
@@ -83,8 +101,7 @@ public class LegacyMigrationService {
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
 
-    @Value("${legacy.migration.default-confidentiality-code:}")
-    private String defaultConfidentialityCode;
+    private final MigrationSettingsService migrationSettingsService;
 
     public LegacyMigrationService(
             Environment env,
@@ -97,8 +114,10 @@ public class LegacyMigrationService {
             FileTypeRepository fileTypeRepository,
             ConfidentialityLevelRepository confidentialityLevelRepository,
             LegacyMigrationItemRepository itemRepository,
+            MigrationSettingsService migrationSettingsService,
+            SettingsCrypto settingsCrypto,
             PlatformTransactionManager transactionManager) {
-        this.legacyJdbc = buildLegacyJdbc(env);
+        this.env = env;
         this.minioService = minioService;
         this.minioConfig = minioConfig;
         this.organizationRepository = organizationRepository;
@@ -108,34 +127,111 @@ public class LegacyMigrationService {
         this.fileTypeRepository = fileTypeRepository;
         this.confidentialityLevelRepository = confidentialityLevelRepository;
         this.itemRepository = itemRepository;
+        this.migrationSettingsService = migrationSettingsService;
+        this.settingsCrypto = settingsCrypto;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
-     * Builds the isolated JdbcTemplate for the legacy staging database. This is
-     * intentionally NOT a Spring bean so it never interferes with the app's
-     * primary DataSource or Spring Data JDBC/JPA auto-configuration.
+     * Everything a single migration run needs to read one organisation's database.
+     *
+     * <p>The legacy system is installed once per organisation and each installation owns a separate
+     * database, so a run is always bound to exactly one source. Legacy primary keys restart from a
+     * low number in every database, which means {@code idproject = 23} exists in many of them. The
+     * source id and office are therefore part of every identity this run produces, otherwise the
+     * second organisation migrated would be discarded as "already migrated".
      */
-    private JdbcTemplate buildLegacyJdbc(Environment env) {
+    public static final class LegacyConnection implements AutoCloseable {
+        private final UUID sourceId;
+        private final String office;
+        private final String referencePrefix;
+        private final JdbcTemplate jdbc;
+        private final HikariDataSource dataSource;
+
+        LegacyConnection(UUID sourceId,
+                         String office,
+                         String referencePrefix,
+                         JdbcTemplate jdbc,
+                         HikariDataSource dataSource) {
+            this.sourceId = sourceId;
+            this.office = office;
+            this.referencePrefix = referencePrefix;
+            this.jdbc = jdbc;
+            this.dataSource = dataSource;
+        }
+
+        UUID sourceId() { return sourceId; }
+        String office() { return office; }
+        JdbcTemplate jdbc() { return jdbc; }
+        String projectReference(int legacyId) { return referencePrefix + ":tbl_project:" + legacyId; }
+        String fileReference(int legacyId) { return referencePrefix + ":tbl_files:" + legacyId; }
+
+        @Override
+        public void close() {
+            if (dataSource != null && !dataSource.isClosed()) {
+                dataSource.close();
+            }
+        }
+    }
+
+    /**
+     * Opens a read-only pool for the given source. The pool is intentionally NOT a Spring bean so
+     * it never interferes with the app's primary DataSource or the JPA auto-configuration, and it is
+     * closed by the caller when the batch finishes.
+     *
+     * <p>A source without a stored connection falls back to the environment-configured datasource,
+     * which keeps a single-database installation working with no extra configuration.
+     */
+    public LegacyConnection openConnection(MigrationSource source) {
+        String office = source.getOfficeName();
+        if (office == null || office.isBlank()) {
+            throw new IllegalStateException(
+                    "Migration source " + source.getId() + " has no office name, so its rows cannot be "
+                            + "distinguished from another organisation's. Set an office name on the source.");
+        }
+
+        String jdbcUrl;
+        String username;
+        String password;
+
+        if (source.hasStoredConnection()) {
+            String host = source.getHost();
+            String database = source.getDatabaseName();
+            jdbcUrl = "jdbc:postgresql://" + host + ":" + source.getPort() + "/" + database;
+            username = source.getUsername();
+            password = settingsCrypto.decrypt(source.getPasswordEncrypted());
+        } else {
+            jdbcUrl = env.getProperty("legacy.datasource.url");
+            username = env.getProperty("legacy.datasource.username");
+            password = env.getProperty("legacy.datasource.password");
+        }
+
         HikariDataSource ds = new HikariDataSource();
-        ds.setPoolName("legacy-staging-pool");
-        ds.setJdbcUrl(env.getProperty("legacy.datasource.url"));
-        ds.setUsername(env.getProperty("legacy.datasource.username"));
-        ds.setPassword(env.getProperty("legacy.datasource.password"));
+        ds.setPoolName("legacy-pool-" + office);
+        ds.setJdbcUrl(jdbcUrl);
+        ds.setUsername(username);
+        ds.setPassword(password);
         ds.setDriverClassName(env.getProperty("legacy.datasource.driver-class-name"));
         ds.setInitializationFailTimeout(-1);
         ds.setReadOnly(true);
         ds.setAutoCommit(false);
         ds.setMaximumPoolSize(8);
-        return new JdbcTemplate(ds);
+
+        // A dedicated schema prefix is not configurable because every legacy database shares the
+        // same ERD, but the reference prefix is the office, so a migrated row can always be traced
+        // back to the organisation it came from even if two offices share a database name.
+        String referencePrefix = office;
+
+        return new LegacyConnection(
+                source.getId(), office, referencePrefix, new JdbcTemplate(ds), ds);
     }
 
     // ------------------------------------------------------------------
     // Phase 1: tbl_side -> core.organizations
     // ------------------------------------------------------------------
     @Transactional
-    public int migrateReferences() {
-        List<Map<String, Object>> rows = legacyJdbc.queryForList(
+    public int migrateReferences(LegacyConnection connection) {
+        List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idside, name, status FROM " + LEGACY_DB_SCHEMA + ".tbl_side ORDER BY idside");
 
         int created = 0;
@@ -143,26 +239,40 @@ public class LegacyMigrationService {
             int oldId = ((Number) row.get("idside")).intValue();
             String name = (String) row.get("name");
             Boolean active = row.get("status") == null || Boolean.TRUE.equals(row.get("status"));
-            String sourceKey = "SIDE-" + oldId;
 
-            if (itemRepository.existsByKindAndSourceKey(LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
-                // guard: use a distinct key namespace to avoid collision with projects; see below
+            // Scoped by office: two organisations both have tbl_side id 1, and they must become two
+            // distinct organizations rather than one winning and the other being skipped.
+            String code = orgCode(connection, oldId);
+            String sourceKey = "SIDE-" + oldId;
+            if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
+                    connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
+                continue;
             }
-            if (organizationRepository.existsByCode(orgCode(oldId))) {
+
+            // The organization can already exist from an earlier run whose tracking row was lost.
+            // Re-link it instead of leaving a gap, otherwise the project phase would build a second
+            // fallback organization for the same tbl_side id.
+            UUID existingOrg = organizationRepository.findByCode(code).map(Organization::getId).orElse(null);
+            if (existingOrg != null) {
+                itemRepository.save(trackingItem(
+                        connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, existingOrg));
                 continue;
             }
 
             Organization org = new Organization();
             org.setName(name);
-            org.setCode(orgCode(oldId));
+            org.setCode(code);
             org.setType(Organization.OrganizationType.FACTORY);
-            org.setDescription("Migrated from legacy system (ARC2), tbl_side id=" + oldId);
+            org.setDescription("Migrated from legacy system (" + connection.office()
+                    + "), tbl_side id=" + oldId);
             org.setIsActive(active);
             Organization saved = organizationRepository.save(org);
-            itemRepository.save(trackingItem(LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, saved.getId()));
+            itemRepository.save(trackingItem(
+                    connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, saved.getId()));
             created++;
         }
-        log.info("Legacy references migrated: {} organizations created", created);
+        log.info("Legacy references migrated for office {}: {} organizations created",
+                connection.office(), created);
         return created;
     }
 
@@ -170,21 +280,24 @@ public class LegacyMigrationService {
     // Phase 2: tbl_project -> project.projects
     // ------------------------------------------------------------------
     @Transactional
-    public int migrateProjects() throws Exception {
-        List<Map<String, Object>> rows = legacyJdbc.queryForList(
+    public int migrateProjects(LegacyConnection connection) throws Exception {
+        List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idproject, idside, name, number, code, year, admin, detils, note FROM "
                         + LEGACY_DB_SCHEMA + ".tbl_project ORDER BY idproject");
 
         int created = 0;
+        List<String> conflicts = new java.util.ArrayList<>();
         for (Map<String, Object> row : rows) {
             int oldId = ((Number) row.get("idproject")).intValue();
             String sourceKey = "PROJECT-" + oldId;
-            if (itemRepository.existsByKindAndSourceKey(LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
+            // Scoped by source: the same key legitimately exists in every organisation's database.
+            if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
+                    connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
                 continue;
             }
 
             int sideId = row.get("idside") == null ? 0 : ((Number) row.get("idside")).intValue();
-            UUID organizationId = resolveOrganizationId(sideId);
+            UUID organizationId = resolveOrganizationId(connection, sideId);
 
             String rawName = (String) row.get("name");
             String name = (rawName == null || rawName.isBlank()) ? "LEGACY " + oldId : rawName;
@@ -198,7 +311,11 @@ public class LegacyMigrationService {
             String originalYear = String.valueOf(row.get("year"));
 
             Project project = new Project();
-            project.setProjectUid(UUID.nameUUIDFromBytes(("LEGACY-" + oldId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            // The office is part of the seed so project 23 in two organisations gets two distinct
+            // UUIDs. Without it the (project_uid, version_no) unique constraint would reject the
+            // second one and it would be logged as "already migrated" instead of failing loudly.
+            project.setProjectUid(UUID.nameUUIDFromBytes(
+                    (connection.office() + "-PROJECT-" + oldId).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
             project.setVersionNo(1);
             project.setIsLatestVersion(true);
             project.setOrganizationId(organizationId);
@@ -209,47 +326,74 @@ public class LegacyMigrationService {
             project.setExecutingEntity(admin);
             project.setDescription(desc);
             project.setNotes(buildNotes(note, originalYear, year));
+            project.setMissingFields(describeMissingFields(row, oldId, year));
             project.setStatus(Project.ProjectStatus.ARCHIVED);
             project.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
             project.setSourceType(Project.SourceType.MIGRATION);
-            project.setSourceReference("ARC2:tbl_project:" + oldId);
+            project.setSourceReference(connection.projectReference(oldId));
+
+            // The conflict is detected before the insert. Letting the database raise it instead would
+            // abort the surrounding transaction and roll back every project that had already migrated
+            // cleanly in this batch, turning one bad row into a whole-batch loss.
+            if (projectRepository.existsByOrganizationIdAndProjectNumberAndYearAndVersionNo(
+                    organizationId, project.getProjectNumber(), year, project.getVersionNo())) {
+                recordConflict(connection, sourceKey, oldId, conflicts,
+                        "Another project in organization " + organizationId + " already uses number '"
+                                + project.getProjectNumber() + "' for year " + year
+                                + ". The legacy database holds more than one project with this number "
+                                + "under the same side, which the central archive treats as one project.");
+                continue;
+            }
 
             try {
-                Project saved = projectRepository.save(project);
-                itemRepository.save(trackingItem(LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, saved.getId()));
+                // saveAndFlush, not save: JPA would otherwise report the constraint violation at
+                // transaction commit, long after this catch block.
+                Project saved = projectRepository.saveAndFlush(project);
+                itemRepository.save(trackingItem(
+                        connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, saved.getId()));
                 created++;
             } catch (DuplicateKeyException dke) {
-                log.warn("Project {} already migrated, skipping", oldId);
+                log.error("Project {} from office {} still violated a unique constraint: {}",
+                        oldId, connection.office(), dke.getMostSpecificCause().getMessage());
+                throw new IllegalStateException(
+                        "Project " + oldId + " of office " + connection.office()
+                                + " violated a unique constraint even though the conflict was checked"
+                                + " first. The legacy row is: " + dke.getMostSpecificCause().getMessage(), dke);
             }
         }
-        log.info("Legacy projects migrated: {} projects created", created);
+        if (!conflicts.isEmpty()) {
+            log.warn("Legacy projects for office {} had {} unique-constraint conflicts: {}",
+                    connection.office(), conflicts.size(), conflicts);
+        }
+        log.info("Legacy projects migrated for office {}: {} projects created, {} conflicts",
+                connection.office(), created, conflicts.size());
         return created;
     }
 
     // ------------------------------------------------------------------
     // Phase 3: tbl_files -> MinIO + project.files (parallel, resumable)
     // ------------------------------------------------------------------
-    public CompletableFuture<LegacyFileSummary> migrateFilesAsync(int workers) {
+    public CompletableFuture<LegacyFileSummary> migrateFilesAsync(LegacyConnection connection, int workers) {
         return CompletableFuture.supplyAsync(() -> {
             ExecutorService pool = null;
             try {
                 int parallel = Math.max(1, Math.min(workers <= 0 ? 4 : workers, 8));
                 pool = Executors.newFixedThreadPool(parallel);
-                return migrateFiles(pool);
+                return migrateFiles(connection, pool);
             } finally {
                 if (pool != null) pool.shutdown();
             }
         });
     }
 
-    public LegacyFileSummary migrateFiles(ExecutorService pool) {
+    public LegacyFileSummary migrateFiles(LegacyConnection connection, ExecutorService pool) {
         LegacyFileSummary summary = new LegacyFileSummary();
 
         UUID defaultCategoryId = resolveDefaultCategoryId();
         UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
         UUID defaultConfidentialityId = resolveDefaultConfidentialityId();
 
-        List<Map<String, Object>> projects = legacyJdbc.queryForList(
+        List<Map<String, Object>> projects = connection.jdbc().queryForList(
                 "SELECT idproject FROM " + LEGACY_DB_SCHEMA + ".tbl_project");
 
         java.util.List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
@@ -257,6 +401,7 @@ public class LegacyMigrationService {
             int legacyProjectId = ((Number) projectRow.get("idproject")).intValue();
             CompletableFuture<Void> future = CompletableFuture.runAsync(
                     () -> migrateFilesForProject(
+                            connection,
                             legacyProjectId,
                             summary,
                             defaultCategoryId,
@@ -274,7 +419,8 @@ public class LegacyMigrationService {
             log.error("Parallel file migration failed", e);
         }
         log.info(
-                "Legacy files migrated: {} done, {} failed, {} skipped",
+                "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
+                connection.office(),
                 summary.done(),
                 summary.failed(),
                 summary.skipped()
@@ -282,13 +428,15 @@ public class LegacyMigrationService {
         return summary;
     }
 
-    private void migrateFilesForProject(int legacyProjectId,
+    private void migrateFilesForProject(LegacyConnection connection,
+                                        int legacyProjectId,
                                         LegacyFileSummary summary,
                                         UUID defaultCategoryId,
                                         UUID defaultTypeId,
                                         UUID defaultConfidentialityId) {
         String projectSourceKey = "PROJECT-" + legacyProjectId;
-        UUID targetProjectId = itemRepository.findByKindAndSourceKey(
+        UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        connection.sourceId(),
                         LegacyMigrationItem.Kind.PROJECT,
                         projectSourceKey
                 )
@@ -296,11 +444,12 @@ public class LegacyMigrationService {
                 .orElse(null);
 
         if (targetProjectId == null) {
-            log.warn("No target project for legacy project {}, skipping its files", legacyProjectId);
+            log.warn("No target project for legacy project {} in office {}, skipping its files",
+                    legacyProjectId, connection.office());
             return;
         }
 
-        legacyJdbc.query(
+        connection.jdbc().query(
                 "SELECT idfile, filename, filesuffix, filebinary FROM "
                         + LEGACY_DB_SCHEMA
                         + ".tbl_files WHERE idproject = ? ORDER BY idfile",
@@ -312,7 +461,8 @@ public class LegacyMigrationService {
                     int idfile = resultSet.getInt("idfile");
                     String sourceKey = "FILE-" + idfile;
 
-                    if (itemRepository.existsByKindAndSourceKey(
+                    if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
+                            connection.sourceId(),
                             LegacyMigrationItem.Kind.FILE,
                             sourceKey
                     )) {
@@ -325,18 +475,19 @@ public class LegacyMigrationService {
 
                     InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
                     try {
-                        migrateOneFile(
-                                idfile,
-                                sourceKey,
-                                targetProjectId,
-                                originalName,
-                                suffix,
-                                encodedBase64,
-                                summary,
-                                defaultCategoryId,
-                                defaultTypeId,
-                                defaultConfidentialityId
-                        );
+                            migrateOneFile(
+                                    connection,
+                                    idfile,
+                                    sourceKey,
+                                    targetProjectId,
+                                    originalName,
+                                    suffix,
+                                    encodedBase64,
+                                    summary,
+                                    defaultCategoryId,
+                                    defaultTypeId,
+                                    defaultConfidentialityId
+                            );
                     } finally {
                         if (encodedBase64 != null) {
                             try {
@@ -354,7 +505,8 @@ public class LegacyMigrationService {
         );
     }
 
-    private void migrateOneFile(int idfile,
+    private void migrateOneFile(LegacyConnection connection,
+                                int idfile,
                                 String sourceKey,
                                 UUID targetProjectId,
                                 String originalName,
@@ -365,6 +517,7 @@ public class LegacyMigrationService {
                                 UUID defaultTypeId,
                                 UUID defaultConfidentialityId) {
         LegacyMigrationItem item = trackingItem(
+                connection,
                 LegacyMigrationItem.Kind.FILE,
                 sourceKey,
                 (long) idfile,
@@ -420,7 +573,7 @@ public class LegacyMigrationService {
             file.setChecksumSha256(prepared.checksumSha256());
             file.setStatus("ACTIVE");
             file.setSourceType("MIGRATION");
-            file.setSourceReference("ARC2:tbl_files:" + idfile);
+            file.setSourceReference(connection.fileReference(idfile));
 
             FileEntity saved = transactionTemplate.execute(status -> {
                 FileEntity persisted = fileRepository.save(file);
@@ -595,30 +748,68 @@ public class LegacyMigrationService {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
-    private LegacyMigrationItem trackingItem(LegacyMigrationItem.Kind kind, String sourceKey, Long sourceId, UUID targetId) {
+    private LegacyMigrationItem trackingItem(LegacyConnection connection,
+                                             LegacyMigrationItem.Kind kind,
+                                             String sourceKey,
+                                             Long sourceId,
+                                             UUID targetId) {
         LegacyMigrationItem item = new LegacyMigrationItem();
         item.setKind(kind);
         item.setSourceKey(sourceKey);
+        // Carries the scope of the unique (source, kind, source_key) index.
+        item.setMigrationSourceId(connection.sourceId());
         item.setSourceId(sourceId);
         item.setTargetId(targetId);
         item.setStatus(targetId != null ? LegacyMigrationItem.Status.DONE : LegacyMigrationItem.Status.PENDING);
         return item;
     }
 
-    private UUID resolveOrganizationId(int sideId) {
-        return itemRepository.findByKindAndSourceKey(LegacyMigrationItem.Kind.PROJECT, "SIDE-" + sideId)
+    private void recordConflict(LegacyConnection connection,
+                                String sourceKey,
+                                int oldId,
+                                List<String> conflicts,
+                                String error) {
+        log.warn("Legacy project {} of office {} cannot be migrated: {}", oldId, connection.office(), error);
+        LegacyMigrationItem failed = trackingItem(
+                connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, null);
+        failed.setStatus(LegacyMigrationItem.Status.FAILED);
+        failed.setError(error);
+        itemRepository.save(failed);
+        conflicts.add(sourceKey);
+    }
+
+    private UUID resolveOrganizationId(LegacyConnection connection, int sideId) {
+        if (sideId <= 0) {
+            // No usable tbl_side row: fall back to a per-office placeholder rather than sharing one
+            // organization across every office that is missing the reference.
+            String code = orgCode(connection, 0);
+            return organizationRepository.findByCode(code)
+                    .map(Organization::getId)
+                    .orElseGet(() -> createFallbackOrganization(connection, code, sideId));
+        }
+        return itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, "SIDE-" + sideId)
                 .map(LegacyMigrationItem::getTargetId)
                 .orElseGet(() -> {
-                    Organization org = new Organization();
-                    org.setName("LEGACY SIDE " + sideId);
-                    org.setCode(orgCode(sideId));
-                    org.setType(Organization.OrganizationType.FACTORY);
-                    org.setIsActive(true);
-                    org.setDescription("Auto-created fallback organization for legacy side " + sideId);
-                    Organization saved = organizationRepository.save(org);
-                    itemRepository.save(trackingItem(LegacyMigrationItem.Kind.PROJECT, "SIDE-" + sideId, (long) sideId, saved.getId()));
-                    return saved.getId();
+                    String code = orgCode(connection, sideId);
+                    UUID existing = organizationRepository.findByCode(code).map(Organization::getId).orElse(null);
+                    if (existing != null) return existing;
+                    UUID created = createFallbackOrganization(connection, code, sideId);
+                    itemRepository.save(trackingItem(
+                            connection, LegacyMigrationItem.Kind.PROJECT, "SIDE-" + sideId, (long) sideId, created));
+                    return created;
                 });
+    }
+
+    private UUID createFallbackOrganization(LegacyConnection connection, String code, int sideId) {
+        Organization org = new Organization();
+        org.setName("LEGACY SIDE " + sideId + " (" + connection.office() + ")");
+        org.setCode(code);
+        org.setType(Organization.OrganizationType.FACTORY);
+        org.setIsActive(true);
+        org.setDescription("Auto-created fallback organization for legacy side " + sideId
+                + " in office " + connection.office());
+        return organizationRepository.save(org).getId();
     }
 
     private UUID resolveDefaultCategoryId() {
@@ -660,28 +851,85 @@ public class LegacyMigrationService {
     }
 
     private UUID resolveDefaultConfidentialityId() {
-        if (defaultConfidentialityCode == null || defaultConfidentialityCode.isBlank()) {
+        // Read at call time so a code saved from the settings screen applies to the very next run.
+        String code = migrationSettingsService.resolveConfidentialityCode();
+        if (code == null || code.isBlank()) {
             throw new IllegalStateException(
-                    "LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE must be configured before migrating files");
+                    "A default confidentiality code must be set before migrating files. "
+                            + "Set it on the migration settings screen or via LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE");
         }
 
-        return confidentialityLevelRepository.findByCode(defaultConfidentialityCode.trim())
+        return confidentialityLevelRepository.findByCode(code.trim())
                 .map(ConfidentialityLevel::getId)
                 .orElseThrow(() -> new IllegalStateException(
-                        "Configured legacy migration confidentiality code does not exist: "
-                                + defaultConfidentialityCode));
+                        "Configured legacy migration confidentiality code does not exist: " + code));
     }
 
     private int parseYearSanitized(Object rawYear) {
-        if (rawYear == null) return defaultYear;
+        return sanitizeYear(rawYear, defaultYear);
+    }
+
+    /**
+     * Years outside this window are treated as unusable. The upper bound matters: the legacy table
+     * contains values like 4564 that a lower-bound-only check would happily accept, leaving records
+     * that look complete while carrying an obviously wrong year.
+     */
+    static int sanitizeYear(Object rawYear, int unknownYear) {
+        if (rawYear == null) return unknownYear;
         String s = String.valueOf(rawYear).trim();
-        if (s.isEmpty()) return defaultYear;
+        if (s.isEmpty()) return unknownYear;
         try {
             int y = Integer.parseInt(s);
-            return y >= 1900 ? y : defaultYear;
+            return y >= MIN_PLAUSIBLE_YEAR && y <= Year.now().getValue() ? y : unknownYear;
         } catch (NumberFormatException nfe) {
-            return defaultYear;
+            return unknownYear;
         }
+    }
+
+    private String describeMissingFields(Map<String, Object> row, int oldId, int year) {
+        return describeMissingFields(row, oldId, year, defaultYear);
+    }
+
+    /**
+     * Names the mandatory fields that the legacy row did not supply, so the record still enters the
+     * platform but the incomplete-data report can list what a reviewer has to fill in.
+     */
+    static String describeMissingFields(Map<String, Object> row, int oldId, int year, int unknownYear) {
+        List<String> missing = new ArrayList<>();
+        if (isBlank((String) row.get("name"))) {
+            missing.add("name");
+        }
+        if (isBlank((String) row.get("number"))) {
+            missing.add("projectNumber");
+        }
+        if (isBlank((String) row.get("code"))) {
+            missing.add("projectCode");
+        }
+        if (year == unknownYear) {
+            // unknownYear is the "still missing" marker, so any year landing on it was unusable.
+            missing.add("year");
+        }
+        if (isBlank((String) row.get("admin"))) {
+            missing.add("executingEntity");
+        }
+        if (isBlank((String) row.get("detils"))) {
+            missing.add("description");
+        }
+        if (isBlankSide(row.get("idside"))) {
+            missing.add("organizationId");
+        }
+        if (oldId <= 0) {
+            missing.add("sourceReference");
+        }
+        return missing.isEmpty() ? null : String.join(",", missing);
+    }
+
+    private static boolean isBlankSide(Object idside) {
+        return idside == null || ((Number) idside).intValue() == 0;
+    }
+
+    static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private String buildNotes(String originalNote, String originalYear, int usedYear) {
@@ -689,15 +937,20 @@ public class LegacyMigrationService {
         if (originalNote != null && !originalNote.isBlank()) {
             sb.append(originalNote);
         }
-        if (usedYear != defaultYear && originalYear != null && !originalYear.equals(String.valueOf(usedYear))) {
+        if (usedYear == defaultYear && originalYear != null && !originalYear.isBlank()) {
             if (!sb.isEmpty()) sb.append("\n");
             sb.append("Original legacy year: ").append(originalYear);
         }
         return sb.isEmpty() ? null : sb.toString();
     }
 
-    private String orgCode(int sideId) {
-        return "LEGACY-" + sideId;
+    /**
+     * Organization codes are part of the identity of migrated data, so the office is included.
+     * Every organisation's legacy database numbers {@code tbl_side} from the same low sequence, and
+     * a code built from the bare id would make the second office's side look like the first one's.
+     */
+    private String orgCode(LegacyConnection connection, int sideId) {
+        return "LEGACY-" + connection.office() + "-" + sideId;
     }
 
     public static class LegacyFileSummary {

@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.PushbackInputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,8 +32,19 @@ public final class FileContentInspector {
             "doc", "xls", "ppt", "msg"
     );
     private static final Set<String> TEXT_EXTENSIONS = Set.of(
-            "txt", "csv", "md", "json", "xml", "html", "htm", "svg", "dxf", "eml"
+            "txt", "csv", "md", "json", "xml", "html", "htm", "svg", "dxf", "eml", "sql"
     );
+
+    /**
+     * RAR is not a ZIP container, so it is matched on its own signature instead of going through
+     * the ZIP branch. RAR 4.x ends the marker block at 0x00, RAR 5.x continues with 0x01 0x00.
+     */
+    private static final byte[] RAR4_SIGNATURE = {
+            0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00
+    };
+    private static final byte[] RAR5_SIGNATURE = {
+            0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00
+    };
 
     private static final Map<String, String> MIME_TYPES = Map.ofEntries(
             Map.entry("pdf", "application/pdf"),
@@ -65,6 +77,8 @@ public final class FileContentInspector {
             Map.entry("svg", "image/svg+xml"),
             Map.entry("dxf", "application/dxf"),
             Map.entry("eml", "message/rfc822"),
+            Map.entry("sql", "application/sql"),
+            Map.entry("rar", "application/vnd.rar"),
             Map.entry("rtf", "application/rtf"),
             Map.entry("dwg", "application/acad"),
             Map.entry("mp4", "video/mp4"),
@@ -140,6 +154,7 @@ public final class FileContentInspector {
                     && matchesAt(prefix, 8, "WEBP".getBytes(StandardCharsets.US_ASCII));
             case "rtf" -> startsWithIgnoringBomAndWhitespace(prefix, "{\\rtf");
             case "dwg" -> startsWith(prefix, "AC10".getBytes(StandardCharsets.US_ASCII));
+            case "rar" -> startsWith(prefix, RAR4_SIGNATURE) || startsWith(prefix, RAR5_SIGNATURE);
             case "mp4", "mov" -> prefix.length >= 12
                     && matchesAt(prefix, 4, "ftyp".getBytes(StandardCharsets.US_ASCII));
             default -> {
@@ -323,11 +338,11 @@ public final class FileContentInspector {
     }
 
     private static boolean validateTextLike(byte[] prefix, String extension) {
-        if (!isValidUtf8Text(prefix)) {
+        if (!isValidText(prefix)) {
             return false;
         }
 
-        String text = new String(prefix, StandardCharsets.UTF_8)
+        String text = new String(prefix, detectTextCharset(prefix))
                 .replace("\uFEFF", "")
                 .stripLeading();
 
@@ -339,15 +354,42 @@ public final class FileContentInspector {
         };
     }
 
-    private static boolean isValidUtf8Text(byte[] prefix) {
-        for (byte value : prefix) {
-            if (value == 0) {
-                return false;
+    /**
+     * Picks the charset from the byte-order mark. Plain UTF-8 is the fallback when there is none.
+     */
+    private static Charset detectTextCharset(byte[] prefix) {
+        if (prefix.length >= 2) {
+            int first = prefix[0] & 0xFF;
+            int second = prefix[1] & 0xFF;
+            if (first == 0xFF && second == 0xFE) {
+                return StandardCharsets.UTF_16LE;
+            }
+            if (first == 0xFE && second == 0xFF) {
+                return StandardCharsets.UTF_16BE;
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    /**
+     * Decodes strictly to tell text apart from binary. UTF-16 is detected from its BOM because a
+     * UTF-16 document is mostly NUL bytes, which would otherwise look like binary content.
+     */
+    private static boolean isValidText(byte[] prefix) {
+        Charset charset = detectTextCharset(prefix);
+
+        // Without a BOM the content is treated as UTF-8, where an embedded NUL never occurs in
+        // real text and is a cheap signal that this is a binary payload.
+        if (StandardCharsets.UTF_8.equals(charset)) {
+            for (byte value : prefix) {
+                if (value == 0) {
+                    return false;
+                }
             }
         }
 
         try {
-            StandardCharsets.UTF_8.newDecoder()
+            charset.newDecoder()
                     .onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT)
                     .decode(ByteBuffer.wrap(prefix));
@@ -358,10 +400,10 @@ public final class FileContentInspector {
     }
 
     private static boolean startsWithIgnoringBomAndWhitespace(byte[] prefix, String value) {
-        if (!isValidUtf8Text(prefix)) {
+        if (!isValidText(prefix)) {
             return false;
         }
-        String text = new String(prefix, StandardCharsets.UTF_8)
+        String text = new String(prefix, detectTextCharset(prefix))
                 .replace("\uFEFF", "")
                 .stripLeading();
         return text.startsWith(value);
