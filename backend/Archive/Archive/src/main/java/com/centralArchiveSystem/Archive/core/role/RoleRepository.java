@@ -33,4 +33,15 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
             @Param("search") String search,
             @Param("isActive") Boolean isActive,
             Pageable pageable);
+
+    /**
+     * Every role, ordered by code so the list a form renders does not reshuffle between two
+     * requests that happened to return the same rows. A null {@code isActive} means no filter.
+     */
+    @Query("""
+           SELECT r FROM Role r
+           WHERE (:isActive IS NULL OR r.isActive = :isActive)
+           ORDER BY r.code ASC
+           """)
+    List<Role> findAllForSelection(@Param("isActive") Boolean isActive);
 }

@@ -58,6 +58,18 @@ public class RoleService {
         return PagedResponse.of(content, pageRequest, page.getTotalElements());
     }
 
+    /**
+     * Every role, unpaginated, for a form to offer as a choice.
+     *
+     * <p>Separate from {@link #list} because a selection list has to be complete: paging it would
+     * leave a user able to pick only the roles on the page the request happened to return.
+     */
+    public List<RoleResponse> listAll(Boolean isActive) {
+        return roleRepository.findAllForSelection(isActive).stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     public RoleResponse getById(UUID id) {
         Role role = findRoleOrThrow(id);
         return toResponse(role);

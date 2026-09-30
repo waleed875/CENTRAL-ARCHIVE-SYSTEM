@@ -130,7 +130,7 @@ docker compose down
 - `JWT_SECRET` يجب أن يكون Base64 لمفتاح عشوائي طوله 32 بايت على الأقل. مثال: `openssl rand -base64 32`.
 - الترحيل من قاعدة البيانات القديمة معطّل افتراضيًا عبر `LEGACY_MIGRATION_ENABLED=false` ويعمل فقط على قاعدة staging المحددة في `LEGACY_DB_*`.
 - تشغيل migration يدويًا لا يفعّل الجدولة؛ `LEGACY_MIGRATION_SCHEDULE_ENABLED` يبقى `false` ما لم توجد حاجة تشغيلية صريحة للجدولة.
-- قبل file migration يجب ضبط `LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE` إلى كود موجود فعليًا في `core.confidentiality_levels`. لا يستخدم النظام أقل مستوى سرية تلقائيًا.
+- المشاريع المرحَّلة تُنشأ بلا مستوى سرية، وملفاتها ترث مستوى مشروعها. لتصنيف مشروع مرحَّل، عدّله من صفحة المشروع بعد الترحيل — التصنيف يُقرأ وقت ترحيل الملفات، فالمشروع المصنَّف مسبقًا يسحب ملفاته معه تلقائيًا.
 - لا تفعّل نافذة migration إلا بعد تجهيز staging DB مستقلة، نسخة احتياطية موثوقة، ومساحة spool محلية كافية لمعالجة أكبر ملف legacy بصورة streaming.
 
 للنشر الإنتاجي والنسخ الاحتياطي والاستعادة راجع [DEPLOYMENT.md](DEPLOYMENT.md).
@@ -146,3 +146,37 @@ backend/Archive/Archive/
 ```
 
 توجد مجموعات Postman في مجلد [postman](postman) وتصميم الـAPI في [API_ENDPOINTS_DESIGN.md](Central_Platform_ERD/API_ENDPOINTS_DESIGN.md).
+
+## القيم المقيدة للحقول
+
+معظم حقول الحالة والنوع في الـAPI مقيدة بمجموعة قيم ثابتة، وبعضها من نوع enum في Java لا يمكن لعميل مكتوب يدوياً أن يراه. لذلك يوفّر `GET /api/v1/enums` كل هذه المجموعات في استدعاء واحد، مقروء لأي مستخدم مُصادَق عليه:
+
+```json
+{
+  "success": true,
+  "data": {
+    "projectStatus": ["DRAFT", "IMPORTED", "UNDER_REVIEW", "NEEDS_CORRECTION", "REJECTED", "APPROVED", "ARCHIVED"],
+    "dataCompletionStatus": ["COMPLETE", "INCOMPLETE"],
+    "projectSourceType": ["MANUAL", "BRANCH_PACKAGE", "MIGRATION"],
+    "userStatus": ["ACTIVE", "DISABLED", "LOCKED"],
+    "organizationType": ["COMPANY", "FACTORY", "LINE", "DEPARTMENT"],
+    "migrationSourceType": ["POSTGRESQL", "LEGACY_DB"],
+    "migrationBatchStatus": ["PLANNED", "RUNNING", "SUCCESS", "FAILED", "PARTIAL"],
+    "migrationBatchCompletionStatus": ["SUCCESS", "PARTIAL", "FAILED"],
+    "packageStatus": ["RECEIVED", "VERIFIED", "IMPORTED", "FAILED", "DUPLICATE"],
+    "fileStatus": ["ACTIVE", "DELETED"],
+    "auditAction": ["REJECT", "APPROVE", "ARCHIVE", "IMPORT", "CREATE", "UPDATE", "DELETE", "READ", "EXECUTE"],
+    "auditEntityType": ["Auth", "User", "Role", "..."],
+    "projectSortFields": ["createdAt", "name", "projectCode", "..."],
+    "sortDirections": ["asc", "desc"]
+  }
+}
+```
+
+الاستخدام المقصود أن يبني العميل القوائم المنسدلة من هذه الاستجابة بدل الاحتفاظ بنسخة من القيم عنده. الحقول الغائبة عن الاستجابة نص حر، منها `ProjectMember.roleName`.
+
+ثلاث حالات تحتاج انتباهاً خاصاً:
+
+- **`migrationBatchCompletionStatus`** قائمة منفصلة عن `migrationBatchStatus` لأنها تحتوي الحالات الثلاث التي يقبلها endpoint الإكمال فقط. عرض `PLANNED` أو `RUNNING` في نموذج الإكمال يرفضه الخادم.
+- **`projectSortFields` و`sortDirections`** تُقبلان بهدوء. قيمة `sortBy` خارج القائمة لا تُرفض، بل يُرتّب الخادم النتائج حسب `createdAt` بدلاً منها، فعرض القائمة يمنع إعادة ترتيب صامتة.
+- **`migrationSourceType`** مقيّد بـenum منذ `V20`. كان الحقل نصاً حراً يُتحقق منه عند تشغيل الدفعة لا عند الحفظ، فكان خطأ إملائي يُخزَّن ويُكتشف متأخراً بعد فتح نافذة الترحيل.

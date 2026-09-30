@@ -22,8 +22,9 @@ public class MigrationSource {
     @Column(nullable = false)
     private String name;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String sourceType;
+    private MigrationSourceType sourceType;
 
     @Column(name = "database_name")
     private String databaseName;
@@ -60,7 +61,7 @@ public class MigrationSource {
 
     public MigrationSource() {}
 
-    public MigrationSource(UUID id, String name, String sourceType, String databaseName, String officeName, String description, LocalDateTime createdAt) {
+    public MigrationSource(UUID id, String name, MigrationSourceType sourceType, String databaseName, String officeName, String description, LocalDateTime createdAt) {
         this.id = id;
         this.name = name;
         this.sourceType = sourceType;
@@ -76,8 +77,8 @@ public class MigrationSource {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
-    public String getSourceType() { return sourceType; }
-    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+    public String getSourceType() { return sourceType == null ? null : sourceType.name(); }
+    public void setSourceType(MigrationSourceType sourceType) { this.sourceType = sourceType; }
 
     public String getDatabaseName() { return databaseName; }
     public void setDatabaseName(String databaseName) { this.databaseName = databaseName; }

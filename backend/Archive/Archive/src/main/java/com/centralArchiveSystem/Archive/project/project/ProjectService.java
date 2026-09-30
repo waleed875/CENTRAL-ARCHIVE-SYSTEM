@@ -35,6 +35,18 @@ public class ProjectService {
             "versionNo"
     );
 
+    /**
+     * The sort fields a project search accepts, for {@code GET /api/v1/enums}.
+     *
+     * <p>Public because the field list was previously invisible to any client, so a search sorted by
+     * anything else was quietly reordered by createdAt instead. Exposing it lets the search form
+     * offer only fields that work. A field outside this set is still accepted and ignored, not
+     * rejected, so publishing the list is documentation rather than validation.
+     */
+    public static List<String> allowedSortFields() {
+        return ALLOWED_SORT_FIELDS.stream().sorted().toList();
+    }
+
     private final ProjectRepository projectRepository;
     private final ProjectMemberService projectMemberService;
     private final ConfidentialityAccessService confidentialityAccessService;

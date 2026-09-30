@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +39,13 @@ public class RoleController {
         PageRequest pageRequest = PageRequest.of(page, limit, sort, order);
         PagedResponse<RoleResponse> response = roleService.list(search, isActive, pageRequest);
         return ApiResponse.success(response);
+    }
+
+    @GetMapping("/all")
+    @Operation(summary = "List every role for a selection list")
+    public ApiResponse<List<RoleResponse>> listAll(
+            @RequestParam(required = false) Boolean isActive) {
+        return ApiResponse.success(roleService.listAll(isActive));
     }
 
     @PostMapping

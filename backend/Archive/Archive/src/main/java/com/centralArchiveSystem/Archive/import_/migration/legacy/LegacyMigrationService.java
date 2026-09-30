@@ -4,8 +4,6 @@ import com.centralArchiveSystem.Archive.config.MinioConfig;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
 import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSettingsService;
 import com.centralArchiveSystem.Archive.import_.migration.setting.SettingsCrypto;
-import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevel;
-import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
@@ -78,7 +76,6 @@ public class LegacyMigrationService {
     private final FileRepository fileRepository;
     private final FileCategoryRepository fileCategoryRepository;
     private final FileTypeRepository fileTypeRepository;
-    private final ConfidentialityLevelRepository confidentialityLevelRepository;
     private final LegacyMigrationItemRepository itemRepository;
     private final TransactionTemplate transactionTemplate;
     private final SettingsCrypto settingsCrypto;
@@ -112,7 +109,6 @@ public class LegacyMigrationService {
             FileRepository fileRepository,
             FileCategoryRepository fileCategoryRepository,
             FileTypeRepository fileTypeRepository,
-            ConfidentialityLevelRepository confidentialityLevelRepository,
             LegacyMigrationItemRepository itemRepository,
             MigrationSettingsService migrationSettingsService,
             SettingsCrypto settingsCrypto,
@@ -125,7 +121,6 @@ public class LegacyMigrationService {
         this.fileRepository = fileRepository;
         this.fileCategoryRepository = fileCategoryRepository;
         this.fileTypeRepository = fileTypeRepository;
-        this.confidentialityLevelRepository = confidentialityLevelRepository;
         this.itemRepository = itemRepository;
         this.migrationSettingsService = migrationSettingsService;
         this.settingsCrypto = settingsCrypto;
@@ -327,7 +322,15 @@ public class LegacyMigrationService {
             project.setDescription(desc);
             project.setNotes(buildNotes(note, originalYear, year));
             project.setMissingFields(describeMissingFields(row, oldId, year));
-            project.setStatus(Project.ProjectStatus.ARCHIVED);
+            // IMPORTED, not ARCHIVED. A migrated project is unfinished by definition -- it lands
+            // with missingFields set and INCOMPLETE completion -- and ARCHIVED is the one status
+            // that refuses every write: FileService.requireMutableProject, ProjectService.update
+            // and ProjectMemberService.requireMutableProject all reject it. Stamping ARCHIVED here
+            // therefore locked out the exact corrections the missingFields column exists to ask
+            // for. Branch-package imports already use IMPORTED for the same "arrived, not yet
+            // reviewed" state, and from here the project can be corrected, completed and
+            // submitted for review like any other.
+            project.setStatus(Project.ProjectStatus.IMPORTED);
             project.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);
             project.setSourceType(Project.SourceType.MIGRATION);
             project.setSourceReference(connection.projectReference(oldId));
@@ -391,7 +394,6 @@ public class LegacyMigrationService {
 
         UUID defaultCategoryId = resolveDefaultCategoryId();
         UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
-        UUID defaultConfidentialityId = resolveDefaultConfidentialityId();
 
         List<Map<String, Object>> projects = connection.jdbc().queryForList(
                 "SELECT idproject FROM " + LEGACY_DB_SCHEMA + ".tbl_project");
@@ -405,8 +407,7 @@ public class LegacyMigrationService {
                             legacyProjectId,
                             summary,
                             defaultCategoryId,
-                            defaultTypeId,
-                            defaultConfidentialityId
+                            defaultTypeId
                     ),
                     pool
             );
@@ -432,8 +433,7 @@ public class LegacyMigrationService {
                                         int legacyProjectId,
                                         LegacyFileSummary summary,
                                         UUID defaultCategoryId,
-                                        UUID defaultTypeId,
-                                        UUID defaultConfidentialityId) {
+                                        UUID defaultTypeId) {
         String projectSourceKey = "PROJECT-" + legacyProjectId;
         UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
                         connection.sourceId(),
@@ -448,6 +448,15 @@ public class LegacyMigrationService {
                     legacyProjectId, connection.office());
             return;
         }
+
+        // Read here rather than once per run, because a run spans every project it migrated and a
+        // classification applied to the whole batch would stamp the last project read onto all of
+        // them. A migrated project carries no level of its own, so this is null today; the lookup
+        // exists so a project classified after migration -- or one stamped by a future run -- has
+        // its files follow it instead of landing with a level the project never had.
+        UUID projectConfidentialityId = projectRepository.findById(targetProjectId)
+                .map(Project::getConfidentialityLevelId)
+                .orElse(null);
 
         connection.jdbc().query(
                 "SELECT idfile, filename, filesuffix, filebinary FROM "
@@ -486,7 +495,7 @@ public class LegacyMigrationService {
                                     summary,
                                     defaultCategoryId,
                                     defaultTypeId,
-                                    defaultConfidentialityId
+                                    projectConfidentialityId
                             );
                     } finally {
                         if (encodedBase64 != null) {
@@ -515,7 +524,7 @@ public class LegacyMigrationService {
                                 LegacyFileSummary summary,
                                 UUID defaultCategoryId,
                                 UUID defaultTypeId,
-                                UUID defaultConfidentialityId) {
+                                UUID projectConfidentialityId) {
         LegacyMigrationItem item = trackingItem(
                 connection,
                 LegacyMigrationItem.Kind.FILE,
@@ -558,7 +567,14 @@ public class LegacyMigrationService {
             file.setProjectId(targetProjectId);
             file.setCategoryId(defaultCategoryId);
             file.setTypeId(defaultTypeId);
-            file.setConfidentialityLevelId(defaultConfidentialityId);
+            // Inherited from the project, not stamped from a run-wide setting. The project itself
+            // is migrated with no level, so a file that arrived carrying one was strictly more
+            // restricted than its own project -- and the file listing drops anything the viewer's
+            // clearance does not cover, silently, so the project opened to an empty file list with
+            // no error to explain it. Inheriting keeps the two levels in agreement: a project
+            // classified later is followed by its files, and an unclassified project stays visible
+            // to everyone who can see the project itself.
+            file.setConfidentialityLevelId(projectConfidentialityId);
             file.setOriginalName(
                     originalName != null && !originalName.isBlank()
                             ? originalName
@@ -848,21 +864,6 @@ public class LegacyMigrationService {
         type.setDescription("Default type for files migrated from the legacy system");
         type.setIsActive(true);
         return fileTypeRepository.save(type).getId();
-    }
-
-    private UUID resolveDefaultConfidentialityId() {
-        // Read at call time so a code saved from the settings screen applies to the very next run.
-        String code = migrationSettingsService.resolveConfidentialityCode();
-        if (code == null || code.isBlank()) {
-            throw new IllegalStateException(
-                    "A default confidentiality code must be set before migrating files. "
-                            + "Set it on the migration settings screen or via LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE");
-        }
-
-        return confidentialityLevelRepository.findByCode(code.trim())
-                .map(ConfidentialityLevel::getId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Configured legacy migration confidentiality code does not exist: " + code));
     }
 
     private int parseYearSanitized(Object rawYear) {

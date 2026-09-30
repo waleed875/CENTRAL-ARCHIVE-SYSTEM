@@ -175,6 +175,17 @@ public class AuditAspect {
         return new Actor(userId, username);
     }
 
+    /**
+     * Every action this aspect can record, in the order {@link #determineAction} tests for them.
+     *
+     * <p>Published so {@code GET /api/v1/enums} can offer the audit-log filter as a list. The strings
+     * are written out again in the branches below only because a method name has to be matched at
+     * runtime; a value added to one and not the other shows up as a filter that silently returns
+     * nothing, so {@code AuditActionCatalogTest} compares the two.
+     */
+    public static final List<String> ACTIONS = List.of(
+            "REJECT", "APPROVE", "ARCHIVE", "IMPORT", "CREATE", "UPDATE", "DELETE", "READ", "EXECUTE");
+
     private String determineAction(ProceedingJoinPoint joinPoint) {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         Method method = signature.getMethod();
@@ -209,6 +220,16 @@ public class AuditAspect {
         }
         return className;
     }
+
+    /**
+     * The entity types the audit log can hold, taken from the controller class names in the audited
+     * pointcut. A controller added without a matching entry here is the one gap, and
+     * {@code EnumCatalogTest} is where that shows up.
+     */
+    public static final List<String> ENTITY_TYPES = List.of(
+            "Auth", "User", "Role", "Organization", "ConfidentialityLevel", "Project", "ProjectMember",
+            "ProjectType", "FileCategory", "File", "BranchPackage", "Export", "Migration",
+            "MigrationSettings", "AuditLog", "Dashboard");
 
     private String determineEntityId(ProceedingJoinPoint joinPoint, Object result) {
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();

@@ -1,9 +1,11 @@
 package com.centralArchiveSystem.Archive.import_.migration.dto;
 
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 @Schema(description = "Request to create or update a migration source")
@@ -12,9 +14,9 @@ public record MigrationSourceRequest(
     @Size(max = 255)
     @Schema(description = "Name of the migration source", example = "Legacy DB Office A") String name,
 
-    @NotBlank(message = "Source type is required")
-    @Size(max = 50)
-    @Schema(description = "Type of source", example = "ORACLE") String sourceType,
+    @NotNull(message = "Source type is required")
+    @Schema(description = "Type of source. See GET /api/v1/enums for the current list",
+            example = "LEGACY_DB") MigrationSourceType sourceType,
 
     @Size(max = 255)
     @Schema(description = "Database name", example = "legacy_archives") String databaseName,

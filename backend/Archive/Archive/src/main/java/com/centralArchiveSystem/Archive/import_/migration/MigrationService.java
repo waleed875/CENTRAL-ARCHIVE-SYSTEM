@@ -343,14 +343,11 @@ public class MigrationService {
                     "Default confidentiality override is not implemented in the current MVP");
         }
 
-        String sourceType = source.getSourceType();
-        if (sourceType != null
-                && !sourceType.isBlank()
-                && !"POSTGRESQL".equalsIgnoreCase(sourceType)
-                && !"LEGACY_DB".equalsIgnoreCase(sourceType)) {
-            throw new IllegalArgumentException(
-                    "Migration source type is not supported by the legacy staging runner: " + sourceType);
-        }
+        // The source type is no longer checked here. It used to be two equalsIgnoreCase calls at
+        // this point, which meant an unsupported type was accepted on write and only rejected once
+        // somebody aimed a migration window at it. It is now MigrationSourceType, so a type outside
+        // the enum cannot be stored, and a source saved before this change is covered by the
+        // constraint in V20. Rejecting it again here would only restate the enum.
     }
 
     public MigrationBatchResponse completeBatch(

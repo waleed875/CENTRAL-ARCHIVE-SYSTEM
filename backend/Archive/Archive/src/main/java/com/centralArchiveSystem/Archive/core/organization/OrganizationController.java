@@ -38,6 +38,14 @@ public class OrganizationController {
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
+    @GetMapping("/all")
+    public ResponseEntity<ApiResponse<List<OrganizationResponse>>> listAll(
+            @RequestParam(required = false) UUID parentId,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) Boolean isActive) {
+        return ResponseEntity.ok(ApiResponse.success(organizationService.listAll(parentId, type, isActive)));
+    }
+
     @GetMapping("/tree")
     public ResponseEntity<ApiResponse<List<OrganizationTreeResponse>>> getTree() {
         return ResponseEntity.ok(ApiResponse.success(organizationService.getTree()));

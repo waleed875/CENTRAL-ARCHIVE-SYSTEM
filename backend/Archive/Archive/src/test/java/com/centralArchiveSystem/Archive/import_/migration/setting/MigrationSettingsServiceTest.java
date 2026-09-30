@@ -2,41 +2,35 @@ package com.centralArchiveSystem.Archive.import_.migration.setting;
 
 import com.centralArchiveSystem.Archive.import_.migration.setting.dto.MigrationSettingsResponse;
 import com.centralArchiveSystem.Archive.import_.migration.setting.dto.MigrationSettingsUpdateRequest;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+/**
+ * The migration switch is the only value this screen owns. It used to also carry a run-wide default
+ * confidentiality code; that is gone, and these tests pin the remaining environment-over-store
+ * precedence, which is the part that is easy to break silently.
+ */
 class MigrationSettingsServiceTest {
 
-    private static final String SECRET = "test-encryption-key-value";
+    private final MigrationSettingsRepository repository = mock(MigrationSettingsRepository.class);
 
-    private MigrationSettingsRepository repository;
-    private MigrationSettingsService service;
-    private SettingsCrypto crypto;
-
-    @BeforeEach
-    void setUp() {
-        repository = mock(MigrationSettingsRepository.class);
-        crypto = new SettingsCrypto(SECRET);
+    private MigrationSettingsService serviceWithEnvironment(boolean enabled) {
+        return new MigrationSettingsService(repository, enabled);
     }
 
-    private MigrationSettingsService serviceWithEnvironment(boolean enabled, String code) {
-        return new MigrationSettingsService(repository, crypto, enabled, code);
-    }
-
-    private MigrationSettings storedRow(boolean configured, boolean enabled, String encryptedCode) {
+    private MigrationSettings storedRow(boolean configured, boolean enabled) {
         MigrationSettings row = new MigrationSettings();
         row.setId(UUID.randomUUID());
         row.setSingleton(Boolean.TRUE);
         row.setConfigured(configured);
         row.setMigrationEnabled(enabled);
-        row.setDefaultConfidentialityCodeEncrypted(encryptedCode);
         row.setUpdatedAt(java.time.LocalDateTime.of(2026, 9, 27, 10, 0));
         row.setUpdatedBy(UUID.randomUUID());
         return row;
@@ -45,71 +39,63 @@ class MigrationSettingsServiceTest {
     @Test
     void unconfiguredRowKeepsUsingTheEnvironmentValue() {
         when(repository.findFirstBySingletonTrue())
-                .thenReturn(Optional.of(storedRow(false, true, null)));
-        service = serviceWithEnvironment(false, "ENV_CODE");
+                .thenReturn(Optional.of(storedRow(false, true)));
+        MigrationSettingsService service = serviceWithEnvironment(false);
 
         // The stored row says "enabled" but it was never written from the UI, so the environment wins.
         assertFalse(service.isMigrationEnabled());
-        assertEquals("ENV_CODE", service.resolveConfidentialityCode());
     }
 
     @Test
     void missingRowIsTreatedAsEnvironmentDefault() {
         when(repository.findFirstBySingletonTrue()).thenReturn(Optional.empty());
-        service = serviceWithEnvironment(true, "ENV_CODE");
+        MigrationSettingsService service = serviceWithEnvironment(true);
 
         assertTrue(service.isMigrationEnabled());
-        assertEquals("ENV_CODE", service.resolveConfidentialityCode());
         assertTrue(service.getSettings().environmentDefault());
     }
 
     @Test
     void savedValuesOverrideTheEnvironmentWithoutRestart() {
         when(repository.findFirstBySingletonTrue())
-                .thenReturn(Optional.of(storedRow(true, true, crypto.encrypt("SAVED_CODE"))));
-        service = serviceWithEnvironment(false, "ENV_CODE");
+                .thenReturn(Optional.of(storedRow(true, true)));
+        MigrationSettingsService service = serviceWithEnvironment(false);
 
-        // Same service instance, values now come from the row: this is the no-restart requirement.
+        // Same service instance, value now comes from the row: this is the no-restart requirement.
         assertTrue(service.isMigrationEnabled());
-        assertEquals("SAVED_CODE", service.resolveConfidentialityCode());
     }
 
     @Test
     void unreadableSettingsFallBackToTheEnvironmentSoTheWindowCannotOpenSilently() {
         when(repository.findFirstBySingletonTrue()).thenThrow(new RuntimeException("connection reset"));
-        service = serviceWithEnvironment(false, "ENV_CODE");
+        MigrationSettingsService service = serviceWithEnvironment(false);
 
         assertFalse(service.isMigrationEnabled());
-        assertEquals("ENV_CODE", service.resolveConfidentialityCode());
     }
 
     @Test
-    void anUndecryptableCodeIsReportedAsUnsetRatherThanBreakingTheResponse() {
-        when(repository.findFirstBySingletonTrue())
-                .thenReturn(Optional.of(storedRow(true, true, "v1:AAAAAAAAAAAAAAAA:Zm9v")));
-        service = serviceWithEnvironment(false, "ENV_CODE");
+    void aFailingReadMustNeverOpenTheMigrationWindowOnItsOwn() {
+        when(repository.findFirstBySingletonTrue()).thenThrow(new RuntimeException("connection reset"));
 
-        // The environment must not silently take over once the UI has taken ownership.
-        assertNull(service.resolveConfidentialityCode());
-        assertNull(service.getSettings().defaultConfidentialityCode());
+        // The environment says enabled. A read failure must not be read as consent to migrate.
+        assertTrue(serviceWithEnvironment(true).isMigrationEnabled());
     }
 
     @Test
-    void updateEncryptsTheCodeAndMarksTheRowConfigured() {
+    void updateStoresTheSwitchAndMarksTheRowConfigured() {
         when(repository.findFirstBySingletonTrue()).thenReturn(Optional.empty());
         when(repository.save(any(MigrationSettings.class))).thenAnswer(inv -> {
             MigrationSettings saved = inv.getArgument(0);
             saved.setId(UUID.randomUUID());
             return saved;
         });
-        service = serviceWithEnvironment(false, "");
+        MigrationSettingsService service = serviceWithEnvironment(false);
 
         UUID actingUser = UUID.randomUUID();
         MigrationSettingsResponse response = service.updateSettings(
-                new MigrationSettingsUpdateRequest(true, "SAVED_CODE"), actingUser);
+                new MigrationSettingsUpdateRequest(true), actingUser);
 
         assertTrue(response.migrationEnabled());
-        assertEquals("SAVED_CODE", response.defaultConfidentialityCode());
         assertFalse(response.environmentDefault());
         assertEquals(actingUser.toString(), response.updatedBy());
 
@@ -117,36 +103,43 @@ class MigrationSettingsServiceTest {
         verify(repository).save(captor.capture());
         MigrationSettings saved = captor.getValue();
         assertTrue(saved.isConfigured());
+        assertTrue(saved.getMigrationEnabled());
         assertNotNull(saved.getUpdatedAt());
         assertEquals(actingUser, saved.getUpdatedBy());
-        // At rest the value must be the envelope, never the code itself.
-        assertNotEquals("SAVED_CODE", saved.getDefaultConfidentialityCodeEncrypted());
-        assertTrue(saved.getDefaultConfidentialityCodeEncrypted().startsWith("v1:"));
     }
 
     @Test
-    void clearingTheCodeIsAnExplicitInstructionAndStopsTheEnvironmentFromTakingOver() {
+    void theResponseReportsTheJustWrittenValueRatherThanReReading() {
+        // A stateful stub: the row has to come back from the repository for the second read to mean
+        // anything, otherwise the service correctly falls through to the environment and the
+        // assertion would pass or fail for the wrong reason.
+        AtomicReference<MigrationSettings> stored = new AtomicReference<>();
         when(repository.findFirstBySingletonTrue())
-                .thenReturn(Optional.of(storedRow(true, true, crypto.encrypt("OLD_CODE"))));
-        when(repository.save(any(MigrationSettings.class))).thenAnswer(inv -> inv.getArgument(0));
-        service = serviceWithEnvironment(true, "ENV_CODE");
+                .thenAnswer(inv -> Optional.ofNullable(stored.get()));
+        when(repository.save(any(MigrationSettings.class))).thenAnswer(inv -> {
+            stored.set(inv.getArgument(0));
+            return stored.get();
+        });
+        MigrationSettingsService service = serviceWithEnvironment(true);
 
-        service.updateSettings(new MigrationSettingsUpdateRequest(null, "  "), UUID.randomUUID());
+        // Closing the window must read back as closed even though the environment still says enabled.
+        MigrationSettingsResponse response = service.updateSettings(
+                new MigrationSettingsUpdateRequest(false), UUID.randomUUID());
 
-        assertNull(service.resolveConfidentialityCode());
+        assertFalse(response.migrationEnabled());
+        assertFalse(response.environmentDefault());
+        assertFalse(service.isMigrationEnabled());
     }
 
     @Test
     void aNullFieldInTheUpdateLeavesTheStoredValueAlone() {
         when(repository.findFirstBySingletonTrue())
-                .thenReturn(Optional.of(storedRow(true, false, crypto.encrypt("KEPT_CODE"))));
+                .thenReturn(Optional.of(storedRow(true, true)));
         when(repository.save(any(MigrationSettings.class))).thenAnswer(inv -> inv.getArgument(0));
-        service = serviceWithEnvironment(false, "ENV_CODE");
+        MigrationSettingsService service = serviceWithEnvironment(false);
 
-        // Toggling the switch must not wipe the confidentiality code the UI never re-sent.
-        service.updateSettings(new MigrationSettingsUpdateRequest(true, null), UUID.randomUUID());
+        service.updateSettings(new MigrationSettingsUpdateRequest(null), UUID.randomUUID());
 
         assertTrue(service.isMigrationEnabled());
-        assertEquals("KEPT_CODE", service.resolveConfidentialityCode());
     }
 }

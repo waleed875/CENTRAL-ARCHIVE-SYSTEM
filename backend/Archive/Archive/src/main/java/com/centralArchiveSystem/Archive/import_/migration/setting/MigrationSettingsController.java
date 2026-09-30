@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Exposes the two legacy migration switches to the UI. Nothing else is writable here on purpose:
+ * Exposes the legacy migration switch to the UI. Nothing else is writable here on purpose:
  * connection strings, database credentials and MinIO settings stay in the environment.
  */
 @RestController

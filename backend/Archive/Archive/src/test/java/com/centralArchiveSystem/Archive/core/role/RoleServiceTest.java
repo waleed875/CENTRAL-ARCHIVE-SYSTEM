@@ -2,10 +2,12 @@ package com.centralArchiveSystem.Archive.core.role;
 
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleRequest;
+import com.centralArchiveSystem.Archive.core.role.dto.RoleResponse;
 import com.centralArchiveSystem.Archive.core.role.dto.RoleUpdateRequest;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -73,6 +75,35 @@ class RoleServiceTest {
 
         assertThrows(BusinessRuleException.class, () -> service.delete(id));
         verify(roles, never()).save(any());
+    }
+
+    @Test
+    void listAllIsUnpaginatedAndCarriesTheCode() {
+        RoleRepository roles = mock(RoleRepository.class);
+        UserRepository users = mock(UserRepository.class);
+
+        Role auditor = new Role();
+        auditor.setId(UUID.randomUUID());
+        auditor.setCode("auditor");
+        auditor.setName("Auditor");
+        auditor.setIsActive(true);
+
+        Role viewer = new Role();
+        viewer.setId(UUID.randomUUID());
+        viewer.setCode("read_only");
+        viewer.setName("Read Only");
+        viewer.setIsActive(true);
+
+        when(roles.findAllForSelection(true)).thenReturn(List.of(auditor, viewer));
+
+        RoleService service = new RoleService(roles, users);
+        var all = service.listAll(true);
+
+        // A form that offered the name and submitted the code would send back a value the write
+        // endpoint never accepted, so both halves of the row are asserted here.
+        assertEquals(List.of("auditor", "read_only"),
+                all.stream().map(RoleResponse::code).toList());
+        verify(roles, never()).searchFiltered(any(), any(), any());
     }
 
     @Test

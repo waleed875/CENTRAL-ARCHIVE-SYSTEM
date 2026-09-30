@@ -52,6 +52,26 @@ public class OrganizationService {
         ).map(this::toResponse);
     }
 
+    /**
+     * Every organization at one level, or at every level when {@code parentId} is absent, for a
+     * form to offer as a choice. Paging a selection list is not an option: the page boundary would
+     * fall between two rows of the same dropdown without anything on screen saying so.
+     */
+    public List<OrganizationResponse> listAll(UUID parentId, String type, Boolean isActive) {
+        Organization.OrganizationType orgType =
+                type == null || type.isBlank()
+                        ? null
+                        : Organization.OrganizationType.valueOf(type.toUpperCase());
+
+        // The type is narrowed here rather than in the query because the alternatives are four
+        // near-identical repository methods for a table this small, and an unmatched value has to
+        // fail the same way it does on the paginated endpoint either way.
+        return organizationRepository.findAllForSelection(parentId, isActive).stream()
+                .filter(org -> orgType == null || org.getType() == orgType)
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     public List<OrganizationTreeResponse> getTree() {
         List<Organization> allOrganizations = organizationRepository.findByIsActive(true);
         Map<UUID, List<Organization>> childrenMap = allOrganizations.stream()

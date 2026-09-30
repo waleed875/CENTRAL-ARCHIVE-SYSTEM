@@ -41,6 +41,55 @@ Filtering: Field-based query parameters
 }
 ```
 
+## Constrained Value Sets
+
+Many fields accept a fixed set of values rather than free text, and several of those sets are
+Java enums that a hand-written client cannot read. `GET /enums` returns all of them in one
+response, so a client builds its dropdowns from the server instead of keeping its own copy:
+
+```json
+{
+  "success": true,
+  "data": {
+    "projectStatus": ["DRAFT", "IMPORTED", "UNDER_REVIEW", "NEEDS_CORRECTION", "REJECTED", "APPROVED", "ARCHIVED"],
+    "dataCompletionStatus": ["COMPLETE", "INCOMPLETE"],
+    "projectSourceType": ["MANUAL", "BRANCH_PACKAGE", "MIGRATION"],
+    "userStatus": ["ACTIVE", "DISABLED", "LOCKED"],
+    "organizationType": ["COMPANY", "FACTORY", "LINE", "DEPARTMENT"],
+    "migrationSourceType": ["POSTGRESQL", "LEGACY_DB"],
+    "migrationBatchStatus": ["PLANNED", "RUNNING", "SUCCESS", "FAILED", "PARTIAL"],
+    "migrationBatchCompletionStatus": ["SUCCESS", "PARTIAL", "FAILED"],
+    "packageStatus": ["RECEIVED", "VERIFIED", "IMPORTED", "FAILED", "DUPLICATE"],
+    "fileStatus": ["ACTIVE", "DELETED"],
+    "auditAction": ["REJECT", "APPROVE", "ARCHIVE", "IMPORT", "CREATE", "UPDATE", "DELETE", "READ", "EXECUTE"],
+    "auditEntityType": ["Auth", "User", "Role", "..."],
+    "projectSortFields": ["createdAt", "name", "projectCode", "..."],
+    "sortDirections": ["asc", "desc"]
+  }
+}
+```
+
+Readable by any authenticated user. The keys are part of the contract; the values are read from the
+enums the server validates against. A field absent from the response is free text, which is why
+`project_members.role_name` has no entry.
+
+| Key | Applies to | Notes |
+|-----|-----------|-------|
+| `projectStatus` | `GET /projects`, `GET /projects/search` filter | |
+| `dataCompletionStatus` | `POST`/`PATCH /projects` body | |
+| `projectSourceType` | `GET /projects/search` filter | Set by the server on import, migration, and package workflows |
+| `userStatus` | `PATCH /users/:id` body, `GET /users` filter | |
+| `organizationType` | `POST /organizations` body, `GET /organizations` filter | |
+| `migrationSourceType` | `POST`/`PATCH /migration-sources` body | Rejected with 400 outside the set |
+| `migrationBatchStatus` | Batch display | The five states a batch can be in |
+| `migrationBatchCompletionStatus` | `PATCH`/complete a batch | Only the three terminal states; `PLANNED` and `RUNNING` are refused |
+| `packageStatus` | `GET /packages` filter | |
+| `fileStatus` | `GET` files filter | |
+| `auditAction` | `GET /audit-logs` filter | |
+| `auditEntityType` | `GET /audit-logs` filter | |
+| `projectSortFields` | `GET /projects/search` sort | A value outside the list is **not** rejected; results fall back to `createdAt` |
+| `sortDirections` | `GET` sort parameters | Anything other than `asc` is treated as `desc` |
+
 ## Error Response
 
 ```json
@@ -55,6 +104,19 @@ Filtering: Field-based query parameters
   }
 }
 ```
+
+---
+
+## 0. Enums
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| GET | `/enums` | Constrained value sets for every restricted field | Yes |
+
+### GET /enums
+
+See [Constrained Value Sets](#constrained-value-sets). Built for clients that cannot read the Java
+enums, so no field is left as a guess about which strings the server accepts.
 
 ---
 
@@ -1346,13 +1408,16 @@ Response: [{
 ```
 Request: {
   "name": "string (required)",
-  "source_type": "string? (PostgreSQL, File, Manual)",
+  "source_type": "string (required) (POSTGRESQL, LEGACY_DB)",
   "database_name": "string?",
-  "office_name": "string?",
+  "office_name": "string (required)",
   "description": "string?"
 }
 Response: 201 Created
 ```
+
+`source_type` accepts only `POSTGRESQL` or `LEGACY_DB`; any other value is rejected with 400
+rather than stored. The published list is `migrationSourceType` in `GET /enums`.
 
 ### GET /migration-sources/:id
 

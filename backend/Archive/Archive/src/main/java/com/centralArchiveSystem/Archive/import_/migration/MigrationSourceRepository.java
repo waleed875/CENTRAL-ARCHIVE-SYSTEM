@@ -9,7 +9,7 @@ import java.util.UUID;
 @Repository
 public interface MigrationSourceRepository extends JpaRepository<MigrationSource, UUID> {
 
-    List<MigrationSource> findBySourceType(String sourceType);
+    List<MigrationSource> findBySourceType(MigrationSourceType sourceType);
 
     List<MigrationSource> findByOfficeName(String officeName);
 

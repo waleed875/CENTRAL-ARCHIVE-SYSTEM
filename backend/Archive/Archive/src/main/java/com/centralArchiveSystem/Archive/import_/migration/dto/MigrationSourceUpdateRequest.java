@@ -1,12 +1,13 @@
 package com.centralArchiveSystem.Archive.import_.migration.dto;
 
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 
 public record MigrationSourceUpdateRequest(
     @Size(max = 255) String name,
-    @Size(max = 50) String sourceType,
+    MigrationSourceType sourceType,
     @Size(max = 255) String databaseName,
     @Size(max = 255) String officeName,
     @Size(max = 200) String host,

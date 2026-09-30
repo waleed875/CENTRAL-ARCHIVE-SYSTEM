@@ -36,6 +36,12 @@ public class FileTypeController {
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
+    @GetMapping("/all")
+    public ResponseEntity<ApiResponse<List<FileTypeResponse>>> listAll(
+            @RequestParam(required = false) Boolean isActive) {
+        return ResponseEntity.ok(ApiResponse.success(fileTypeService.listAll(isActive)));
+    }
+
     @GetMapping("/by-category/{categoryId}")
     public ResponseEntity<ApiResponse<List<FileTypeResponse>>> listByCategory(
             @PathVariable UUID categoryId,

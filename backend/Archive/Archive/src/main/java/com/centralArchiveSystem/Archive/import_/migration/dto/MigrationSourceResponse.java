@@ -9,7 +9,8 @@ import java.util.UUID;
 public record MigrationSourceResponse(
     @Schema(description = "Unique identifier") UUID id,
     @Schema(description = "Name of the migration source") String name,
-    @Schema(description = "Type of source") String sourceType,
+    @Schema(description = "Type of source. See GET /api/v1/enums for the current list",
+            example = "LEGACY_DB") String sourceType,
     @Schema(description = "Database name") String databaseName,
     @Schema(description = "Office name") String officeName,
     @Schema(description = "Legacy database host") String host,
