@@ -37,7 +37,7 @@ class IncompleteProjectReportServiceTest {
         p.setName("Project " + number);
         p.setYear(year);
         p.setMissingFields(missingFields);
-        p.setStatus(Project.ProjectStatus.ARCHIVED);
+        p.setStatus(Project.ProjectStatus.IMPORTED);
         p.setSourceType(Project.SourceType.MIGRATION);
         p.setSourceReference("ARC2:tbl_project:" + number);
         p.setDataCompletionStatus(Project.DataCompletionStatus.INCOMPLETE);

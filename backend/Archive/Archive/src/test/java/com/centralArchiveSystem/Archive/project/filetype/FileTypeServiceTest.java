@@ -1,9 +1,11 @@
 package com.centralArchiveSystem.Archive.project.filetype;
 
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
+import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeResponse;
 import com.centralArchiveSystem.Archive.project.filetype.dto.FileTypeUpdateRequest;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -73,6 +75,28 @@ class FileTypeServiceTest {
         assertEquals("PDF", response.code());
         assertEquals(originalCategoryId, response.categoryId());
         assertEquals("PDF document", response.name());
+    }
+
+    @Test
+    void listAllIsUnpaginatedAcrossEveryCategory() {
+        FileTypeRepository types = mock(FileTypeRepository.class);
+        FileCategoryRepository categories = mock(FileCategoryRepository.class);
+
+        FileType pdf = fileType(UUID.randomUUID());
+        FileType sheet = fileType(UUID.randomUUID());
+        sheet.setCode("XLSX");
+        sheet.setName("XLSX");
+
+        when(types.findAllForSelection(true)).thenReturn(List.of(pdf, sheet));
+
+        FileTypeService service = new FileTypeService(types, categories);
+        var all = service.listAll(true);
+
+        // Deliberately not narrowed to one category: this call is for the form that has not chosen
+        // a category yet, so every type has to be offerable at once.
+        assertEquals(List.of("PDF", "XLSX"),
+                all.stream().map(FileTypeResponse::code).toList());
+        verify(types, never()).searchFiltered(any(), any(), any(), any());
     }
 
     private FileType fileType(UUID id) {

@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.core.organization;
 
+import com.centralArchiveSystem.Archive.common.exception.ConflictException;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationRequest;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationResponse;
 import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationTreeResponse;
@@ -52,6 +53,26 @@ public class OrganizationService {
         ).map(this::toResponse);
     }
 
+    /**
+     * Every organization at one level, or at every level when {@code parentId} is absent, for a
+     * form to offer as a choice. Paging a selection list is not an option: the page boundary would
+     * fall between two rows of the same dropdown without anything on screen saying so.
+     */
+    public List<OrganizationResponse> listAll(UUID parentId, String type, Boolean isActive) {
+        Organization.OrganizationType orgType =
+                type == null || type.isBlank()
+                        ? null
+                        : Organization.OrganizationType.valueOf(type.toUpperCase());
+
+        // The type is narrowed here rather than in the query because the alternatives are four
+        // near-identical repository methods for a table this small, and an unmatched value has to
+        // fail the same way it does on the paginated endpoint either way.
+        return organizationRepository.findAllForSelection(parentId, isActive).stream()
+                .filter(org -> orgType == null || org.getType() == orgType)
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     public List<OrganizationTreeResponse> getTree() {
         List<Organization> allOrganizations = organizationRepository.findByIsActive(true);
         Map<UUID, List<Organization>> childrenMap = allOrganizations.stream()
@@ -100,7 +121,11 @@ public class OrganizationService {
         Organization.OrganizationType type = Organization.OrganizationType.valueOf(request.type().toUpperCase());
 
         if (organizationRepository.existsByCode(request.code())) {
-            throw new IllegalArgumentException("Organization code already exists: " + request.code());
+            // ConflictException rather than IllegalArgumentException, and this is the reason it
+            // matters: a check that loses a race is caught by the unique index instead, and the
+            // database path answers 409. Throwing anything else here would make the same mistake
+            // return 400 or 409 depending on timing.
+            throw new ConflictException("Organization", "code", request.code());
         }
 
         validateHierarchy(type, request.parentId(), null);
@@ -187,23 +212,23 @@ public class OrganizationService {
     private void validateHierarchy(Organization.OrganizationType type, UUID parentId, UUID currentId) {
         if (type == Organization.OrganizationType.COMPANY) {
             if (parentId != null) {
-                throw new IllegalArgumentException("COMPANY organizations cannot have a parent");
+                throw new IllegalArgumentException("مؤسسات COMPANY لا يمكن أن يكون لها مؤسسة أم");
             }
             return;
         }
 
         if (parentId == null) {
-            throw new IllegalArgumentException(type + " organizations require a parent");
+            throw new IllegalArgumentException("مؤسسات " + type + " يجب أن يكون لها مؤسسة أم");
         }
         if (currentId != null && currentId.equals(parentId)) {
-            throw new IllegalArgumentException("Organization cannot be its own parent");
+            throw new IllegalArgumentException("لا يمكن للمؤسسة أن تكون المؤسسة الأم لنفسها");
         }
 
         Organization parent = organizationRepository.findById(parentId)
-                .orElseThrow(() -> new EntityNotFoundException("Parent organization not found with id: " + parentId));
+                .orElseThrow(() -> new EntityNotFoundException("المؤسسة الأم غير موجودة"));
 
         if (!Boolean.TRUE.equals(parent.getIsActive())) {
-            throw new IllegalArgumentException("Parent organization must be active");
+            throw new IllegalArgumentException("يجب أن تكون المؤسسة الأم مُفعّلة");
         }
 
         Organization.OrganizationType expectedParent = switch (type) {
@@ -215,7 +240,7 @@ public class OrganizationService {
 
         if (parent.getType() != expectedParent) {
             throw new IllegalArgumentException(
-                    type + " must have a parent of type " + expectedParent);
+                    "مؤسسات " + type + " يجب أن يكون لها مؤسسة أم من نوع " + expectedParent);
         }
 
         if (currentId != null) {
@@ -224,12 +249,12 @@ public class OrganizationService {
             visited.add(parent.getId());
             while (cursor != null) {
                 if (!visited.add(cursor) || currentId.equals(cursor)) {
-                    throw new IllegalArgumentException("Organization hierarchy cycle detected");
+                    throw new IllegalArgumentException("تم اكتشاف دورة في تسلسل المؤسسات");
                 }
                 UUID ancestorId = cursor;
                 Organization ancestor = organizationRepository.findById(ancestorId)
                         .orElseThrow(() -> new EntityNotFoundException(
-                                "Ancestor organization not found with id: " + ancestorId));
+                                "إحدى المؤسسات الأم غير موجودة"));
                 cursor = ancestor.getParentId();
             }
         }

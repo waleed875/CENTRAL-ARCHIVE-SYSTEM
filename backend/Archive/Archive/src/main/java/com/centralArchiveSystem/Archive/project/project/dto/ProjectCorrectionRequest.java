@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record ProjectCorrectionRequest(
         @JsonProperty("review_notes")
-        @NotBlank(message = "review_notes is required")
-        @Size(max = 5000, message = "review_notes must not exceed 5000 characters")
+        @NotBlank(message = "حقل ملاحظات المراجعة مطلوب")
+        @Size(max = 5000, message = "ملاحظات المراجعة يجب ألا تتجاوز 5000 حرف")
         String reviewNotes
 ) {}

@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.import_.migration.MigrationBatchReposito
 import com.centralArchiveSystem.Archive.import_.migration.MigrationBatch;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceType;
 import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +42,14 @@ public class MigrationRunner {
 
     @Value("${legacy.migration.source-name:ARC2}")
     private String sourceName;
+
+    /**
+     * Read only so the auto-created source can be stamped with the database this run will actually
+     * use. A source created with a different name looks correct in the sources screen and sends the
+     * operator to a database the migration never read.
+     */
+    @Value("${legacy.datasource.url:}")
+    private String legacyJdbcUrl;
 
     public MigrationRunner(LegacyMigrationService legacyMigrationService,
                            MigrationBatchRepository batchRepository,
@@ -169,20 +178,95 @@ public class MigrationRunner {
      * Returns a MigrationSource id for the legacy migration, creating a default
      * one (from legacy.migration.source-name) if none exists. This guarantees a
      * non-null migration_source_id on batches (the column is NOT NULL).
+     *
+     * <p>The name match must be unambiguous. Taking the first of several substring matches is how an
+     * operator ends up migrating one database while reading a log that names another: two sources
+     * whose names both contain "ARC2" is an ordinary thing to end up with after copying a source
+     * row, and the old code picked one of them without a word. Reading the wrong database does not
+     * fail -- it reports a clean run of zero files.
      */
     public UUID ensureSourceId() {
-        List<MigrationSource> existing = sourceRepository.findByNameContainingIgnoreCase(sourceName);
-        if (!existing.isEmpty()) {
-            return existing.get(0).getId();
+        List<MigrationSource> candidates = sourceRepository.findByNameContainingIgnoreCase(sourceName);
+
+        List<MigrationSource> exact = candidates.stream()
+                .filter(s -> sourceName.equalsIgnoreCase(s.getName()))
+                .toList();
+        if (exact.size() == 1) {
+            return exact.get(0).getId();
         }
+        if (exact.size() > 1) {
+            throw new IllegalStateException(
+                    "There are " + exact.size() + " migration sources named exactly '" + sourceName
+                            + "' (" + names(exact) + "). The legacy migration will not pick one. Remove or "
+                            + "rename the duplicates.");
+        }
+
+        if (candidates.size() == 1) {
+            log.warn("Using migration source '{}' because it is the only source whose name contains '{}'. "
+                            + "Set legacy.migration.source-name to its exact name to remove the guess.",
+                    candidates.get(0).getName(), sourceName);
+            return candidates.get(0).getId();
+        }
+        if (candidates.size() > 1) {
+            throw new IllegalStateException(
+                    "Migration source '" + sourceName + "' is ambiguous: " + candidates.size()
+                            + " sources contain that name (" + names(candidates) + "). Set "
+                            + "legacy.migration.source-name to the exact name of the source that points at "
+                            + "the legacy database. Refusing to choose, because the wrong one reads an empty "
+                            + "database and reports a successful migration of zero files.");
+        }
+
+        String database = configuredLegacyDatabase();
         MigrationSource source = new MigrationSource();
         source.setName(sourceName);
-        source.setSourceType("LEGACY_DB");
-        source.setDatabaseName("legacy_staging");
+        source.setSourceType(MigrationSourceType.LEGACY_DB);
+        // Taken from legacy.datasource.url rather than a name written here. This record deliberately
+        // carries no host, so hasStoredConnection() is false and openConnection() reads that URL; a
+        // database name that disagreed with it would be a lie the sources screen repeats back.
+        source.setDatabaseName(database);
         source.setOfficeName(sourceName);
-        source.setDescription("Legacy archive system source migrated into central archive");
+        source.setDescription("Legacy archive system source migrated into central archive"
+                + (database == null
+                        ? "; no database name could be read from legacy.datasource.url"
+                        : "; reads database '" + database + "'"));
         MigrationSource saved = sourceRepository.save(source);
-        log.info("Created default migration source: {} id={}", saved.getName(), saved.getId());
+        log.info("Created default migration source: {} id={} database={}", saved.getName(), saved.getId(),
+                database == null ? "<none>" : database);
+        if (database == null) {
+            log.warn("legacy.datasource.url is unset or carries no database name, so the source was "
+                    + "created without one. It will still read legacy.datasource.url when it runs.");
+        }
         return saved.getId();
+    }
+
+    private static String names(List<MigrationSource> sources) {
+        return sources.stream().map(MigrationSource::getName).sorted().toList().toString();
+    }
+
+    /**
+     * The database the connection will actually use, extracted from a JDBC URL.
+     *
+     * @return the database name, or {@code null} when the URL is absent or unparseable
+     */
+    String configuredLegacyDatabase() {
+        if (legacyJdbcUrl == null || legacyJdbcUrl.isBlank()) {
+            return null;
+        }
+        int authority = legacyJdbcUrl.indexOf("//");
+        if (authority < 0) {
+            return null;
+        }
+        String path = legacyJdbcUrl.substring(authority + 2);
+        int slash = path.indexOf('/');
+        if (slash < 0) {
+            return null;
+        }
+        path = path.substring(slash + 1);
+        int query = path.indexOf('?');
+        if (query >= 0) {
+            path = path.substring(0, query);
+        }
+        path = path.trim();
+        return path.isBlank() ? null : path;
     }
 }

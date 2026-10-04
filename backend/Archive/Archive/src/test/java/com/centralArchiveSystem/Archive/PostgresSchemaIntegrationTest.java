@@ -5,6 +5,7 @@ import com.centralArchiveSystem.Archive.audit.AuditLogRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Map;
@@ -269,6 +270,47 @@ class PostgresSchemaIntegrationTest {
         assertTrue(predicate.contains("RUNNING"));
     }
 
+
+    /**
+     * The Java side stopped accepting an arbitrary source type when the enum landed, so the column
+     * needs the same guard. Without it a row written by a script, a restore, or an older build
+     * would load the entity and fail the whole request list with an unmappable value.
+     */
+    @Test
+    void migrationSourceTypeIsConstrainedToTheEnumValues() {
+        Integer constraintCount = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM pg_constraint c
+                  JOIN pg_class t ON t.oid = c.conrelid
+                  JOIN pg_namespace n ON n.oid = t.relnamespace
+                 WHERE n.nspname = 'import'
+                   AND t.relname = 'migration_sources'
+                   AND c.conname = 'ck_migration_sources_source_type'
+                   AND c.contype = 'c'
+                """,
+                Integer.class
+        );
+        assertEquals(1, constraintCount);
+
+        // Null stays allowed: a source that defers to legacy.datasource.* never needed a type, and
+        // MigrationRunner only stamps one on the source it creates itself.
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                """
+                INSERT INTO import.migration_sources (name, office_name, source_type)
+                VALUES ('Unsupported type', ?, 'ORACLE')
+                """, "schema-test-" + java.util.UUID.randomUUID()));
+
+        Integer stored = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                  FROM import.migration_sources
+                 WHERE source_type = 'ORACLE'
+                """,
+                Integer.class
+        );
+        assertEquals(0, stored);
+    }
 
     @Test
     void branchPackageSourceOrganizationRemainsAnExternalIdentifier() {

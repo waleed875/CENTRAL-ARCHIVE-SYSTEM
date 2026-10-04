@@ -45,6 +45,17 @@ public interface FileTypeRepository extends JpaRepository<FileType, UUID> {
            "LOWER(ft.code) LIKE LOWER(CONCAT('%', :query, '%'))")
     List<FileType> searchByNameOrCode(@Param("query") String query);
 
+    /**
+     * Every type, ordered by name to match {@code /file-types}, so the same rows come back in the
+     * same order whichever of the two a client calls. A null {@code isActive} means no filter.
+     */
+    @Query("""
+           SELECT ft FROM FileType ft
+           WHERE (:isActive IS NULL OR ft.isActive = :isActive)
+           ORDER BY ft.name ASC
+           """)
+    List<FileType> findAllForSelection(@Param("isActive") Boolean isActive);
+
     @Query("SELECT COUNT(f) FROM com.centralArchiveSystem.Archive.project.file.FileEntity f WHERE f.typeId = :typeId")
     long countFilesByTypeId(@Param("typeId") UUID typeId);
 

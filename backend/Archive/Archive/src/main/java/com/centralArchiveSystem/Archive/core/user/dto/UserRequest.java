@@ -9,16 +9,16 @@ import java.util.UUID;
 
 @Schema(description = "Request body for creating or updating a user")
 public record UserRequest(
-    @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
+    @NotBlank(message = "حقل اسم المستخدم مطلوب")
+    @Size(min = 3, max = 50, message = "اسم المستخدم يجب أن يكون بين 3 و 50 حرفاً")
     String username,
 
-    @NotBlank(message = "Password is required")
-    @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
+    @NotBlank(message = "حقل كلمة المرور مطلوب")
+    @Size(min = 8, max = 100, message = "كلمة المرور يجب أن تكون بين 8 و 100 حرف")
     String password,
 
-    @NotBlank(message = "Full name is required")
-    @Size(min = 1, max = 200, message = "Full name must be between 1 and 200 characters")
+    @NotBlank(message = "حقل الاسم الكامل مطلوب")
+    @Size(min = 1, max = 200, message = "الاسم الكامل يجب ألا يتجاوز 200 حرف")
     String fullName,
 
     @Schema(description = "User email address")

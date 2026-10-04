@@ -2,6 +2,11 @@
 
 This guide describes the production deployment baseline for the central backend.
 
+> **Installing on a server?** Use [`deploy/linux/README.md`](deploy/linux/README.md). It has the
+> systemd units, the TLS gateway, the install and verification scripts, and the
+> troubleshooting table. The sections below are the general baseline and stay
+> authoritative for backups, restore, and audit retention.
+
 ## 1. Production architecture
 
 The backend requires:
@@ -39,10 +44,25 @@ CORS_ALLOWED_ORIGINS=https://archive.example.com
 ARCHIVE_INSTANCE_UUID=<stable UUID for this central installation>
 ```
 
+`SETTINGS_ENCRYPTION_KEY` is also required and has no default. It encrypts the
+confidentiality code held in `import.migration_settings` and every per-office legacy
+database password on `import.migration_sources`.
+
+> **This value is irreversible.** The stored ciphertext is decrypted with a key derived
+> from this string. Changing it makes the application unable to read existing values,
+> and there is no rotation path and no recovery. Back it up with the same care as the
+> database itself, and never regenerate it during an upgrade.
+
+`CORS_ALLOWED_ORIGINS` is rarely load-bearing in the shipped topology. The browser calls
+`/api/gateway` on the frontend origin, and the Next.js server forwards to the API
+server-side, so the API is never called cross-origin. Set it to the exact public origin
+anyway, because the application refuses to start without it, and never to `*`.
+
 Optional operational settings:
 
 ```text
 SERVER_PORT=8080
+SERVER_ADDRESS=127.0.0.1
 JWT_EXPIRATION_MS=3600000
 JWT_REFRESH_EXPIRATION_MS=604800000
 PACKAGE_SUPPORTED_SCHEMA_VERSIONS=1.0
@@ -53,6 +73,10 @@ BOOTSTRAP_ADMIN_ENABLED=false
 FLYWAY_BASELINE_ON_MIGRATE=true
 FORWARD_HEADERS_STRATEGY=none
 ```
+
+`SERVER_ADDRESS` should stay on loopback when a reverse proxy runs on the same host.
+Exposing the application port publicly puts the Spring Security stack on the network
+without the reverse proxy in front of it.
 
 Only enable forwarded-header handling when traffic reaches the application exclusively through a trusted reverse proxy that strips untrusted client-supplied `Forwarded` and `X-Forwarded-*` headers.
 
@@ -194,33 +218,79 @@ and backup reference outside the table being purged.
 Legacy migration is a maintenance operation against a separately restored
 PostgreSQL staging database. It is disabled by default.
 
-Before enabling migration:
+### Per-office sources
+
+Each office is a separate migration source, and each source carries its own connection.
+`office_name` identifies the office, is unique across all sources, and becomes part of
+every migrated project UID and source reference.
+
+A source either carries a complete connection of its own — `host`, `port`,
+`databaseName`, `username` and an AES-GCM-encrypted `password` — or it carries none of
+them and falls back to the `legacy.datasource.*` environment default. A half-filled
+connection is rejected at save time rather than stored, because a source with a host but
+no username would look configured and then build an unusable JDBC URL at migration time,
+far from the form that caused it.
+
+`office_name` cannot be changed once the source has migrated anything, because it is
+part of the identity of every row already migrated under it. Correct a placeholder
+office name before the first run, and create a new source rather than renaming one that
+has already run.
+
+The stored password is never returned by any API response. Rotating a legacy database
+password means re-entering it in the source editor; a blank field keeps the stored one.
+
+### Before enabling migration:
 
 1. restore and validate the legacy backup in an isolated staging database;
 2. verify PostgreSQL and MinIO backups for the central archive;
-3. set `LEGACY_DB_URL`, `LEGACY_DB_USERNAME`, and `LEGACY_DB_PASSWORD`;
-4. set `LEGACY_MIGRATION_DEFAULT_CONFIDENTIALITY_CODE` to an existing
-   `core.confidentiality_levels.code`;
-5. keep `LEGACY_MIGRATION_SCHEDULE_ENABLED=false` unless automatic scheduling
+3. create the migration source for the office and store its connection credentials, or
+   set `LEGACY_DB_URL`, `LEGACY_DB_USERNAME` and `LEGACY_DB_PASSWORD` for a source that
+   should use the environment default;
+4. keep `LEGACY_MIGRATION_SCHEDULE_ENABLED=false` unless automatic scheduling
    is explicitly required;
-6. set `LEGACY_MIGRATION_ENABLED=true` only for the controlled migration
-   window.
+5. set `LEGACY_MIGRATION_ENABLED=true` only for the controlled migration window.
 
-The API accepts only the configured staging JDBC URL. Dynamic database
-connections, file-based migration adapters, per-run type mappings, and per-run
-confidentiality overrides are not part of the current MVP and are rejected.
+A run request carries no connection string. The batch opens the connection stored on its
+own source, and the API rejects a non-blank `migration_config.connection_string` rather
+than ignoring it, so nobody can assume a URL they supplied was used. File-based
+migration adapters, per-run type mappings, and per-run confidentiality overrides are
+also not part of the current MVP and are rejected.
 
 Legacy file bodies are decoded from Base64 to a temporary spool file one item
 at a time, content-inspected, hashed, uploaded to MinIO, and then persisted.
 Ensure the host has enough temporary disk for the largest single legacy file.
 
-After the migration window:
+### Reading the outcome
+
+A batch ends in `SUCCESS`, `FAILED`, or `PARTIAL`. `PARTIAL` is not a cosmetic state:
+it means some rows could not be migrated and the count is short. A legacy row that
+violates a unique constraint is recorded as a `FAILED` tracking item and the batch
+continues, rather than the whole transaction being rolled back.
+
+Two failure classes are worth distinguishing:
+
+- **A duplicate project number inside one office.** The central archive treats one
+  project number per organisation per year as one project, so extra legacy rows carrying
+  the same number are recorded `FAILED` and any files belonging to them are not
+  migrated. This is legacy data that needs cleaning, not a migration bug. Decide
+  deliberately whether to merge the files onto the surviving project or to disambiguate
+  the numbers, because the second option changes project identity.
+- **A project that already exists under the same number from an earlier run.** These are
+  skipped as already migrated, which is the intended idempotent behaviour.
+
+A file row is only useful if its MinIO object exists, so a `PARTIAL` batch leaves
+metadata short of objects. Resolve the `FAILED` items and re-run before closing the
+window; note that a tracking row already recorded as `FAILED` is not automatically
+retried, so a corrected source may still need its failed rows cleared.
+
+### After the migration window:
 
 1. confirm all batches are in a terminal state;
 2. review FAILED/PARTIAL items and migration counts;
 3. set `LEGACY_MIGRATION_ENABLED=false`;
 4. keep `LEGACY_MIGRATION_SCHEDULE_ENABLED=false`;
 5. remove or rotate legacy staging credentials if they are no longer needed.
+
 
 ## 12. Release checklist
 
@@ -230,13 +300,16 @@ After the migration window:
 - authentication/security tests pass.
 - package verification tests pass.
 - no development secrets are used.
+- `SETTINGS_ENCRYPTION_KEY` is present and is the value that encrypted the existing data.
 - Swagger is disabled unless explicitly required.
 - bootstrap admin is disabled.
+- the application port is bound to loopback behind the reverse proxy.
 - PostgreSQL backup succeeds.
 - MinIO backup/replication is healthy.
 - restore procedure has been tested recently.
 - legacy migration is disabled unless an approved migration window is active.
 - the legacy migration scheduler is disabled unless explicitly required.
+
 
 ## 13. Rollback
 

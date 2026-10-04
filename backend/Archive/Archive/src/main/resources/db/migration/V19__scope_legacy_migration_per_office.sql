@@ -18,9 +18,14 @@ UPDATE import.migration_sources
 SET office_name = COALESCE(NULLIF(BTRIM(database_name), ''), name)
 WHERE office_name IS NULL OR BTRIM(office_name) = '';
 
+-- This guard is about rows that would end up unattributed, so it must only fire when there are
+-- items to misattribute. migration_sources is a data table: on a brand new database it is empty,
+-- and so is legacy_migration_items. Testing the sources alone therefore made this migration fail
+-- on every fresh install, which meant the application could not start on an empty database at all.
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM import.migration_sources) THEN
+    IF NOT EXISTS (SELECT 1 FROM import.migration_sources)
+       AND EXISTS (SELECT 1 FROM import.legacy_migration_items) THEN
         RAISE EXCEPTION 'no migration sources exist, so the existing migration items cannot be attributed to an office';
     END IF;
 END

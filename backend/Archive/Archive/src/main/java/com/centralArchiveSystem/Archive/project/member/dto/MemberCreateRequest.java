@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record MemberCreateRequest(
     @JsonProperty("person_name")
-    @NotBlank(message = "person_name is required")
+    @NotBlank(message = "اسم عضو المشروع مطلوب")
     String personName,
     @JsonProperty("organization_name") String organizationName,
     @JsonProperty("role_name") String roleName,

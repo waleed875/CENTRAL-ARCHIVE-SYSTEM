@@ -137,6 +137,23 @@ public class ProjectController {
         return ResponseEntity.ok(ApiResponse.success(response, "Project archived"));
     }
 
+    /**
+     * Removes a draft entered by mistake.
+     *
+     * <p>Named apart from the archive transition deliberately: this is the only project removal the
+     * system has, and it answers 422 rather than 404 for anything that has left the draft state, so
+     * the refusal says which condition failed. A person who is looking at a project they did not
+     * mean to create needs to be told that it can no longer be removed, not left to assume the
+     * button did nothing.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
+    @Operation(summary = "Delete a draft project that was created by mistake")
+    public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
+        projectService.deleteDraft(id);
+        return ResponseEntity.ok(ApiResponse.success(null, "تم حذف المشروع"));
+    }
+
     @GetMapping("/search")
     @Operation(summary = "Search projects with full-text and filter parameters")
     public ResponseEntity<ApiResponse<PagedResponse<ProjectResponse>>> search(

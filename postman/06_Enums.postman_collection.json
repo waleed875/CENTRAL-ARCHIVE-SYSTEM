@@ -1,0 +1,470 @@
+{
+  "info": {
+    "_postman_id": "b7c2e914-6f3a-4d51-8a77-2c5e0f1d6a48",
+    "name": "Central Archive - Enums",
+    "description": "Everything a dropdown needs, in two parts.\n\n**Enums** — the value sets for fields whose value is a name the server invents (a status, a type, a sort field). Build controls from this response instead of keeping a copy of the values in the client: the keys are part of the contract, the values are read from the Java enums the server actually validates against.\n\nA field that does not appear here is free text. Two of the sets are deliberately not the same shape as the rest:\n\n- `migrationBatchCompletionStatus` holds only the three states a batch may be completed with. `PLANNED` and `RUNNING` appear in `migrationBatchStatus` but are refused by the completion endpoint.\n- `projectSortFields` and `sortDirections` are accepted silently. A `sortBy` outside the list is not rejected; the service orders by `createdAt` instead, so the search form should only offer what is listed.\n\n**Selection lists** — the `/all` routes, for fields whose value is a row in another table and therefore needs an id that an enum cannot carry. These return a bare array, not the paged envelope, so read `data` and not `data.content`. Use them for dropdowns and keep the paginated siblings for the admin tables that page through them: a page boundary inside a dropdown hides a row the user was entitled to pick, with nothing on screen saying which one went missing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "username",
+      "value": "admin"
+    },
+    {
+      "key": "password",
+      "value": "admin123"
+    },
+    {
+      "key": "organizationId",
+      "value": ""
+    },
+    {
+      "key": "organizationType",
+      "value": "COMPANY"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Login (required)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Run this first. Stores the access token into `{{token}}`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "if (data && data.token) pm.collectionVariables.set('token', data.token);",
+                  "if (data && data.refreshToken) pm.collectionVariables.set('refreshToken', data.refreshToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Enums",
+      "item": [
+        {
+          "name": "List all constrained value sets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/enums",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "enums"
+              ]
+            },
+            "description": "Returns an object whose keys are field sets and whose values are the accepted values. Readable by any authenticated user, with the same access as the reference-data endpoints it complements."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "// Every key a client is expected to build a control from. A missing key is a",
+                  "// removed field, which the client should fail loudly on rather than fall back",
+                  "// to a text box for.",
+                  "const expected = [",
+                  "  'projectStatus', 'dataCompletionStatus', 'projectSourceType',",
+                  "  'userStatus', 'organizationType', 'migrationSourceType',",
+                  "  'migrationBatchStatus', 'migrationBatchCompletionStatus', 'packageStatus',",
+                  "  'fileStatus', 'auditAction', 'auditEntityType',",
+                  "  'projectSortFields', 'sortDirections'",
+                  "];",
+                  "expected.forEach((key) => pm.test('has ' + key, () => {",
+                  "  pm.expect(data).to.have.property(key);",
+                  "  pm.expect(data[key]).to.be.an('array').that.is.not.empty;",
+                  "}));",
+                  "",
+                  "Object.keys(data).forEach((key) => pm.test(key + ' has no duplicates', () => {",
+                  "  pm.expect(new Set(data[key]).size).to.eql(data[key].length);",
+                  "}));",
+                  "",
+                  "pm.test('completion excludes non-terminal states', () => {",
+                  "  ['PLANNED', 'RUNNING'].forEach((s) => pm.expect(data.migrationBatchCompletionStatus).to.not.include(s));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": {
+                "mode": "raw",
+                "raw": "{\n  \"success\": true,\n  \"data\": {\n    \"projectStatus\": [\n      \"DRAFT\",\n      \"IMPORTED\",\n      \"UNDER_REVIEW\",\n      \"NEEDS_CORRECTION\",\n      \"REJECTED\",\n      \"APPROVED\",\n      \"ARCHIVED\"\n    ],\n    \"dataCompletionStatus\": [\n      \"COMPLETE\",\n      \"INCOMPLETE\"\n    ],\n    \"projectSourceType\": [\n      \"MANUAL\",\n      \"BRANCH_PACKAGE\",\n      \"MIGRATION\"\n    ],\n    \"userStatus\": [\n      \"ACTIVE\",\n      \"DISABLED\",\n      \"LOCKED\"\n    ],\n    \"organizationType\": [\n      \"COMPANY\",\n      \"FACTORY\",\n      \"LINE\",\n      \"DEPARTMENT\"\n    ],\n    \"migrationSourceType\": [\n      \"POSTGRESQL\",\n      \"LEGACY_DB\"\n    ],\n    \"migrationBatchStatus\": [\n      \"PLANNED\",\n      \"RUNNING\",\n      \"SUCCESS\",\n      \"FAILED\",\n      \"PARTIAL\"\n    ],\n    \"migrationBatchCompletionStatus\": [\n      \"SUCCESS\",\n      \"PARTIAL\",\n      \"FAILED\"\n    ],\n    \"packageStatus\": [\n      \"RECEIVED\",\n      \"VERIFIED\",\n      \"IMPORTED\",\n      \"FAILED\",\n      \"DUPLICATE\"\n    ],\n    \"fileStatus\": [\n      \"ACTIVE\",\n      \"DELETED\"\n    ],\n    \"auditAction\": [\n      \"REJECT\",\n      \"APPROVE\",\n      \"ARCHIVE\",\n      \"IMPORT\",\n      \"CREATE\",\n      \"UPDATE\",\n      \"DELETE\",\n      \"READ\",\n      \"EXECUTE\"\n    ],\n    \"auditEntityType\": [\n      \"Auth\",\n      \"User\",\n      \"Role\",\n      \"Organization\",\n      \"ConfidentialityLevel\",\n      \"Project\",\n      \"ProjectMember\",\n      \"ProjectType\",\n      \"FileCategory\",\n      \"File\",\n      \"BranchPackage\",\n      \"Export\",\n      \"Migration\",\n      \"MigrationSettings\",\n      \"AuditLog\",\n      \"Dashboard\"\n    ],\n    \"projectSortFields\": [\n      \"createdAt\",\n      \"name\",\n      \"projectCode\",\n      \"projectNumber\",\n      \"status\",\n      \"updatedAt\",\n      \"versionNo\",\n      \"year\"\n    ],\n    \"sortDirections\": [\n      \"asc\",\n      \"desc\"\n    ]\n  }\n}"
+              },
+              "description": "200 OK"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Selection lists",
+      "item": [
+        {
+          "name": "Confidentiality levels (all)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/confidentiality-levels/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "confidentiality-levels",
+                "all"
+              ]
+            },
+            "description": "Unpaginated, ordered by levelOrder ascending so severity reads low to high. Takes no filters: the entity has no isActive column, so a client should not send one."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "// A dropdown iterates this array. A client written against the paginated sibling",
+                  "// reads data.content[i] instead, which yields an empty control with no error.",
+                  "pm.test('data is a bare array, not the paged envelope', () => {",
+                  "  pm.expect(data).to.be.an('array');",
+                  "  pm.expect(data.content).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test('every row has an id and a levelOrder', () => {",
+                  "  data.forEach((row) => {",
+                  "    pm.expect(row.id, JSON.stringify(row)).to.be.a('string');",
+                  "    pm.expect(row.levelOrder).to.be.a('number');",
+                  "  });",
+                  "});",
+                  "",
+                  "// The whole point: a page boundary inside a dropdown would hide a level the",
+                  "// user was entitled to pick, and nothing on screen would say which.",
+                  "pm.test('severity order is ascending', () => {",
+                  "  const orders = data.map((row) => row.levelOrder);",
+                  "  pm.expect(orders).to.eql([...orders].sort((a, b) => a - b));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Organizations (all)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "all"
+              ]
+            },
+            "description": "Every level at once, parents included, ordered by name. Filters: parentId (one level of the cascade), type (COMPANY, FACTORY, LINE, DEPARTMENT), isActive. Omit parentId for a flat searchable list, or use /organizations/tree when you want the nesting delivered."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "pm.test('data is a bare array, not the paged envelope', () => {",
+                  "  pm.expect(data).to.be.an('array');",
+                  "  pm.expect(data.content).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test('every row has an id', () => {",
+                  "  data.forEach((row) => pm.expect(row.id, JSON.stringify(row)).to.be.a('string'));",
+                  "});",
+                  "",
+                  "// Feeds the cascading request below, so the cascade can be walked by hand.",
+                  "pm.test('stores the first organization as {{organizationId}}', () => {",
+                  "  pm.expect(data.length, 'no organizations to pick a parent from').to.be.above(0);",
+                  "  if (data.length > 0) pm.collectionVariables.set('organizationId', data[0].id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Organizations (all, one level)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/all?parentId={{organizationId}}&isActive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "parentId",
+                  "value": "{{organizationId}}",
+                  "description": "Only the children of this one. Omit it for every level at once."
+                },
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "The next level of the cascade. Run Organizations (all) first so {{organizationId}} is set. A null parentId means every level, so omitting this returns the parents too rather than the roots."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "pm.test('data is a bare array', () => pm.expect(data).to.be.an('array'));",
+                  "",
+                  "const parent = pm.collectionVariables.get('organizationId');",
+                  "pm.test('every row is a child of the requested parent', () => {",
+                  "  data.forEach((row) => pm.expect(row.parentId, JSON.stringify(row)).to.eql(parent));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Organizations (all, one type)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/organizations/all?type={{organizationType}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "organizations",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "{{organizationType}}",
+                  "description": "COMPANY, FACTORY, LINE or DEPARTMENT. Case-insensitive. Anything else is not validated and returns 500."
+                }
+              ]
+            },
+            "description": "Build the choices from the organizationType key in the Enums folder rather than typing one by hand: an unrecognised value is not turned into a 400 here, it throws."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "const wanted = pm.collectionVariables.get('organizationType');",
+                  "pm.test('returns only the requested type', () => {",
+                  "  data.forEach((row) => pm.expect(row.type, JSON.stringify(row)).to.eql(wanted));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Roles (all)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roles/all?isActive=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "roles",
+                "all"
+              ],
+              "query": [
+                {
+                  "key": "isActive",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Ordered by code. Submit the id of each chosen row as roleIds -- not the code, even though the code is what roles.create validates. Both are in the response, so label a row however you like."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "pm.test('data is a bare array, not the paged envelope', () => {",
+                  "  pm.expect(data).to.be.an('array');",
+                  "  pm.expect(data.content).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test('every row has an id and a code', () => {",
+                  "  data.forEach((row) => {",
+                  "    pm.expect(row.id, JSON.stringify(row)).to.be.a('string');",
+                  "    pm.expect(row.code, JSON.stringify(row)).to.be.a('string');",
+                  "  });",
+                  "});",
+                  "",
+                  "pm.test('isActive filter was honoured', () => {",
+                  "  data.forEach((row) => pm.expect(row.isActive, JSON.stringify(row)).to.be.true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "File types (all)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/file-types/all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "file-types",
+                "all"
+              ]
+            },
+            "description": "Every type across every category, for a form that offers types before a category is chosen. Once a category is known, /file-types/by-category/{categoryId} is the narrower and cheaper call."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const data = json && json.data ? json.data : json;",
+                  "",
+                  "pm.test('data is a bare array, not the paged envelope', () => {",
+                  "  pm.expect(data).to.be.an('array');",
+                  "  pm.expect(data.content).to.be.undefined;",
+                  "});",
+                  "",
+                  "pm.test('every row has an id and a categoryId', () => {",
+                  "  data.forEach((row) => {",
+                  "    pm.expect(row.id, JSON.stringify(row)).to.be.a('string');",
+                  "    pm.expect(row.categoryId, JSON.stringify(row)).to.be.a('string');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

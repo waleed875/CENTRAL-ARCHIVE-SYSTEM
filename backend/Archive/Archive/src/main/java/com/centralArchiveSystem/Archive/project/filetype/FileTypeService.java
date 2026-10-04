@@ -46,6 +46,17 @@ public class FileTypeService {
         return types.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
+    /**
+     * Every type across every category, unpaginated, for a form that offers types before a
+     * category is chosen. Once a category is known, {@link #listByCategory} is the narrower and
+     * cheaper call.
+     */
+    public List<FileTypeResponse> listAll(Boolean isActive) {
+        return fileTypeRepository.findAllForSelection(isActive).stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     public FileTypeResponse getById(UUID id) {
         FileType fileType = fileTypeRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File type not found with id: " + id));

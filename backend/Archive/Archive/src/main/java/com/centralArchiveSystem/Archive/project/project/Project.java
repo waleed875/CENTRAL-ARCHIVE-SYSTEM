@@ -119,7 +119,36 @@ public class Project {
     private LocalDateTime updatedAt;
 
     public enum ProjectStatus {
-        DRAFT, IMPORTED, UNDER_REVIEW, NEEDS_CORRECTION, REJECTED, APPROVED, ARCHIVED
+        DRAFT("مسودة"),
+        IMPORTED("مستورد"),
+        UNDER_REVIEW("قيد المراجعة"),
+        NEEDS_CORRECTION("يحتاج تصحيحاً"),
+        REJECTED("مرفوض"),
+        APPROVED("معتمد"),
+        ARCHIVED("مؤرشف");
+
+        private final String label;
+
+        ProjectStatus(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        /**
+         * The status as it reads inside a sentence, keeping the stored name beside the Arabic.
+         *
+         * <p>Both, because they answer different questions. Someone looking at the row sees the
+         * English name in the database and the Arabic in the message, and having only the Arabic
+         * would send them looking for a status that appears nowhere in the system; having only the
+         * English is what this replaces, since a rejection that quotes {@code UNDER_REVIEW} to an
+         * Arabic reader says nothing they can act on.
+         */
+        public String describe() {
+            return label + " (" + name() + ")";
+        }
     }
 
     public enum DataCompletionStatus {

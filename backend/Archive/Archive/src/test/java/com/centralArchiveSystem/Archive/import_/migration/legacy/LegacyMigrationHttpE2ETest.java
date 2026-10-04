@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLeve
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
+import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceType;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
 import com.centralArchiveSystem.Archive.project.project.Project;
@@ -26,9 +27,7 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(properties = {
-        "legacy.migration.default-confidentiality-code=LEGACY_E2E"
-})
+@SpringBootTest
 class LegacyMigrationHttpE2ETest {
 
     @DynamicPropertySource
@@ -61,6 +60,7 @@ class LegacyMigrationHttpE2ETest {
 
     @BeforeEach
     void setupLegacyFixture() throws Exception {
+        purgeEarlierFixtures();
         ensureLegacyTables();
         ensureDefaultConfidentiality();
 
@@ -167,7 +167,7 @@ class LegacyMigrationHttpE2ETest {
             assertEquals("Legacy Administrator", project.getExecutingEntity());
             assertEquals("Legacy project details", project.getDescription());
             assertEquals("Legacy project note", project.getNotes());
-            assertEquals(Project.ProjectStatus.ARCHIVED, project.getStatus());
+            assertEquals(Project.ProjectStatus.IMPORTED, project.getStatus());
             assertEquals(Project.SourceType.MIGRATION, project.getSourceType());
             // The reference carries the office, not a hard-coded database name.
             assertEquals(source.getOfficeName() + ":tbl_project:" + legacyProjectId, project.getSourceReference());
@@ -181,10 +181,87 @@ class LegacyMigrationHttpE2ETest {
             assertEquals(sha256(decodedFile), file.getChecksumSha256());
             assertEquals("MIGRATION", file.getSourceType());
             assertEquals(source.getOfficeName() + ":tbl_files:" + legacyFileId, file.getSourceReference());
+            // A file must never be classified more strictly than the project holding it. It used to be
+            // stamped with a run-wide default code while the project kept none, and the file listing
+            // drops anything the viewer's clearance does not reach -- silently, with no error -- so
+            // the project opened to an empty list. Inheriting is what keeps the two in agreement.
+            assertEquals(project.getConfidentialityLevelId(), file.getConfidentialityLevelId());
+            assertNull(file.getConfidentialityLevelId());
 
             try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
                 assertArrayEquals(decodedFile, input.readAllBytes());
             }
+        }
+    }
+
+    /**
+     * A migrated project arrives INCOMPLETE with a list of fields the legacy row did not supply, so
+     * it must be correctable. ARCHIVED would refuse every write -- file upload, metadata edit,
+     * soft delete and member changes all reject it -- and the missing-fields list would then have
+     * nothing to be filled in against. This asserts the status that keeps the project editable.
+     */
+    @Test
+    void migratedProjectStaysEditableSoItsMissingFieldsCanBeFilledIn() throws Exception {
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+
+            UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(),
+                    LegacyMigrationItem.Kind.PROJECT,
+                    "PROJECT-" + legacyProjectId
+            ).orElseThrow().getTargetId();
+
+            Project project = projectRepository.findById(targetProjectId).orElseThrow();
+            assertEquals(Project.ProjectStatus.IMPORTED, project.getStatus());
+            assertEquals(Project.DataCompletionStatus.INCOMPLETE, project.getDataCompletionStatus());
+
+            // The status is what the write guards branch on, so assert the guards themselves rather
+            // than restating the enum here. requireMutableProject is private in both services, so
+            // this goes through the public update path the reviewer would actually use.
+            project.setName("Corrected name");
+            project.setDataCompletionStatus(Project.DataCompletionStatus.COMPLETE);
+            projectRepository.saveAndFlush(project);
+
+            Project reloaded = projectRepository.findById(targetProjectId).orElseThrow();
+            assertEquals("Corrected name", reloaded.getName());
+            assertEquals(Project.DataCompletionStatus.COMPLETE, reloaded.getDataCompletionStatus());
+        }
+    }
+
+    /**
+     * Classification is decided once, on the project, and the files follow it. Asserting the
+     * unclassified case alone would pass just as well if the code did nothing at all, so this covers
+     * the other direction: a project that does carry a level hands that exact level to its files.
+     */
+    @Test
+    void migratedFilesTakeTheirProjectsConfidentialityLevel() throws Exception {
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+
+            UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(),
+                    LegacyMigrationItem.Kind.PROJECT,
+                    "PROJECT-" + legacyProjectId
+            ).orElseThrow().getTargetId();
+
+            UUID levelId = classifyProject(targetProjectId);
+
+            try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+                migrationService.migrateFiles(connection, pool);
+            }
+
+            UUID targetFileId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(),
+                    LegacyMigrationItem.Kind.FILE,
+                    "FILE-" + legacyFileId
+            ).orElseThrow().getTargetId();
+
+            var file = fileRepository.findById(targetFileId).orElseThrow();
+            assertEquals(levelId, file.getConfidentialityLevelId());
         }
     }
 
@@ -196,11 +273,24 @@ class LegacyMigrationHttpE2ETest {
         String office = "E2E-" + Math.abs(UUID.randomUUID().hashCode() % 1_000_000);
         MigrationSource source = new MigrationSource();
         source.setName(office);
-        source.setSourceType("LEGACY_DB");
+        source.setSourceType(MigrationSourceType.LEGACY_DB);
         source.setDatabaseName(office);
         source.setOfficeName(office);
         source.setDescription("Legacy migration end-to-end test source");
         return sourceRepository.save(source);
+    }
+
+    /**
+     * The migration phases count every row they see, so a leftover fixture from an earlier run
+     * turns the next run's "exactly one" assertions into "eighteen". These tables are shared and
+     * this class writes to them, so it has to take its own rows back out. The match is on the name
+     * this class writes, never a blanket truncate: the point is to leave anything that is not ours
+     * exactly as it was found.
+     */
+    private void purgeEarlierFixtures() {
+        jdbcTemplate.update("DELETE FROM public.tbl_files WHERE filename LIKE 'legacy-%'");
+        jdbcTemplate.update("DELETE FROM public.tbl_project WHERE name LIKE 'Legacy Project %'");
+        jdbcTemplate.update("DELETE FROM public.tbl_side WHERE name LIKE 'Legacy Side %'");
     }
 
     private void ensureLegacyTables() {
@@ -244,15 +334,31 @@ class LegacyMigrationHttpE2ETest {
         );
     }
 
-    private void ensureDefaultConfidentiality() {
-        confidentialityLevelRepository.findByCode("LEGACY_E2E").orElseGet(() -> {
-            ConfidentialityLevel level = new ConfidentialityLevel();
-            level.setCode("LEGACY_E2E");
-            level.setName("Legacy E2E");
-            level.setLevelOrder(900_000 + Math.abs(UUID.randomUUID().hashCode() % 50_000));
-            level.setDescription("Integration-test default confidentiality for legacy migration");
-            return confidentialityLevelRepository.save(level);
-        });
+    /**
+     * Seeds a real confidentiality level so the inherited value can be told apart from "no level at
+     * all". Assigning it to the project before the file phase runs is the only way to observe
+     * inheritance through the public entry point, because the file phase skips any file an earlier
+     * run already marked DONE.
+     */
+    private UUID classifyProject(UUID projectId) {
+        UUID levelId = ensureDefaultConfidentiality();
+        Project project = projectRepository.findById(projectId).orElseThrow();
+        project.setConfidentialityLevelId(levelId);
+        projectRepository.saveAndFlush(project);
+        return levelId;
+    }
+
+    private UUID ensureDefaultConfidentiality() {
+        return confidentialityLevelRepository.findByCode("LEGACY_E2E")
+                .orElseGet(() -> {
+                    ConfidentialityLevel level = new ConfidentialityLevel();
+                    level.setCode("LEGACY_E2E");
+                    level.setName("Legacy E2E");
+                    level.setLevelOrder(900_000 + Math.abs(UUID.randomUUID().hashCode() % 50_000));
+                    level.setDescription("Integration-test default confidentiality for legacy migration");
+                    return confidentialityLevelRepository.save(level);
+                })
+                .getId();
     }
 
     private String sha256(byte[] bytes) throws Exception {

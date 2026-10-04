@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -34,6 +35,12 @@ public class ConfidentialityLevelController {
             @RequestParam(defaultValue = "20") int size) {
         Page<ConfidentialityLevelResponse> result = confidentialityLevelService.list(page - 1, size);
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
+    }
+
+    @GetMapping("/all")
+    @Operation(summary = "List every confidentiality level for a selection list")
+    public ResponseEntity<ApiResponse<List<ConfidentialityLevelResponse>>> listAll() {
+        return ResponseEntity.ok(ApiResponse.success(confidentialityLevelService.listAll()));
     }
 
     @PostMapping

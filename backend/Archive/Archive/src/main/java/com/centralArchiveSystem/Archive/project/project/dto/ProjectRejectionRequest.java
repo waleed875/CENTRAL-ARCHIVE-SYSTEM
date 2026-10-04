@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record ProjectRejectionRequest(
         @JsonProperty("rejection_reason")
-        @NotBlank(message = "rejection_reason is required")
-        @Size(max = 5000, message = "rejection_reason must not exceed 5000 characters")
+        @NotBlank(message = "حقل سبب الرفض مطلوب")
+        @Size(max = 5000, message = "سبب الرفض يجب ألا يتجاوز 5000 حرف")
         String rejectionReason
 ) {}

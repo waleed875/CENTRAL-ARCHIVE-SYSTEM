@@ -51,7 +51,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(batch.getMigrationSourceId());
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -94,7 +94,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(batch.getMigrationSourceId());
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -181,7 +181,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(sourceId);
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -229,7 +229,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(sourceId);
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -274,7 +274,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(sourceId);
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -334,7 +334,7 @@ class MigrationServiceTest {
 
         MigrationSource source = new MigrationSource();
         source.setId(sourceId);
-        source.setSourceType("POSTGRESQL");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
         source.setOfficeName("ARC2");
 
         when(batches.findById(id)).thenReturn(Optional.of(batch));
@@ -447,7 +447,7 @@ class MigrationServiceTest {
         MigrationService service = new MigrationService(sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
 
         var response = service.createSource(new MigrationSourceRequest(
-                "Office A", "POSTGRESQL", "arc1_db", "ARC1",
+                "Office A", MigrationSourceType.POSTGRESQL, "arc1_db", "ARC1",
                 "10.0.0.5", 5432, "arc1_reader", "s3cret", "first office"));
 
         ArgumentCaptor<MigrationSource> captor = ArgumentCaptor.forClass(MigrationSource.class);
@@ -481,7 +481,7 @@ class MigrationServiceTest {
         // A host and password but no username or port would build an unusable JDBC URL later on.
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
                 service.createSource(new MigrationSourceRequest(
-                        "Office A", "POSTGRESQL", "arc1_db", "ARC1",
+                        "Office A", MigrationSourceType.POSTGRESQL, "arc1_db", "ARC1",
                         "10.0.0.5", null, null, "s3cret", null)));
 
         assertTrue(error.getMessage().contains("port"));
@@ -505,7 +505,7 @@ class MigrationServiceTest {
         MigrationService service = new MigrationService(sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
 
         var response = service.createSource(new MigrationSourceRequest(
-                "Office B", "LEGACY_DB", null, "ARC2", null, null, null, null, null));
+                "Office B", MigrationSourceType.LEGACY_DB, null, "ARC2", null, null, null, null, null));
 
         assertFalse(response.hasStoredConnection());
         verify(sources).save(any());
@@ -522,7 +522,7 @@ class MigrationServiceTest {
         MigrationService service = new MigrationService(sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
 
         assertThrows(IllegalArgumentException.class, () -> service.createSource(new MigrationSourceRequest(
-                "Another name for ARC1", "POSTGRESQL", "arc1_db", "ARC1",
+                "Another name for ARC1", MigrationSourceType.POSTGRESQL, "arc1_db", "ARC1",
                 null, null, null, null, null)));
         verify(sources, never()).save(any());
     }

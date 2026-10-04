@@ -15,7 +15,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -39,6 +41,19 @@ public class ConfidentialityLevelService {
     public Page<ConfidentialityLevelResponse> list(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("levelOrder").ascending());
         return confidentialityLevelRepository.findAll(pageable).map(this::toResponse);
+    }
+
+    /**
+     * Every level in severity order, unpaginated, for a form to offer as a choice.
+     *
+     * <p>Separate from {@link #list} rather than a large {@code size} on it, because a size cap
+     * would be a limit nobody could see: the form would offer the first twenty levels and quietly
+     * refuse the rest, and the value that got dropped is the one the user was entitled to pick.
+     */
+    public List<ConfidentialityLevelResponse> listAll() {
+        return confidentialityLevelRepository.findAllByOrderByLevelOrderAsc().stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
     }
 
     public ConfidentialityLevelResponse getById(UUID id) {
@@ -102,19 +117,19 @@ public class ConfidentialityLevelService {
         long projectsCount = projectRepository.countByConfidentialityLevelId(id);
         if (projectsCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + projectsCount + " project(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + projectsCount + " مشروع");
         }
 
         long filesCount = fileRepository.countByConfidentialityLevelId(id);
         if (filesCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + filesCount + " file(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + filesCount + " ملف");
         }
 
         long usersCount = userRepository.countByMaxConfidentialityLevelId(id);
         if (usersCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + usersCount + " user(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + usersCount + " مستخدم");
         }
 
         confidentialityLevelRepository.delete(level);

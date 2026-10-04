@@ -1,7 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.migration.legacy;
 
 import com.centralArchiveSystem.Archive.config.MinioConfig;
-import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSource;
@@ -65,7 +64,6 @@ class LegacyMigrationServiceOfficeScopeTest {
             mock(FileRepository.class),
             mock(FileCategoryRepository.class),
             mock(FileTypeRepository.class),
-            mock(ConfidentialityLevelRepository.class),
             itemRepository,
             mock(MigrationSettingsService.class),
             new SettingsCrypto("test-encryption-key-for-legacy-office-scope"),

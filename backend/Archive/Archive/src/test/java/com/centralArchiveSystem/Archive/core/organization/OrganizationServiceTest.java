@@ -104,6 +104,28 @@ class OrganizationServiceTest {
         assertEquals(7L, response.projectsCount());
     }
 
+    @Test
+    void listAllNarrowsToTheRequestedLevelAndType() {
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+
+        UUID parentId = UUID.randomUUID();
+        Organization factory = organization(UUID.randomUUID(), Organization.OrganizationType.FACTORY, parentId, true);
+        Organization line = organization(UUID.randomUUID(), Organization.OrganizationType.LINE, parentId, true);
+        when(organizations.findAllForSelection(parentId, true)).thenReturn(List.of(factory, line));
+
+        OrganizationService service = new OrganizationService(organizations, projects);
+
+        // A cascading list asks for one level and one kind of unit at a time, so narrowing is the
+        // point; a caller that narrows by neither must still get the whole level back.
+        var factories = service.listAll(parentId, "FACTORY", true);
+        assertEquals(1, factories.size());
+        assertEquals(factory.getId(), factories.get(0).id());
+        assertEquals("FACTORY", factories.get(0).type());
+
+        assertEquals(2, service.listAll(parentId, null, true).size());
+    }
+
     private Organization organization(UUID id,
                                       Organization.OrganizationType type,
                                       UUID parentId,

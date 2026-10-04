@@ -36,10 +36,6 @@ public class MigrationSettings {
     @Column(name = "migration_enabled", nullable = false)
     private Boolean migrationEnabled = Boolean.FALSE;
 
-    /** AES-GCM envelope produced by {@link SettingsCrypto}; never a clear text code. */
-    @Column(name = "default_confidentiality_code_encrypted", columnDefinition = "TEXT")
-    private String defaultConfidentialityCodeEncrypted;
-
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -83,14 +79,6 @@ public class MigrationSettings {
 
     public void setMigrationEnabled(Boolean migrationEnabled) {
         this.migrationEnabled = migrationEnabled;
-    }
-
-    public String getDefaultConfidentialityCodeEncrypted() {
-        return defaultConfidentialityCodeEncrypted;
-    }
-
-    public void setDefaultConfidentialityCodeEncrypted(String defaultConfidentialityCodeEncrypted) {
-        this.defaultConfidentialityCodeEncrypted = defaultConfidentialityCodeEncrypted;
     }
 
     public LocalDateTime getUpdatedAt() {

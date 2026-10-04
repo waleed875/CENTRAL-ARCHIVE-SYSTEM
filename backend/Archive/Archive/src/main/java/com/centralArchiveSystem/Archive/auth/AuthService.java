@@ -90,7 +90,7 @@ public class AuthService implements UserDetailsService {
     @Transactional
     public LoginResponse refreshToken(String refreshToken) {
         if (!tokenProvider.validateRefreshToken(refreshToken)) {
-            throw new IllegalArgumentException("Invalid refresh token");
+            throw new IllegalArgumentException("رمز التحديث غير صالح");
         }
 
         String username = tokenProvider.getUsernameFromToken(refreshToken);
@@ -98,10 +98,10 @@ public class AuthService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
         if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new IllegalArgumentException("User account is not active");
+            throw new IllegalArgumentException("حساب المستخدم غير مُفعّل");
         }
         if (!tokenProvider.isIssuedOnOrAfter(refreshToken, user.getTokenValidAfter())) {
-            throw new IllegalArgumentException("Refresh token has been revoked");
+            throw new IllegalArgumentException("تم إلغاء رمز التحديث");
         }
 
         // Rotate the token family: all previously issued access/refresh tokens
@@ -134,7 +134,7 @@ public class AuthService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new IllegalArgumentException("كلمة المرور الحالية غير صحيحة");
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
