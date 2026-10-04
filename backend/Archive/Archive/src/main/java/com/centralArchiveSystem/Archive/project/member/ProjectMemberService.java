@@ -130,7 +130,8 @@ public class ProjectMemberService {
                 || project.getStatus() == Project.ProjectStatus.APPROVED
                 || project.getStatus() == Project.ProjectStatus.ARCHIVED) {
             throw new BusinessRuleException(
-                    "Project members cannot be modified when project status is " + project.getStatus());
+                    "لا يمكن تعديل أعضاء المشروع في حالة " + project.getStatus().describe()
+                            + ". أضف الأعضاء قبل إرسال المشروع للمراجعة");
         }
         return project;
     }

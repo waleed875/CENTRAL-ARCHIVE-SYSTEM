@@ -4,6 +4,8 @@ import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
+import com.centralArchiveSystem.Archive.import_.package_.PackageProjectRepository;
+import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
@@ -52,15 +54,21 @@ public class ProjectService {
     private final ConfidentialityAccessService confidentialityAccessService;
     private final OrganizationRepository organizationRepository;
     private final ProjectTypeRepository projectTypeRepository;
+    private final FileRepository fileRepository;
+    private final PackageProjectRepository packageProjectRepository;
 
     public ProjectService(ProjectRepository projectRepository,
                           ProjectMemberService projectMemberService,
                           ConfidentialityAccessService confidentialityAccessService,
                           OrganizationRepository organizationRepository,
-                          ProjectTypeRepository projectTypeRepository) {
+                          ProjectTypeRepository projectTypeRepository,
+                          FileRepository fileRepository,
+                          PackageProjectRepository packageProjectRepository) {
         this.projectRepository = projectRepository;
         this.projectMemberService = projectMemberService;
         this.confidentialityAccessService = confidentialityAccessService;
+        this.fileRepository = fileRepository;
+        this.packageProjectRepository = packageProjectRepository;
         this.organizationRepository = organizationRepository;
         this.projectTypeRepository = projectTypeRepository;
     }
@@ -148,17 +156,17 @@ public class ProjectService {
             project.getStatus() == Project.ProjectStatus.ARCHIVED ||
             project.getStatus() == Project.ProjectStatus.REJECTED) {
             throw new BusinessRuleException(
-                    "Cannot update project in " + project.getStatus()
-                            + " status"
+                    "لا يمكن تعديل مشروع حالته " + project.getStatus().describe()
                             + (project.getStatus() == Project.ProjectStatus.REJECTED
-                                ? "; rejection is final"
-                                : "; create a new version instead"));
+                                ? ". الرفض نهائي، فأنشئ إصداراً جديداً بدلاً من ذلك"
+                                : ". أنشئ إصداراً جديداً بدلاً من تعديله"));
         }
 
         if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW) {
             if (hasRestrictedReviewChanges(request)) {
                 throw new BusinessRuleException(
-                        "UNDER_REVIEW projects only allow description and notes changes");
+                        "المشروع قيد المراجعة: لا يُسمح بتغيير سوى الوصف والملاحظات. "
+                                + "انتظر نتيجة المراجعة أو اطلب تصحيحاً");
             }
             if (request.description() != null) {
                 project.setDescription(request.description());
@@ -228,7 +236,8 @@ public class ProjectService {
         if (original.getStatus() != Project.ProjectStatus.APPROVED
                 && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
             throw new BusinessRuleException(
-                    "New versions can only be created from APPROVED or ARCHIVED projects");
+                    "لا يمكن إنشاء إصدار جديد إلا من مشروع معتمد أو مؤرشف. "
+                            + "حالة المشروع الحالية: " + original.getStatus().describe());
         }
 
         original.setIsLatestVersion(false);
@@ -288,11 +297,13 @@ public class ProjectService {
                 && project.getStatus() != Project.ProjectStatus.IMPORTED
                 && project.getStatus() != Project.ProjectStatus.NEEDS_CORRECTION) {
             throw new BusinessRuleException(
-                    "Can only submit DRAFT, IMPORTED or NEEDS_CORRECTION projects for review");
+                    "لا يمكن إرسال المشروع للمراجعة إلا من حالة مسودة أو مستورد أو يحتاج تصحيحاً. "
+                            + "حالة المشروع الحالية: " + project.getStatus().describe());
         }
         if (project.getDataCompletionStatus() != Project.DataCompletionStatus.COMPLETE) {
             throw new BusinessRuleException(
-                    "Project must be COMPLETE before it can be submitted for review");
+                    "لا يمكن إرسال مشروع ناقص البيانات للمراجعة. "
+                            + "أكمل الحقول الناقصة أولاً — راجع تقرير البيانات الناقصة");
         }
 
         project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
@@ -309,7 +320,8 @@ public class ProjectService {
         Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new BusinessRuleException("Can only request correction for UNDER_REVIEW projects");
+            throw new BusinessRuleException("لا يمكن طلب تصحيح إلا لمشروع قيد المراجعة. "
+                    + "حالة المشروع الحالية: " + project.getStatus().describe());
         }
 
         project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
@@ -322,7 +334,8 @@ public class ProjectService {
         Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new BusinessRuleException("Can only approve UNDER_REVIEW projects");
+            throw new BusinessRuleException("لا يمكن اعتماد إلا مشروع قيد المراجعة. "
+                    + "حالة المشروع الحالية: " + project.getStatus().describe());
         }
 
         project.setStatus(Project.ProjectStatus.APPROVED);
@@ -340,7 +353,8 @@ public class ProjectService {
         Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.UNDER_REVIEW) {
-            throw new BusinessRuleException("Can only reject UNDER_REVIEW projects");
+            throw new BusinessRuleException("لا يمكن رفض إلا مشروع قيد المراجعة. "
+                    + "حالة المشروع الحالية: " + project.getStatus().describe());
         }
 
         project.setStatus(Project.ProjectStatus.REJECTED);
@@ -353,12 +367,77 @@ public class ProjectService {
         Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.APPROVED) {
-            throw new BusinessRuleException("Can only archive APPROVED projects");
+            throw new BusinessRuleException("لا يمكن أرشفة إلا المشاريع المعتمدة");
         }
 
         project.setStatus(Project.ProjectStatus.ARCHIVED);
         Project saved = projectRepository.save(project);
         return ProjectResponse.fromEntity(saved);
+    }
+
+    /**
+     * Removes a project that was entered by mistake, and nothing else.
+     *
+     * <p>This is the one removal the system's design otherwise forbids, so the conditions are drawn
+     * from what a project accumulates as it passes through the archive. A draft is the state before
+     * any of that: it has not been submitted, reviewed, approved or archived, so it holds no
+     * approved record, and it cannot have entered any report. The four checks below are each a thing
+     * that, once true, makes the row part of the archive rather than a stray keystroke:
+     *
+     * <ul>
+     *   <li><b>Status is DRAFT.</b> Every other status means the project was submitted, and a
+     *       submission is itself a record of somebody's work — an auditor asked what was in review on
+     *       a given date has to be able to find it. Archive is the correct exit for those, and
+     *       {@link #archive} is where it lives.</li>
+     *   <li><b>No files, live or deleted.</b> {@code project.files} cascades, so removing the project
+     *       would remove the file records too, and the design says a file is never destroyed — it is
+     *       marked deleted and kept, with its reason and the person who deleted it. A file that was
+     *       uploaded and then soft-deleted still has a row, and that row is still a record.</li>
+     *   <li><b>No members.</b> Members cascade as well, and a member row names a person and an
+     *       organisation.</li>
+     *   <li><b>Not part of a version chain and not referenced by a package.</b> A later version
+     *       pointing here would be left dangling, and a package row pointing here means the project
+     *       came from an import and belongs to a package's history. The database enforces the second
+     *       with a NO ACTION foreign key and would answer with a raw constraint violation; checking
+     *       it here means the person is told which of the two it is.</li>
+     * </ul>
+     *
+     * <p>The row itself goes. There is no soft-delete column on the project table, and adding one to
+     * the archive's central table is a schema decision beyond what this change should decide on its
+     * own. What is not lost is the fact: the audit aspect records the removal, and audit rows are
+     * write-once — the schema blocks their deletion outright — so "this project existed and was
+     * removed on this date by this person" survives the removal.
+     */
+    @Transactional
+    public void deleteDraft(UUID id) {
+        Project project = requireAccessibleProject(id);
+
+        if (project.getStatus() != Project.ProjectStatus.DRAFT) {
+            throw new BusinessRuleException(
+                    "لا يمكن حذف مشروع حالته " + project.getStatus().describe()
+                            + ". الحذف متاح فقط لمشروع ما زال مسودة لم يُرسل للمراجعة. "
+                            + "إن كان خطأ في بيانات مشروع زُخِمت بالفعل، فراجع الحالة المتاحة له بدل الحذف");
+        }
+
+        long files = fileRepository.countByProjectId(id);
+        if (files > 0) {
+            throw new BusinessRuleException(
+                    "لا يمكن حذف مشروع عليه ملفات (" + files + "). الملفات سجل محفوظ ولا تُحذف مع المشروع");
+        }
+
+        if (!projectMemberService.listByProjectId(id).isEmpty()) {
+            throw new BusinessRuleException("لا يمكن حذف مشروع له أعضاء. أزل الأعضاء أولاً");
+        }
+
+        if (projectRepository.existsByPreviousProjectId(id)) {
+            throw new BusinessRuleException("لا يمكن حذف مشروع因为他 أساس لإصدارات لاحقة منه");
+        }
+
+        if (packageProjectRepository.existsByProjectId(id)) {
+            throw new BusinessRuleException("لا يمكن حذف مشروع مرتبط بحزمة واردة من الترحيل");
+        }
+
+        projectRepository.delete(project);
     }
 
     public Page<ProjectResponse> search(ProjectSearchRequest request, int page, int size) {
@@ -446,15 +525,15 @@ public class ProjectService {
 
     private void validateOrganizationReference(UUID organizationId) {
         if (organizationId == null) {
-            throw new BusinessRuleException("Project organization is required");
+            throw new BusinessRuleException("جهة تنفيذ المشروع مطلوبة");
         }
 
         Organization organization = organizationRepository.findById(organizationId)
                 .orElseThrow(() -> new BusinessRuleException(
-                        "Project organization does not exist: " + organizationId));
+                        "جهة التنفيذ المحددة غير موجودة"));
         if (!Boolean.TRUE.equals(organization.getIsActive())) {
             throw new BusinessRuleException(
-                    "Project organization is inactive: " + organizationId);
+                    "جهة التنفيذ المحددة معطّلة، لا يمكن ربط المشروع بها");
         }
     }
 
@@ -465,10 +544,10 @@ public class ProjectService {
 
         ProjectType projectType = projectTypeRepository.findById(projectTypeId)
                 .orElseThrow(() -> new BusinessRuleException(
-                        "Project type does not exist: " + projectTypeId));
+                        "نوع المشروع المحدد غير موجود"));
         if (!Boolean.TRUE.equals(projectType.getIsActive())) {
             throw new BusinessRuleException(
-                    "Project type is inactive: " + projectTypeId);
+                    "نوع المشروع المحدد معطّل، لا يمكن ربط المشروع به");
         }
     }
 

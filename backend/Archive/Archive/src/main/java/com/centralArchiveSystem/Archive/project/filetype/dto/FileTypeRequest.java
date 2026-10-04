@@ -6,9 +6,9 @@ import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 
 public record FileTypeRequest(
-    @NotNull(message = "Category ID is required") UUID categoryId,
-    @NotBlank(message = "Type code is required") String code,
-    @NotBlank(message = "Type name is required") String name,
+    @NotNull(message = "حقل فئة الملف مطلوب") UUID categoryId,
+    @NotBlank(message = "حقل رمز نوع الملف مطلوب") String code,
+    @NotBlank(message = "حقل اسم نوع الملف مطلوب") String name,
     String defaultExtension,
     String description,
     Boolean isActive

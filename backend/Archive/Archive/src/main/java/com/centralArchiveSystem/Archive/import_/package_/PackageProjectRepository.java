@@ -30,4 +30,7 @@ public interface PackageProjectRepository extends JpaRepository<PackageProject, 
             UUID packageId, UUID localProjectUuid);
 
     List<PackageProject> findByLocalProjectUuid(UUID localProjectUuid);
+
+    /** The FK is {@code package_projects.project_id}, so an incoming link blocks removal. */
+    boolean existsByProjectId(UUID projectId);
 }

@@ -36,10 +36,11 @@ public class UserController {
             @RequestParam(required = false) User.UserStatus status,
             @RequestParam(required = false) String role,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) Integer limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "DESC") String order) {
-        PageRequest pageRequest = PageRequest.of(page, limit, sort, order);
+        PageRequest pageRequest = PageRequest.of(page, size, limit, sort, order);
         PagedResponse<UserResponse> response = userService.list(search, organizationId, status, role, pageRequest);
         return ApiResponse.success(response);
     }

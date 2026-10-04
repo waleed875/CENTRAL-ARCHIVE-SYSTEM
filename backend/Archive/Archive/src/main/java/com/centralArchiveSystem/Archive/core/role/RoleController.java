@@ -33,10 +33,11 @@ public class RoleController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) Integer limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "DESC") String order) {
-        PageRequest pageRequest = PageRequest.of(page, limit, sort, order);
+        PageRequest pageRequest = PageRequest.of(page, size, limit, sort, order);
         PagedResponse<RoleResponse> response = roleService.list(search, isActive, pageRequest);
         return ApiResponse.success(response);
     }

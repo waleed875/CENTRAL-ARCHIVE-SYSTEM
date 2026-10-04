@@ -141,7 +141,7 @@ public class UserService {
         );
         if (activeImports > 0) {
             throw new BusinessRuleException(
-                    "Cannot disable user while active import operations are running");
+                    "لا يمكن تعطيل المستخدم أثناء وجود عمليات استيراد قيد التنفيذ");
         }
         user.setStatus(User.UserStatus.DISABLED);
         user.setTokenValidAfter(Instant.now());
@@ -166,7 +166,7 @@ public class UserService {
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
         if (!Boolean.TRUE.equals(role.getIsActive())) {
-            throw new BusinessRuleException("Cannot assign an inactive role");
+            throw new BusinessRuleException("لا يمكن إسناد دور مُعطّل");
         }
         if (user.getRoles().stream().anyMatch(existing -> roleId.equals(existing.getId()))) {
             throw new ConflictException("UserRole", "role_id", roleId);
@@ -189,7 +189,7 @@ public class UserService {
         User user = findUserOrThrow(userId);
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
-            throw new BusinessRuleException("Current password is incorrect");
+            throw new BusinessRuleException("كلمة المرور الحالية غير صحيحة");
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
@@ -202,7 +202,7 @@ public class UserService {
             throw new ResourceNotFoundException("Role", "id", "one or more requested role IDs");
         }
         if (found.stream().anyMatch(role -> !Boolean.TRUE.equals(role.getIsActive()))) {
-            throw new BusinessRuleException("Cannot assign inactive roles");
+            throw new BusinessRuleException("لا يمكن إسناد أدوار مُعطّلة");
         }
         return new HashSet<>(found);
     }

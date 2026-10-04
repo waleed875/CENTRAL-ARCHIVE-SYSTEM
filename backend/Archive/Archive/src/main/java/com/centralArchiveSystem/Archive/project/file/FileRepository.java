@@ -27,6 +27,17 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
 
     long countByProjectIdAndDeletedAtIsNull(UUID projectId);
 
+    /**
+     * Every file row on the project, including the soft-deleted ones.
+     *
+     * <p>Distinct from the count above, which asks how much is currently live. This one asks whether
+     * the project has any file record at all, and it has to include the deleted ones: a soft-deleted
+     * file keeps its row, its deletion reason and its deleter, and that record is removed along with
+     * the project by the cascade. So a project that once had a file and had it deleted still cannot
+     * be removed outright, and a check on the live count alone would say it could.
+     */
+    long countByProjectId(UUID projectId);
+
     long countByCategoryIdAndDeletedAtIsNull(UUID categoryId);
 
     long countByTypeIdAndDeletedAtIsNull(UUID typeId);

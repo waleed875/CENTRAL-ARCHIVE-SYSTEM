@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public record MemberRequest(
     UUID projectId,
-    @NotBlank(message = "Person name is required") String personName,
+    @NotBlank(message = "حقل اسم الشخص مطلوب") String personName,
     String organizationName,
     String roleName,
     String notes

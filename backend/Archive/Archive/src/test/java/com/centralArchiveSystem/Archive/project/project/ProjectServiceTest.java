@@ -4,6 +4,8 @@ import com.centralArchiveSystem.Archive.auth.ConfidentialityAccessService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.core.organization.Organization;
 import com.centralArchiveSystem.Archive.core.organization.OrganizationRepository;
+import com.centralArchiveSystem.Archive.import_.package_.PackageProjectRepository;
+import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.member.ProjectMemberService;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectType;
 import com.centralArchiveSystem.Archive.project.projecttype.ProjectTypeRepository;
@@ -12,6 +14,8 @@ import com.centralArchiveSystem.Archive.project.project.dto.ProjectSearchRequest
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectResponse;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectUpdateRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -471,7 +475,8 @@ class ProjectServiceTest {
         );
 
         ProjectService service = new ProjectService(
-                repository, memberService, confidentiality, organizations, projectTypes);
+                repository, memberService, confidentiality, organizations, projectTypes,
+                mock(FileRepository.class), mock(PackageProjectRepository.class));
 
         assertThrows(BusinessRuleException.class,
                 () -> service.create(request, UUID.randomUUID()));
@@ -533,7 +538,8 @@ class ProjectServiceTest {
         when(projectTypes.findById(any(UUID.class))).thenReturn(Optional.of(activeProjectType));
 
         return new ProjectService(
-                repository, memberService, confidentiality, organizations, projectTypes);
+                repository, memberService, confidentiality, organizations, projectTypes,
+                mock(FileRepository.class), mock(PackageProjectRepository.class));
     }
 
     private Project baseProject() {
@@ -551,5 +557,176 @@ class ProjectServiceTest {
         project.setSourceType(Project.SourceType.MANUAL);
         project.setCreatedBy(UUID.randomUUID());
         return project;
+    }
+
+    // ---------------------------------------------------------------------
+    // Deleting a draft entered by mistake.
+    //
+    // Every test here is a refusal, because that is what the guard is for: a project that has
+    // entered the archive must not be removable by any path. The one test that allows removal is
+    // the one that has nothing attached to lose.
+    // ---------------------------------------------------------------------
+
+    /** A draft with nothing attached — the mistake the endpoint exists to undo. */
+    @Test
+    void deletesADraftWithNothingAttached() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        ProjectMemberService members = mock(ProjectMemberService.class);
+        PackageProjectRepository packages = mock(PackageProjectRepository.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(members.listByProjectId(project.getId())).thenReturn(java.util.List.of());
+
+        ProjectService service = new ProjectService(repository, members, mock(ConfidentialityAccessService.class),
+                mock(OrganizationRepository.class), mock(ProjectTypeRepository.class), files, packages);
+
+        service.deleteDraft(project.getId());
+
+        verify(repository).delete(project);
+    }
+
+    /**
+     * Every status the archive has been reached at least once is refused.
+     *
+     * <p>Parametrised rather than one test per status on purpose: a new status added to the enum is
+     * picked up here automatically, where a list written out by hand would keep passing while the
+     * new status went straight through the guard. DRAFT is excluded because it is the one the guard
+     * exists to allow.
+     */
+    @ParameterizedTest
+    @EnumSource(value = Project.ProjectStatus.class, names = "DRAFT", mode = EnumSource.Mode.EXCLUDE)
+    void refusesToDeleteAnyProjectThatHasLeftTheDraftState(Project.ProjectStatus status) {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setStatus(status);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+
+        BusinessRuleException thrown = assertThrows(BusinessRuleException.class,
+                () -> service.deleteDraft(project.getId()));
+        assertTrue(thrown.getMessage().contains(status.label()),
+                "the refusal must name the status in Arabic, so the reader can act on it: " + thrown.getMessage());
+        verify(repository, never()).delete(any());
+    }
+
+    /**
+     * A file, even a soft-deleted one, keeps the project.
+     *
+     * <p>The count that matters is {@code countByProjectId} and not the live-only one: a file that
+     * was uploaded and then deleted still has a row, and that row carries the reason and the person
+     * who deleted it.
+     */
+    @Test
+    void refusesToDeleteAProjectThatHasFiles() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(files.countByProjectId(project.getId())).thenReturn(3L);
+
+        ProjectService service = deleteService(repository, files,
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+
+        assertThrows(BusinessRuleException.class, () -> service.deleteDraft(project.getId()));
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void refusesToDeleteAProjectThatHasMembers() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService members = mock(ProjectMemberService.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(members.listByProjectId(project.getId()))
+                .thenReturn(java.util.List.of(mock(com.centralArchiveSystem.Archive.project.member.dto.MemberResponse.class)));
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                members, mock(PackageProjectRepository.class));
+
+        assertThrows(BusinessRuleException.class, () -> service.deleteDraft(project.getId()));
+        verify(repository, never()).delete(any());
+    }
+
+    /** Removing a version from the middle of a chain would leave the later one pointing at nothing. */
+    @Test
+    void refusesToDeleteAProjectThatALaterVersionBuildsOn() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.existsByPreviousProjectId(project.getId())).thenReturn(true);
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+
+        assertThrows(BusinessRuleException.class, () -> service.deleteDraft(project.getId()));
+        verify(repository, never()).delete(any());
+    }
+
+    /**
+     * A project that arrived with an import package belongs to that package's history, even if it
+     * never left the draft state.
+     */
+    @Test
+    void refusesToDeleteAProjectLinkedToAnImportedPackage() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        PackageProjectRepository packages = mock(PackageProjectRepository.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(packages.existsByProjectId(project.getId())).thenReturn(true);
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                mock(ProjectMemberService.class), packages);
+
+        assertThrows(BusinessRuleException.class, () -> service.deleteDraft(project.getId()));
+        verify(repository, never()).delete(any());
+    }
+
+    /**
+     * The refusal has to reach the person in Arabic.
+     *
+     * <p>Not a formatting assertion: {@code GlobalExceptionHandler} rewrites any message that is
+     * pure ASCII into a generic "the value entered is invalid", which on this path would be a
+     * different claim from the truth — the value is fine, the state is not. This is the test that
+     * would have caught all twelve English business rules before they shipped.
+     */
+    @Test
+    void refusesInArabicRatherThanLettingTheHandlerSubstituteAGenericMessage() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.APPROVED);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+
+        String message = assertThrows(BusinessRuleException.class,
+                () -> service.deleteDraft(project.getId())).getMessage();
+        assertFalse(message.matches("[\\x00-\\x7F]+"),
+                "an ASCII message is replaced wholesale by the exception handler: " + message);
+    }
+
+    /** Deleting something that is not there is a 404, not a rule refusal. */
+    @Test
+    void reportsAMissingProjectRatherThanRefusingIt() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        UUID missing = UUID.randomUUID();
+        when(repository.findById(missing)).thenReturn(Optional.empty());
+
+        ProjectService service = deleteService(repository, mock(FileRepository.class),
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+
+        assertThrows(java.util.NoSuchElementException.class, () -> service.deleteDraft(missing));
+    }
+
+    /** The same five collaborators the service needs, with nothing stubbed beyond what a test sets. */
+    private ProjectService deleteService(ProjectRepository repository,
+                                         FileRepository files,
+                                         ProjectMemberService members,
+                                         PackageProjectRepository packages) {
+        return new ProjectService(repository, members, mock(ConfidentialityAccessService.class),
+                mock(OrganizationRepository.class), mock(ProjectTypeRepository.class), files, packages);
     }
 }

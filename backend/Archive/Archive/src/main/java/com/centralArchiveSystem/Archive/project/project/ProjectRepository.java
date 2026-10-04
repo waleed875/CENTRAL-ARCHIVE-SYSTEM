@@ -24,6 +24,17 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     boolean existsByOrganizationIdAndProjectNumberAndYearAndVersionNo(
             UUID organizationId, String projectNumber, Integer year, Integer versionNo);
 
+    /**
+     * Whether a later version builds on this one.
+     *
+     * <p>Read before removing a project, because the version chain is what gives a project its
+     * identity: two rows of the same chain share a {@code projectUid} and differ only by version
+     * number, and {@code previous_project_id} is the link between them. Removing a version from the
+     * middle leaves the later one pointing at nothing, so the chain has to be checked, not just the
+     * row's own {@code versionNo}.
+     */
+    boolean existsByPreviousProjectId(UUID previousProjectId);
+
     @Query("SELECT COALESCE(MAX(p.versionNo), 0) FROM Project p WHERE p.projectUid = :projectUid")
     int findMaxVersionNoByProjectUid(@Param("projectUid") UUID projectUid);
 

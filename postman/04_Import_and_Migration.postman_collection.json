@@ -475,7 +475,7 @@
                 "migration-sources"
               ]
             },
-            "description": "Stores the new id into `{{migrationSourceId}}`."
+            "description": "Stores the new id into `{{migrationSourceId}}`.\n\n`sourceType` accepts `POSTGRESQL` or `LEGACY_DB` and nothing else; any other value is rejected here with 400. It used to be accepted on write and refused only when a batch was run against the source, so a typo used to survive until the migration window was already open. The list is published by `GET /api/v1/enums` under `migrationSourceType`."
           },
           "event": [
             {
@@ -487,6 +487,46 @@
                   "const u = j => j && j.data && typeof j.data === 'object' ? j.data : j;",
                   "const d = u(pm.response.json());",
                   "if (d && d.id) pm.collectionVariables.set('migrationSourceId', d.id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create Migration Source with an unsupported type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Oracle source\",\n  \"sourceType\": \"ORACLE\",\n  \"databaseName\": \"legacy\",\n  \"officeName\": \"Oracle Office\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/migration-sources",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "migration-sources"
+              ]
+            },
+            "description": "Negative case: the type outside the enum is refused on write. `ORACLE` was the value the old `MigrationSourceRequest` example suggested, and the old DTO had no way to reject it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 on an unsupported source type', () => pm.response.to.have.status(400));"
                 ]
               }
             }
@@ -549,7 +589,8 @@
                 "migration-sources",
                 "{{migrationSourceId}}"
               ]
-            }
+            },
+            "description": "Every field is optional. `sourceType` accepts `POSTGRESQL` or `LEGACY_DB`, validated the same way as on create."
           },
           "event": [
             {
@@ -864,9 +905,8 @@
                   "pm.test('200', () => pm.response.to.have.status(200));",
                   "const json = pm.response.json();",
                   "const d = json && json.data ? json.data : json;",
-                  "pm.test('exposes the two runtime-editable switches', () => {",
+                  "pm.test('exposes the runtime-editable switch', () => {",
                   "  pm.expect(d).to.have.property('migrationEnabled');",
-                  "  pm.expect(d).to.have.property('defaultConfidentialityCode');",
                   "  pm.expect(d).to.have.property('environmentDefault');",
                   "});"
                 ]
@@ -901,7 +941,7 @@
               ]
             }
           },
-          "description": "Partial update: a null field is left untouched, so flipping the switch does not resend the confidentiality code. The body above omits `defaultConfidentialityCode` on purpose. An empty string is a real instruction to clear the code, not a no-op. Takes effect on the next migration attempt with no restart.",
+          "description": "Partial update: a null field is left untouched. Takes effect on the next migration attempt with no restart. Migrated files take their project's confidentiality level rather than a run-wide default, so there is no code to configure here; classify a project from the project page instead.",
           "event": [
             {
               "listen": "test",

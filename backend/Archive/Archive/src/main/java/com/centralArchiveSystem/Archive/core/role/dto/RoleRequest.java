@@ -6,12 +6,12 @@ import jakarta.validation.constraints.Size;
 
 @Schema(description = "Request body for creating or updating a role")
 public record RoleRequest(
-    @NotBlank(message = "Role code is required")
-    @Size(min = 1, max = 50, message = "Role code must be between 1 and 50 characters")
+    @NotBlank(message = "حقل رمز الدور مطلوب")
+    @Size(min = 1, max = 50, message = "رمز الدور يجب أن يكون بين 1 و 50 حرفاً")
     String code,
 
-    @NotBlank(message = "Role name is required")
-    @Size(min = 1, max = 100, message = "Role name must be between 1 and 100 characters")
+    @NotBlank(message = "حقل اسم الدور مطلوب")
+    @Size(min = 1, max = 100, message = "اسم الدور يجب أن يكون بين 1 و 100 حرف")
     String name,
 
     @Schema(description = "Description of the role")

@@ -79,7 +79,7 @@ public class RoleService {
     public RoleResponse create(RoleRequest request) {
         if (!MVP_ROLE_CODES.contains(request.code())) {
             throw new BusinessRuleException(
-                    "Unsupported role code for MVP: " + request.code());
+                    "رمز الدور غير مدعوم: " + request.code());
         }
         if (roleRepository.existsByCode(request.code())) {
             throw new ConflictException("Role", "code", request.code());
@@ -128,7 +128,7 @@ public class RoleService {
         long activeUsers = userRepository.countActiveUsersByRoleId(roleId);
         if (activeUsers > 0) {
             throw new BusinessRuleException(
-                    "Cannot deactivate role while it is assigned to active users");
+                    "لا يمكن تعطيل دور مُسنَد إلى مستخدمين مُفعّلين");
         }
     }
 

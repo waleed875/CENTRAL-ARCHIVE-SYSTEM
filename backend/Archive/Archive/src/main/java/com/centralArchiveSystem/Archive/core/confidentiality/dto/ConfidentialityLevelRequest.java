@@ -7,16 +7,16 @@ import jakarta.validation.constraints.NotNull;
 
 @Schema(description = "Request body for creating or updating a confidentiality level")
 public record ConfidentialityLevelRequest(
-    @NotBlank(message = "Code is required")
+    @NotBlank(message = "حقل الرمز مطلوب")
     @Schema(description = "Unique code for the confidentiality level", example = "TOP_SECRET")
     String code,
 
-    @NotBlank(message = "Name is required")
+    @NotBlank(message = "حقل الاسم مطلوب")
     @Schema(description = "Display name of the confidentiality level", example = "Top Secret")
     String name,
 
-    @NotNull(message = "Level order is required")
-    @Min(value = 1, message = "Level order must be at least 1")
+    @NotNull(message = "حقل ترتيب المستوى مطلوب")
+    @Min(value = 1, message = "يجب ألا يقل ترتيب المستوى عن 1")
     @Schema(description = "Numeric ordering of the level (must be >= 1)", example = "1")
     Integer levelOrder,
 

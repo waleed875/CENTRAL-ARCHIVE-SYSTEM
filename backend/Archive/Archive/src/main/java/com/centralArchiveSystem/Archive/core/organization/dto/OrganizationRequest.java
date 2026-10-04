@@ -6,8 +6,8 @@ import java.util.UUID;
 
 public record OrganizationRequest(
     UUID parentId,
-    @NotBlank(message = "Organization name is required") String name,
-    @NotBlank(message = "Organization code is required") String code,
-    @NotBlank(message = "Organization type is required") String type,
+    @NotBlank(message = "حقل اسم المؤسسة مطلوب") String name,
+    @NotBlank(message = "حقل رمز المؤسسة مطلوب") String code,
+    @NotBlank(message = "حقل نوع المؤسسة مطلوب") String type,
     String description
 ) {}

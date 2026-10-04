@@ -117,19 +117,19 @@ public class ConfidentialityLevelService {
         long projectsCount = projectRepository.countByConfidentialityLevelId(id);
         if (projectsCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + projectsCount + " project(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + projectsCount + " مشروع");
         }
 
         long filesCount = fileRepository.countByConfidentialityLevelId(id);
         if (filesCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + filesCount + " file(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + filesCount + " ملف");
         }
 
         long usersCount = userRepository.countByMaxConfidentialityLevelId(id);
         if (usersCount > 0) {
             throw new IllegalStateException(
-                    "Cannot delete confidentiality level that is referenced by " + usersCount + " user(s)");
+                    "لا يمكن حذف مستوى السرية المُشار إليه من " + usersCount + " مستخدم");
         }
 
         confidentialityLevelRepository.delete(level);

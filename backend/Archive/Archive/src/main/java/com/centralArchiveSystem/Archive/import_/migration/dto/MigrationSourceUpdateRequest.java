@@ -11,8 +11,8 @@ public record MigrationSourceUpdateRequest(
     @Size(max = 255) String databaseName,
     @Size(max = 255) String officeName,
     @Size(max = 200) String host,
-    @Min(value = 1, message = "Port must be between 1 and 65535")
-    @Max(value = 65535, message = "Port must be between 1 and 65535") Integer port,
+    @Min(value = 1, message = "يجب أن يكون المنفذ بين 1 و 65535")
+    @Max(value = 65535, message = "يجب أن يكون المنفذ بين 1 و 65535") Integer port,
     @Size(max = 200) String username,
     // Blank leaves the stored password untouched, so an editor can change the host without
     // having to retype the secret.
