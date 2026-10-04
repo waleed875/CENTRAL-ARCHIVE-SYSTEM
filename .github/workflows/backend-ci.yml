@@ -40,6 +40,10 @@ jobs:
 
     env:
       DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      # src/test/resources/application-test.properties sends the suite to TEST_DB_URL rather than
+      # DB_URL, so a developer cannot accidentally point a local run at their own data. CI has no
+      # such data to protect, so its tests keep using the same throwaway database as the build.
+      TEST_DB_URL: jdbc:postgresql://localhost:5432/central_archive
       DB_USERNAME: archive_user
       DB_PASSWORD: archive_password
       LEGACY_DB_URL: jdbc:postgresql://localhost:5432/central_archive

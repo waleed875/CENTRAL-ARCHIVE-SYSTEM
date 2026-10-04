@@ -32,10 +32,13 @@ class LegacyMigrationHttpE2ETest {
 
     @DynamicPropertySource
     static void legacyDatasource(DynamicPropertyRegistry registry) {
+        // The fallback used to name the development database, so this test created its
+        // legacy-side tables in the data being used by hand. It now falls back to the
+        // test database. DB_URL still wins, which is what CI sets.
         registry.add("legacy.datasource.url", () ->
                 System.getenv().getOrDefault(
                         "DB_URL",
-                        "jdbc:postgresql://localhost:5433/central_archive"
+                        "jdbc:postgresql://localhost:5433/central_archive_test"
                 ));
         registry.add("legacy.datasource.username", () ->
                 System.getenv().getOrDefault("DB_USERNAME", "archive_user"));
@@ -60,8 +63,12 @@ class LegacyMigrationHttpE2ETest {
 
     @BeforeEach
     void setupLegacyFixture() throws Exception {
-        purgeEarlierFixtures();
+        // The tables have to exist before anything can be deleted from them. This used to run
+        // the other way round, which only ever worked because the database it pointed at was
+        // the development one, already carrying the tables a previous run of this test had left
+        // behind. Against a database it had never touched it failed on the very first DELETE.
         ensureLegacyTables();
+        purgeEarlierFixtures();
         ensureDefaultConfidentiality();
 
         int seed = Math.abs(UUID.randomUUID().hashCode());

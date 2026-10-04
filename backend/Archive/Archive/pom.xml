@@ -29,6 +29,11 @@
 	<properties>
 		<java.version>21</java.version>
 		<maven.compiler.release>21</maven.compiler.release>
+		<!-- Trivy fails the build on CVE-2026-68497, CVE-2026-91776 and CVE-2026-91777, all of
+		     which are unbounded-parsing denial of service in jackson-databind. The Spring Boot 4
+		     parent manages Jackson 3 (tools.jackson) and resolves this Jackson 2 line to 2.21.4;
+		     2.21.7 is the fixed release on the same minor line. -->
+		<jackson2.version>2.21.7</jackson2.version>
 		<!-- Validation messages are Arabic (see the DTO records and FieldErrorMessages). Without this,
 		     maven-compiler-plugin falls back to the platform encoding, which is Windows-1252 on the
 		     developer machines here, and every Arabic literal compiles to '?' in the class file. -->
@@ -130,10 +135,12 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
+			<version>${jackson2.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jsr310</artifactId>
+			<version>${jackson2.version}</version>
 		</dependency>
 
 		<!-- Test Dependencies -->
@@ -167,6 +174,18 @@
 				<configuration>
 					<!-- 9001 is already used by the local MinIO console. -->
 					<jmxPort>9010</jmxPort>
+				</configuration>
+			</plugin>
+			<plugin>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Activates src/test/resources/application-test.properties, which keeps the
+					     suite off the development database. Without this the tests inherited the
+					     main application.properties and wrote hundreds of rows into the developer's
+					     own central_archive. -->
+					<systemPropertyVariables>
+						<spring.profiles.active>test</spring.profiles.active>
+					</systemPropertyVariables>
 				</configuration>
 			</plugin>
 		</plugins>
