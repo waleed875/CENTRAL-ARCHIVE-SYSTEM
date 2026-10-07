@@ -22,9 +22,12 @@ public class PagedResponse<T> {
         return new PagedResponse<>(data, pageRequest.getPage(), pageRequest.getLimit(), total, totalPages);
     }
 
-    public static <T> PagedResponse<T> fromSpring(org.springframework.data.domain.Page<T> page, int page1Based, int limit) {
-        List<T> data = page.getContent();
-        return new PagedResponse<>(data, page1Based, limit, page.getTotalElements(), page.getTotalPages());
+    public static <T> PagedResponse<T> fromSpring(org.springframework.data.domain.Page<T> page,
+                                                 int page1Based, int requestedLimit) {
+        // The service may cap a requested size. Report what was executed, not an
+        // unbounded input value that disagrees with data and totalPages.
+        return new PagedResponse<>(page.getContent(), page.getNumber() + 1,
+                page.getSize(), page.getTotalElements(), page.getTotalPages());
     }
 
     public List<T> getData() { return data; }

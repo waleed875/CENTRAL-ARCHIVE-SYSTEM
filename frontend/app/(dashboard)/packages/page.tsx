@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiClientError, apiRequest } from "@/lib/api/client";
 
@@ -35,11 +35,22 @@ type PackageRow = {
   errorMessage?: string | null;
 };
 
-type Organization = {
+type LookupOption = {
   id: string;
   name: string;
   code?: string | null;
   isActive?: boolean | null;
+  categoryId?: string | null;
+};
+
+type Organization = LookupOption;
+
+type ReferenceRequirements = {
+  organizations: string[];
+  projectTypes: string[];
+  confidentialityLevels: string[];
+  fileCategories: string[];
+  fileTypes: string[];
 };
 
 type VerifyResult = {
@@ -95,6 +106,8 @@ function statusClass(status?: string) {
   switch (status) {
     case "VERIFIED":
       return "bg-blue-100 text-blue-800";
+    case "DECRYPTED":
+      return "bg-cyan-100 text-cyan-800";
     case "IMPORTED":
       return "bg-emerald-100 text-emerald-800";
     case "FAILED":
@@ -109,9 +122,14 @@ function statusClass(status?: string) {
 export default function PackagesPage() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string>("");
-  const [targetOrganizationId, setTargetOrganizationId] = useState("");
+  const [organizationMapping, setOrganizationMapping] = useState<Record<string, string>>({});
+  const [projectTypeMapping, setProjectTypeMapping] = useState<Record<string, string>>({});
+  const [confidentialityMapping, setConfidentialityMapping] = useState<Record<string, string>>({});
+  const [fileCategoryMapping, setFileCategoryMapping] = useState<Record<string, string>>({});
+  const [fileTypeMapping, setFileTypeMapping] = useState<Record<string, string>>({});
   const [confidentialityLevelId, setConfidentialityLevelId] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPassphrase, setUploadPassphrase] = useState("");
 
   const packagesQuery = useQuery({
     queryKey: ["packages.list"],
@@ -132,6 +150,38 @@ export default function PackagesPage() {
       }),
   });
 
+  const projectTypesQuery = useQuery({
+    queryKey: ["project-types.all", "package-import"],
+    queryFn: () =>
+      apiRequest<ApiEnvelope<LookupOption[]>>("projectTypes.all", "GET"),
+  });
+
+  const confidentialityQuery = useQuery({
+    queryKey: ["confidentiality-levels.all", "package-import"],
+    queryFn: () =>
+      apiRequest<ApiEnvelope<LookupOption[]>>("confidentialityLevels.all", "GET"),
+  });
+
+  const fileCategoriesQuery = useQuery({
+    queryKey: ["file-categories.all", "package-import"],
+    queryFn: () =>
+      apiRequest<ApiEnvelope<LookupOption[]>>(
+        "fileCategories.all",
+        "GET",
+        { isActive: "true" },
+      ),
+  });
+
+  const fileTypesQuery = useQuery({
+    queryKey: ["file-types.all", "package-import"],
+    queryFn: () =>
+      apiRequest<ApiEnvelope<LookupOption[]>>(
+        "fileTypes.all",
+        "GET",
+        { isActive: "true" },
+      ),
+  });
+
   const packages = useMemo(
     () => unwrap(packagesQuery.data)?.data ?? [],
     [packagesQuery.data],
@@ -140,10 +190,36 @@ export default function PackagesPage() {
     () => unwrap(organizationsQuery.data)?.data ?? [],
     [organizationsQuery.data],
   );
+  const projectTypes = unwrap(projectTypesQuery.data) ?? [];
+  const confidentialityLevels = unwrap(confidentialityQuery.data) ?? [];
+  const fileCategories = unwrap(fileCategoriesQuery.data) ?? [];
+  const fileTypes = unwrap(fileTypesQuery.data) ?? [];
+
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedId),
     [packages, selectedId],
   );
+
+  const referencesQuery = useQuery({
+    queryKey: ["packages.references", selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () =>
+      apiRequest<ApiEnvelope<ReferenceRequirements>>(
+        "packages.references",
+        "GET",
+        {},
+        undefined,
+        { id: selectedId },
+      ),
+  });
+
+  const references = unwrap(referencesQuery.data) ?? {
+    organizations: [],
+    projectTypes: [],
+    confidentialityLevels: [],
+    fileCategories: [],
+    fileTypes: [],
+  };
 
   const verifyQuery = useQuery({
     queryKey: ["packages.verify-result", selectedId],
@@ -182,6 +258,13 @@ export default function PackagesPage() {
       if (!uploadFile) throw new Error("PACKAGE_FILE_REQUIRED");
       const form = new FormData();
       form.append("package_file", uploadFile);
+      const encrypted = /\.(zip|nxpkg)$/i.test(uploadFile.name);
+      if (encrypted) {
+        if (!uploadPassphrase.trim()) {
+          throw new Error("PASSPHRASE_REQUIRED");
+        }
+        form.append("passphrase", uploadPassphrase);
+      }
       return apiRequest<ApiEnvelope<PackageRow>>(
         "packages.receive",
         "POST",
@@ -192,6 +275,7 @@ export default function PackagesPage() {
     onSuccess: async (response) => {
       const created = unwrap(response);
       setUploadFile(null);
+      setUploadPassphrase("");
       if (created?.id) setSelectedId(created.id);
       await queryClient.invalidateQueries({ queryKey: ["packages.list"] });
     },
@@ -200,21 +284,17 @@ export default function PackagesPage() {
   const importMutation = useMutation({
     mutationFn: async () => {
       if (!selectedPackage) throw new Error("PACKAGE_REQUIRED");
-      if (!selectedPackage.sourceOrganizationId) {
-        throw new Error("SOURCE_ORGANIZATION_REQUIRED");
-      }
-      if (!targetOrganizationId) {
-        throw new Error("TARGET_ORGANIZATION_REQUIRED");
-      }
 
       return apiRequest<ApiEnvelope<Record<string, string>>>(
         "packages.import",
         "POST",
         {},
         {
-          organization_mapping: {
-            [selectedPackage.sourceOrganizationId]: targetOrganizationId,
-          },
+          organization_mapping: organizationMapping,
+          project_type_mapping: projectTypeMapping,
+          confidentiality_mapping: confidentialityMapping,
+          file_category_mapping: fileCategoryMapping,
+          file_type_mapping: fileTypeMapping,
           confidentiality_level_id: confidentialityLevelId || null,
         },
         { id: selectedPackage.id },
@@ -249,6 +329,96 @@ export default function PackagesPage() {
   const verifyResult = unwrap(verifyQuery.data);
   const operationSummary = unwrap(operationsQuery.data);
 
+  function hasCentralMatch(sourceId: string, options: LookupOption[]) {
+    return options.some((option) => option.id === sourceId);
+  }
+
+  function unresolved(
+    sourceIds: string[],
+    mapping: Record<string, string>,
+    options: LookupOption[],
+    allowDefault = false,
+  ) {
+    return sourceIds.filter(
+      (sourceId) =>
+        !mapping[sourceId] &&
+        !hasCentralMatch(sourceId, options) &&
+        !(allowDefault && confidentialityLevelId),
+    );
+  }
+
+  const unresolvedReferences = [
+    ...unresolved(references.organizations, organizationMapping, organizations),
+    ...unresolved(references.projectTypes, projectTypeMapping, projectTypes),
+    ...unresolved(
+      references.confidentialityLevels,
+      confidentialityMapping,
+      confidentialityLevels,
+      true,
+    ),
+    ...unresolved(references.fileCategories, fileCategoryMapping, fileCategories),
+    ...unresolved(references.fileTypes, fileTypeMapping, fileTypes),
+  ];
+
+  function updateMapping(
+    setter: Dispatch<SetStateAction<Record<string, string>>>,
+    sourceId: string,
+    value: string,
+  ) {
+    setter((current) => {
+      const next = { ...current };
+      if (value) next[sourceId] = value;
+      else delete next[sourceId];
+      return next;
+    });
+  }
+
+  function renderMappingRows(
+    title: string,
+    sourceIds: string[],
+    mapping: Record<string, string>,
+    setter: Dispatch<SetStateAction<Record<string, string>>>,
+    options: LookupOption[],
+  ) {
+    if (sourceIds.length === 0) return null;
+
+    return (
+      <div className="mt-4 rounded-lg border border-[#e1dfd4] p-3">
+        <p className="text-sm font-semibold">{title}</p>
+        <div className="mt-2 space-y-3">
+          {sourceIds.map((sourceId) => {
+            const direct = hasCentralMatch(sourceId, options);
+            return (
+              <label key={sourceId} className="block text-xs text-[#59605e]">
+                <span className="font-mono">{sourceId}</span>
+                <select
+                  value={mapping[sourceId] ?? (direct ? sourceId : "")}
+                  onChange={(event) =>
+                    updateMapping(setter, sourceId, event.target.value)
+                  }
+                  className="mt-1 w-full rounded-lg border border-[#c1c8c6] bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">اختر المقابل المركزي</option>
+                  {options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                      {option.code ? ` (${option.code})` : ""}
+                    </option>
+                  ))}
+                </select>
+                {direct && !mapping[sourceId] && (
+                  <span className="mt-1 block text-emerald-700">
+                    موجود بنفس UUID في المركز.
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="space-y-6">
       <header className="rounded-xl bg-white p-6 shadow-sm">
@@ -259,12 +429,12 @@ export default function PackagesPage() {
               <h1 className="text-2xl font-bold">حزم الفروع</h1>
             </div>
             <p className="mt-2 text-sm text-[#414847]">
-              سير العمل المركزي: استلام الحزمة ثم التحقق منها ثم الاستيراد
-              الصريح ومتابعة النتيجة.
+              سير العمل المركزي: استلام الحزمة، فك التشفير للحزم المشفرة،
+              ثم التحقق والاستيراد الصريح ومتابعة النتيجة.
             </p>
           </div>
           <span className="rounded-full bg-[#f5e1af] px-3 py-1 text-xs font-semibold text-[#4b3e1a]">
-            RECEIVED → VERIFIED → IMPORTED
+            RECEIVE → DECRYPT → VERIFY → MAP → IMPORT
           </span>
         </div>
       </header>
@@ -275,21 +445,34 @@ export default function PackagesPage() {
       >
         <h2 className="font-bold">1. استلام حزمة جديدة</h2>
         <p className="mt-1 text-sm text-[#717977]">
-          اختر ملف الحزمة الفعلي بصيغة .pkg. يتم تسجيل المستخدم الحالي من
-          جلسة JWT تلقائيًا.
+          اختر ملف الحزمة بصيغة .pkg أو .zip أو .nxpkg. الحزم المشفرة تُفك
+          أثناء الرفع باستخدام كلمة المرور، ولا يتم حفظ كلمة المرور.
         </p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <input
             type="file"
-            accept=".pkg,application/octet-stream"
+            accept=".pkg,.zip,.nxpkg,application/octet-stream,application/zip"
             onChange={(event) =>
               setUploadFile(event.target.files?.[0] ?? null)
             }
             className="block flex-1 rounded-lg border border-[#c1c8c6] bg-[#f6f4e9] px-3 py-2 text-sm"
           />
+          <input
+            type="password"
+            value={uploadPassphrase}
+            onChange={(event) => setUploadPassphrase(event.target.value)}
+            placeholder="كلمة مرور الحزمة المشفرة"
+            autoComplete="new-password"
+            disabled={!uploadFile || !/\.(zip|nxpkg)$/i.test(uploadFile.name)}
+            className="block min-w-[240px] rounded-lg border border-[#c1c8c6] bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+          />
           <button
             type="submit"
-            disabled={!uploadFile || uploadMutation.isPending}
+            disabled={
+              !uploadFile ||
+              (/\.(zip|nxpkg)$/i.test(uploadFile.name) && !uploadPassphrase.trim()) ||
+              uploadMutation.isPending
+            }
             className="rounded-lg bg-[#002623] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {uploadMutation.isPending ? "جارٍ الرفع…" : "استلام الحزمة"}
@@ -364,7 +547,11 @@ export default function PackagesPage() {
                       key={item.id}
                       onClick={() => {
                         setSelectedId(item.id);
-                        setTargetOrganizationId("");
+                        setOrganizationMapping({});
+                        setProjectTypeMapping({});
+                        setConfidentialityMapping({});
+                        setFileCategoryMapping({});
+                        setFileTypeMapping({});
                         setConfidentialityLevelId("");
                       }}
                       className={`cursor-pointer transition hover:bg-[#f6f4e9] ${selectedId === item.id ? "bg-[#e8f2ef]" : ""}`}
@@ -473,37 +660,72 @@ export default function PackagesPage() {
               الاستيراد لا يبدأ إلا بعد اختيار المؤسسة المركزية المستهدفة.
             </p>
 
+            {referencesQuery.isLoading && (
+              <p className="mt-4 text-sm text-[#717977]">
+                جارٍ تحميل مراجع الحزمة…
+              </p>
+            )}
+
+            {renderMappingRows(
+              "مطابقة المؤسسات",
+              references.organizations,
+              organizationMapping,
+              setOrganizationMapping,
+              organizations,
+            )}
+            {renderMappingRows(
+              "مطابقة أنواع المشاريع",
+              references.projectTypes,
+              projectTypeMapping,
+              setProjectTypeMapping,
+              projectTypes,
+            )}
+            {renderMappingRows(
+              "مطابقة مستويات السرية",
+              references.confidentialityLevels,
+              confidentialityMapping,
+              setConfidentialityMapping,
+              confidentialityLevels,
+            )}
+            {renderMappingRows(
+              "مطابقة تصنيفات الملفات",
+              references.fileCategories,
+              fileCategoryMapping,
+              setFileCategoryMapping,
+              fileCategories,
+            )}
+            {renderMappingRows(
+              "مطابقة أنواع الملفات",
+              references.fileTypes,
+              fileTypeMapping,
+              setFileTypeMapping,
+              fileTypes,
+            )}
+
             <label className="mt-4 block text-sm font-semibold">
-              المؤسسة المركزية
+              مستوى السرية الافتراضي (اختياري)
               <select
-                value={targetOrganizationId}
+                value={confidentialityLevelId}
                 onChange={(event) =>
-                  setTargetOrganizationId(event.target.value)
+                  setConfidentialityLevelId(event.target.value)
                 }
-                disabled={!selectedPackage}
-                className="mt-2 w-full rounded-lg border border-[#c1c8c6] bg-white px-3 py-2"
+                className="mt-2 w-full rounded-lg border border-[#c1c8c6] bg-white px-3 py-2 text-sm"
               >
-                <option value="">اختر المؤسسة</option>
-                {organizations.map((organization) => (
-                  <option key={organization.id} value={organization.id}>
-                    {organization.name}
-                    {organization.code ? ` (${organization.code})` : ""}
+                <option value="">بدون مستوى افتراضي</option>
+                {confidentialityLevels.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.name}
+                    {level.code ? ` (${level.code})` : ""}
                   </option>
                 ))}
               </select>
             </label>
 
-            <label className="mt-4 block text-sm font-semibold">
-              مستوى السرية الافتراضي (اختياري)
-              <input
-                value={confidentialityLevelId}
-                onChange={(event) =>
-                  setConfidentialityLevelId(event.target.value)
-                }
-                placeholder="UUID"
-                className="mt-2 w-full rounded-lg border border-[#c1c8c6] px-3 py-2 font-mono text-xs"
-              />
-            </label>
+            {unresolvedReferences.length > 0 && (
+              <div className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+                تبقى {unresolvedReferences.length} مراجع مصدرية تحتاج Mapping قبل الاستيراد.
+              </div>
+            )}
 
             <button
               type="button"
@@ -511,7 +733,8 @@ export default function PackagesPage() {
               disabled={
                 !selectedPackage ||
                 selectedPackage.status !== "VERIFIED" ||
-                !targetOrganizationId ||
+                unresolvedReferences.length > 0 ||
+                referencesQuery.isLoading ||
                 importMutation.isPending
               }
               className="mt-4 w-full rounded-lg bg-[#002623] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"

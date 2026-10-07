@@ -35,8 +35,41 @@ public class BranchPackage {
     @Column(name = "package_hash", nullable = false, unique = true, length = 64)
     private String packageHash;
 
-    @Column(name = "manifest_hash", nullable = false, length = 64)
+    @Column(name = "manifest_hash", length = 64)
     private String manifestHash;
+
+    @Column(name = "package_format", nullable = false, length = 80)
+    private String packageFormat = "central-archive/pkg";
+
+    @Column(name = "package_version")
+    private Integer packageVersion;
+
+    @Column(name = "encrypted", nullable = false)
+    private Boolean encrypted = false;
+
+    @Column(name = "header_hash", length = 64)
+    private String headerHash;
+
+    @Column(name = "payload_hash", length = 64)
+    private String payloadHash;
+
+    @Column(name = "signature_valid")
+    private Boolean signatureValid;
+
+    @Column(name = "terminal_fingerprint", length = 64)
+    private String terminalFingerprint;
+
+    @Column(name = "header_data", columnDefinition = "TEXT")
+    private String headerData;
+
+    @Column(name = "payload_size_bytes")
+    private Long payloadSizeBytes;
+
+    @Column(name = "decrypted_payload_hash", length = 64)
+    private String decryptedPayloadHash;
+
+    @Column(name = "decrypted_payload_size_bytes")
+    private Long decryptedPayloadSizeBytes;
 
     @Column(name = "schema_version", nullable = false)
     private String schemaVersion;
@@ -81,7 +114,7 @@ public class BranchPackage {
     private LocalDateTime updatedAt;
 
     public enum PackageStatus {
-        RECEIVED, VERIFIED, IMPORTED, FAILED, DUPLICATE
+        RECEIVED, SEALED_VERIFIED, DECRYPTED, VERIFIED, IMPORTED, FAILED, DUPLICATE
     }
 
     public BranchPackage() {}
@@ -109,6 +142,39 @@ public class BranchPackage {
 
     public String getManifestHash() { return manifestHash; }
     public void setManifestHash(String manifestHash) { this.manifestHash = manifestHash; }
+
+    public String getPackageFormat() { return packageFormat; }
+    public void setPackageFormat(String packageFormat) { this.packageFormat = packageFormat; }
+
+    public Integer getPackageVersion() { return packageVersion; }
+    public void setPackageVersion(Integer packageVersion) { this.packageVersion = packageVersion; }
+
+    public Boolean getEncrypted() { return encrypted; }
+    public void setEncrypted(Boolean encrypted) { this.encrypted = encrypted; }
+
+    public String getHeaderHash() { return headerHash; }
+    public void setHeaderHash(String headerHash) { this.headerHash = headerHash; }
+
+    public String getPayloadHash() { return payloadHash; }
+    public void setPayloadHash(String payloadHash) { this.payloadHash = payloadHash; }
+
+    public Boolean getSignatureValid() { return signatureValid; }
+    public void setSignatureValid(Boolean signatureValid) { this.signatureValid = signatureValid; }
+
+    public String getTerminalFingerprint() { return terminalFingerprint; }
+    public void setTerminalFingerprint(String terminalFingerprint) { this.terminalFingerprint = terminalFingerprint; }
+
+    public String getHeaderData() { return headerData; }
+    public void setHeaderData(String headerData) { this.headerData = headerData; }
+
+    public Long getPayloadSizeBytes() { return payloadSizeBytes; }
+    public void setPayloadSizeBytes(Long payloadSizeBytes) { this.payloadSizeBytes = payloadSizeBytes; }
+
+    public String getDecryptedPayloadHash() { return decryptedPayloadHash; }
+    public void setDecryptedPayloadHash(String decryptedPayloadHash) { this.decryptedPayloadHash = decryptedPayloadHash; }
+
+    public Long getDecryptedPayloadSizeBytes() { return decryptedPayloadSizeBytes; }
+    public void setDecryptedPayloadSizeBytes(Long decryptedPayloadSizeBytes) { this.decryptedPayloadSizeBytes = decryptedPayloadSizeBytes; }
 
     public String getSchemaVersion() { return schemaVersion; }
     public void setSchemaVersion(String schemaVersion) { this.schemaVersion = schemaVersion; }

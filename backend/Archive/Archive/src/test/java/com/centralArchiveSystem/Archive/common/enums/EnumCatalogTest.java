@@ -30,7 +30,6 @@ class EnumCatalogTest {
     @Test
     void readsEveryProjectEnum() {
         Map<String, List<String>> values = catalog.values();
-
         assertEquals(names(Project.ProjectStatus.values()), values.get("projectStatus"));
         assertEquals(names(Project.DataCompletionStatus.values()), values.get("dataCompletionStatus"));
         assertEquals(names(Project.SourceType.values()), values.get("projectSourceType"));
@@ -39,7 +38,6 @@ class EnumCatalogTest {
     @Test
     void readsEveryUserAndOrganizationEnum() {
         Map<String, List<String>> values = catalog.values();
-
         assertEquals(names(User.UserStatus.values()), values.get("userStatus"));
         assertEquals(names(Organization.OrganizationType.values()), values.get("organizationType"));
     }
@@ -47,40 +45,28 @@ class EnumCatalogTest {
     @Test
     void readsTheMigrationAndPackageEnums() {
         Map<String, List<String>> values = catalog.values();
-
         assertEquals(names(MigrationSourceType.values()), values.get("migrationSourceType"));
         assertEquals(names(MigrationBatch.Status.values()), values.get("migrationBatchStatus"));
         assertEquals(names(BranchPackage.PackageStatus.values()), values.get("packageStatus"));
     }
 
-    /**
-     * Completing a batch only accepts the three terminal states, so offering PLANNED or RUNNING on
-     * that control submits a request the service refuses.
-     */
+    /** Completing a batch accepts only the three terminal states. */
     @Test
     void completionStatusOffersOnlyTheStatesTheServiceAccepts() {
         List<String> completion = catalog.values().get("migrationBatchCompletionStatus");
-
-        assertEquals(
-                List.of(MigrationBatch.Status.SUCCESS.name(),
-                        MigrationBatch.Status.PARTIAL.name(),
-                        MigrationBatch.Status.FAILED.name()),
-                completion);
+        assertEquals(List.of(MigrationBatch.Status.SUCCESS.name(),
+                MigrationBatch.Status.PARTIAL.name(), MigrationBatch.Status.FAILED.name()), completion);
         assertFalse(completion.contains(MigrationBatch.Status.PLANNED.name()));
         assertFalse(completion.contains(MigrationBatch.Status.RUNNING.name()));
     }
 
-    /**
-     * The sort field list was the whole reason for publishing it: a client that sends anything else
-     * gets createdAt instead, with no error, so the form has to be built from this set.
-     */
     @Test
     void publishesTheProjectSortFieldsTheServiceActuallyHonours() {
         List<String> fields = catalog.values().get("projectSortFields");
-
         assertEquals(ProjectService.allowedSortFields(), fields);
         assertTrue(fields.contains("createdAt"));
         assertTrue(fields.contains("projectNumber"));
+        assertTrue(fields.contains("submittedAt"));
     }
 
     @Test
@@ -88,49 +74,53 @@ class EnumCatalogTest {
         assertEquals(List.of("asc", "desc"), catalog.values().get("sortDirections"));
     }
 
-    /** A file is either stored or soft-deleted; anything else matches no row. */
     @Test
     void publishesTheFileStatusValues() {
         assertEquals(List.of("ACTIVE", "DELETED"), catalog.values().get("fileStatus"));
     }
 
-    /**
-     * These two are written out by hand rather than derived, so they can fall behind the aspect. A
-     * filter missing a value returns nothing rather than failing, which is the kind of gap nobody
-     * notices until a report comes up short.
-     */
     @Test
     void theAuditFiltersCoverEveryActionTheAspectCanRecord() {
         Set<String> published = Set.copyOf(catalog.values().get("auditAction"));
         Set<String> recorded = Set.copyOf(AuditAspect.ACTIONS);
-
         assertEquals(recorded, published);
-        assertTrue(published.containsAll(
-                List.of("CREATE", "UPDATE", "DELETE", "READ", "IMPORT", "APPROVE", "REJECT", "ARCHIVE", "EXECUTE")));
+        assertTrue(published.containsAll(List.of("CREATE", "UPDATE", "DELETE", "READ", "IMPORT",
+                "APPROVE", "REJECT", "ARCHIVE", "EXECUTE")));
     }
 
     @Test
     void theAuditEntityTypeFilterCoversEveryAuditedController() {
         List<String> types = catalog.values().get("auditEntityType");
-
-        assertTrue(types.containsAll(
-                        List.of("User", "Role", "Organization", "ConfidentialityLevel", "Project",
-                                "ProjectMember", "ProjectType", "File", "FileCategory",
-                                "BranchPackage", "Migration", "AuditLog")),
-                types.toString());
+        assertTrue(types.containsAll(List.of("User", "Role", "Organization", "ConfidentialityLevel",
+                "Project", "ProjectMember", "ProjectType", "File", "FileCategory", "BranchPackage",
+                "Migration", "AuditLog")), types.toString());
         assertTrue(types.stream().noneMatch(type -> type.endsWith("Controller")),
                 "entity types are the controller name without its suffix: " + types);
     }
 
-    /** Nothing that is not part of the contract belongs in a response the client indexes by key. */
+    /** Retain exact-key validation; the two new dashboard keys are an explicit additive contract. */
     @Test
     void publishesExactlyTheAgreedKeys() {
-        assertEquals(
-                Set.of("projectStatus", "dataCompletionStatus", "projectSourceType", "userStatus",
-                        "organizationType", "migrationSourceType", "migrationBatchStatus",
-                        "migrationBatchCompletionStatus", "packageStatus", "fileStatus",
-                        "auditAction", "auditEntityType", "projectSortFields", "sortDirections"),
-                Set.copyOf(catalog.values().keySet()));
+        assertEquals(Set.of("projectStatus", "dataCompletionStatus", "projectSourceType", "userStatus",
+                "organizationType", "migrationSourceType", "migrationBatchStatus",
+                "migrationBatchCompletionStatus", "packageStatus", "fileStatus", "auditAction",
+                "auditEntityType", "projectSortFields", "sortDirections", "dashboardAction",
+                "dashboardEntityType"), Set.copyOf(catalog.values().keySet()));
+    }
+
+    @Test
+    void dashboardCatalogIncludesEveryProjectFileAndPackageEventWithoutDuplicates() {
+        List<String> actions = catalog.values().get("dashboardAction");
+        Set<String> expected = new java.util.HashSet<>(List.of("PROJECT_CREATED", "PROJECT_IMPORTED",
+                "PROJECT_SUBMITTED_FOR_REVIEW", "PROJECT_CORRECTION_REQUESTED", "PROJECT_REJECTED",
+                "PROJECT_APPROVED", "PROJECT_ARCHIVED", "FILE_UPLOADED"));
+        for (BranchPackage.PackageStatus status : BranchPackage.PackageStatus.values()) {
+            expected.add("PACKAGE_" + status.name());
+        }
+        assertEquals(expected, Set.copyOf(actions));
+        assertEquals(expected.size(), actions.size());
+        assertEquals(List.of("PROJECT", "FILE", "PACKAGE"), catalog.values().get("dashboardEntityType"));
+        assertFalse(catalog.values().get("auditAction").contains("FILE_UPLOADED"));
     }
 
     @Test

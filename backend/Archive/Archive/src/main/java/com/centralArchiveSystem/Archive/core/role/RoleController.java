@@ -37,6 +37,9 @@ public class RoleController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "DESC") String order) {
+        if (!java.util.Set.of("id", "code", "name", "description", "isActive", "createdAt").contains(sort)) {
+            throw new IllegalArgumentException("Unsupported sort field");
+        }
         PageRequest pageRequest = PageRequest.of(page, size, limit, sort, order);
         PagedResponse<RoleResponse> response = roleService.list(search, isActive, pageRequest);
         return ApiResponse.success(response);
@@ -68,7 +71,7 @@ public class RoleController {
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing role")
-    public ApiResponse<RoleResponse> update(@PathVariable UUID id, @RequestBody RoleUpdateRequest request) {
+    public ApiResponse<RoleResponse> update(@PathVariable UUID id, @Valid @RequestBody RoleUpdateRequest request) {
         RoleResponse response = roleService.update(id, request);
         return ApiResponse.success(response, "Role updated successfully");
     }

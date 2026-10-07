@@ -1,5 +1,7 @@
 package com.centralArchiveSystem.Archive.core.user.dto;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Email;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -22,7 +24,7 @@ public record UserRequest(
     String fullName,
 
     @Schema(description = "User email address")
-    String email,
+    @Email(message = "صيغة البريد الإلكتروني غير صالحة") @Size(max = 200, message = "تجاوز طول الحقل الحد المسموح") String email,
 
     @Schema(description = "UUID of the organization this user belongs to")
     UUID organizationId,
@@ -31,5 +33,5 @@ public record UserRequest(
     UUID maxConfidentialityLevelId,
 
     @Schema(description = "Set of role UUIDs to assign to the user")
-    Set<UUID> roleIds
+    Set<@NotNull(message = "لا تُقبل عناصر فارغة داخل القائمة") UUID> roleIds
 ) {}

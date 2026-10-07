@@ -42,7 +42,7 @@ public class ProjectMemberController {
     public ResponseEntity<ApiResponse<MemberResponse>> update(
             @PathVariable UUID projectId,
             @PathVariable UUID id,
-            @RequestBody MemberUpdateRequest request) {
+            @Valid @RequestBody MemberUpdateRequest request) {
         return ResponseEntity.ok(
                 ApiResponse.success(projectMemberService.update(projectId, id, request), "Member updated"));
     }

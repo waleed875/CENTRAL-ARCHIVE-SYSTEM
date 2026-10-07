@@ -392,6 +392,7 @@ public class AuditAspect {
     private boolean isSensitiveField(String fieldName) {
         String normalized = fieldName.toLowerCase(Locale.ROOT);
         return normalized.contains("password")
+                || normalized.contains("passphrase")
                 || normalized.contains("token")
                 || normalized.contains("authorization")
                 || normalized.contains("secret")

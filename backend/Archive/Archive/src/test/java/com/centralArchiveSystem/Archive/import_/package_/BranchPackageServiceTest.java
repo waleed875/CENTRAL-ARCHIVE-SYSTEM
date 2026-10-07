@@ -90,7 +90,7 @@ class BranchPackageServiceTest {
 
         BranchPackageService service = new BranchPackageService(
                 packages, packageProjects, objectMapper, projects, members, files,
-                minio, minioConfig, archive, operations, organizations,
+                minio, minioConfig, archive, new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper), operations, organizations,
                 projectTypes, fileCategories, fileTypes,
                 confidentiality, transactionManager
         );
@@ -150,6 +150,7 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
+                new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper),
                 operations,
                 organizations,
                 projectTypes,
@@ -228,7 +229,7 @@ class BranchPackageServiceTest {
 
         BranchPackageService service = new BranchPackageService(
                 packages, packageProjects, objectMapper, projects, members, files,
-                minio, minioConfig, archive, operations, organizations,
+                minio, minioConfig, archive, new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper), operations, organizations,
                 projectTypes, fileCategories, fileTypes,
                 confidentiality, transactionManager
         );
@@ -347,6 +348,7 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
+                new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper),
                 operations,
                 organizations,
                 projectTypes,
@@ -399,6 +401,140 @@ class BranchPackageServiceTest {
 
         verify(files, never()).save(any());
     }
+
+    @Test
+    void assertImportableDoesNotDowngradeSourceConfidentialityToDefault() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+        FileCategoryRepository fileCategories = mock(FileCategoryRepository.class);
+        FileTypeRepository fileTypes = mock(FileTypeRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID sourceConfidentiality = UUID.randomUUID();
+        UUID defaultConfidentiality = UUID.randomUUID();
+
+        String manifest = """
+                {
+                  "projects": [{
+                    "project_id": "%s",
+                    "organization_id": "%s",
+                    "project_number": "SEC-1",
+                    "name": "Confidential source project",
+                    "year": 2026,
+                    "confidentiality_level_id": "%s",
+                    "files": []
+                  }]
+                }
+                """.formatted(UUID.randomUUID(), organizationId, sourceConfidentiality);
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+        pkg.setManifestData(manifest);
+
+        Organization organization = new Organization();
+        organization.setId(organizationId);
+        organization.setIsActive(true);
+
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+        when(organizations.findById(organizationId)).thenReturn(Optional.of(organization));
+        doThrow(new IllegalStateException("source level not accessible"))
+                .when(confidentiality).requireReadAccess(sourceConfidentiality);
+
+        BranchPackageService service = new BranchPackageService(
+                packages, packageProjects, objectMapper, projects, members, files,
+                minio, minioConfig, archive, new SealedPackageInspector(objectMapper),
+                new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper),
+                new SealedPayloadCanonicalizer(objectMapper), operations, organizations,
+                projectTypes, fileCategories, fileTypes, confidentiality, transactionManager
+        );
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.assertImportable(
+                        packageId,
+                        new PackageImportRequest(Map.of(), defaultConfidentiality)
+                )
+        );
+
+        assertTrue(error.getMessage().contains(
+                "Missing or inaccessible confidentiality mapping for source level"));
+        verify(confidentiality).requireReadAccess(sourceConfidentiality);
+        verify(confidentiality, never()).requireReadAccess(defaultConfidentiality);
+    }
+
+    @Test
+    void referenceRequirementsPreferDeepestSourceOrganization() {
+        BranchPackageRepository packages = mock(BranchPackageRepository.class);
+        PackageProjectRepository packageProjects = mock(PackageProjectRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectMemberRepository members = mock(ProjectMemberRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        MinioService minio = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        PackageArchiveService archive = mock(PackageArchiveService.class);
+        ImportOperationService operations = mock(ImportOperationService.class);
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectTypeRepository projectTypes = mock(ProjectTypeRepository.class);
+        FileCategoryRepository fileCategories = mock(FileCategoryRepository.class);
+        FileTypeRepository fileTypes = mock(FileTypeRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+
+        UUID packageId = UUID.randomUUID();
+        UUID entityId = UUID.randomUUID();
+        UUID factoryId = UUID.randomUUID();
+        UUID departmentId = UUID.randomUUID();
+
+        String manifest = """
+                {
+                  "projects": [{
+                    "project_id": "%s",
+                    "project_number": "ORG-1",
+                    "name": "Organization mapping project",
+                    "year": 2026,
+                    "organization_entity_id": "%s",
+                    "organization_factory_id": "%s",
+                    "organization_department_id": "%s",
+                    "files": []
+                  }]
+                }
+                """.formatted(UUID.randomUUID(), entityId, factoryId, departmentId);
+
+        BranchPackage pkg = new BranchPackage();
+        pkg.setId(packageId);
+        pkg.setManifestData(manifest);
+        when(packages.findById(packageId)).thenReturn(Optional.of(pkg));
+
+        BranchPackageService service = new BranchPackageService(
+                packages, packageProjects, objectMapper, projects, members, files,
+                minio, minioConfig, archive, new SealedPackageInspector(objectMapper),
+                new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper),
+                new SealedPayloadCanonicalizer(objectMapper), operations, organizations,
+                projectTypes, fileCategories, fileTypes, confidentiality, transactionManager
+        );
+
+        Map<String, java.util.List<UUID>> references =
+                service.getReferenceRequirements(packageId);
+
+        assertEquals(java.util.List.of(departmentId), references.get("organizations"));
+    }
+
+
     @Test
     void assertImportableRejectsMissingOrganizationMapping() {
         BranchPackageRepository packages = mock(BranchPackageRepository.class);
@@ -450,6 +586,7 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
+                new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper),
                 operations,
                 organizations,
                 projectTypes,
@@ -468,7 +605,8 @@ class BranchPackageServiceTest {
         );
 
         assertTrue(error.getMessage().contains("Missing organization mapping"));
-        verifyNoInteractions(organizations);
+        verify(organizations).findById(sourceOrganizationId);
+        verifyNoMoreInteractions(organizations);
         verifyNoInteractions(confidentiality);
     }
 
@@ -545,7 +683,7 @@ class BranchPackageServiceTest {
 
         BranchPackageService service = new BranchPackageService(
                 packages, packageProjects, objectMapper, projects, members, files,
-                minio, minioConfig, archive, operations, organizations,
+                minio, minioConfig, archive, new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper), operations, organizations,
                 projectTypes, fileCategories, fileTypes,
                 confidentiality, transactionManager
         );
@@ -561,7 +699,7 @@ class BranchPackageServiceTest {
                 )
         );
 
-        assertTrue(error.getMessage().contains("does not belong to category"));
+        assertTrue(error.getMessage().contains("does not belong to mapped category"));
     }
 
     @Test
@@ -646,6 +784,7 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
+                new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper),
                 operations,
                 organizations,
                 projectTypes,
@@ -750,6 +889,7 @@ class BranchPackageServiceTest {
                 minio,
                 minioConfig,
                 archive,
+                new SealedPackageInspector(objectMapper), new SealedPackageDecryptor(), new DecryptedPayloadValidator(objectMapper), new SealedPayloadCanonicalizer(objectMapper),
                 operations,
                 organizations,
                 projectTypes,

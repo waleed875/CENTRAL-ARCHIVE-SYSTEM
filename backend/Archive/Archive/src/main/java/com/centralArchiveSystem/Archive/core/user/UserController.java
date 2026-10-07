@@ -40,6 +40,9 @@ public class UserController {
             @RequestParam(required = false) Integer limit,
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "DESC") String order) {
+        if (!java.util.Set.of("id", "username", "fullName", "email", "status", "organizationId", "maxConfidentialityLevelId", "createdAt", "updatedAt").contains(sort)) {
+            throw new IllegalArgumentException("Unsupported sort field");
+        }
         PageRequest pageRequest = PageRequest.of(page, size, limit, sort, order);
         PagedResponse<UserResponse> response = userService.list(search, organizationId, status, role, pageRequest);
         return ApiResponse.success(response);
@@ -64,7 +67,7 @@ public class UserController {
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update an existing user")
-    public ApiResponse<UserResponse> update(@PathVariable UUID id, @RequestBody UserUpdateRequest request) {
+    public ApiResponse<UserResponse> update(@PathVariable UUID id, @Valid @RequestBody UserUpdateRequest request) {
         UserResponse response = userService.update(id, request);
         return ApiResponse.success(response, "User updated successfully");
     }

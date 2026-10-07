@@ -53,7 +53,7 @@ public class FileController {
         return ResponseEntity.ok(ApiResponse.success(PagedResponse.fromSpring(result, page, size)));
     }
 
-    @PostMapping("/api/v1/projects/{projectId}/files/upload")
+    @PostMapping(value = "/api/v1/projects/{projectId}/files/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileResponse>> uploadFile(
             @PathVariable UUID projectId,
@@ -64,7 +64,7 @@ public class FileController {
                 .body(ApiResponse.success(response, "File uploaded successfully"));
     }
 
-    @PostMapping("/api/v1/projects/{projectId}/files/upload-batch")
+    @PostMapping(value = "/api/v1/projects/{projectId}/files/upload-batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileBatchResponse>> uploadBatch(
             @PathVariable UUID projectId,
@@ -84,7 +84,7 @@ public class FileController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     public ResponseEntity<ApiResponse<FileResponse>> updateFileMetadata(
             @PathVariable UUID id,
-            @RequestBody FileMetadataUpdateRequest request) {
+            @Valid @RequestBody FileMetadataUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileService.updateFileMetadata(id, request), "File metadata updated successfully"));
     }
 

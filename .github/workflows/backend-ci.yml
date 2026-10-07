@@ -1,65 +1,64 @@
 name: Backend CI
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "backend/Archive/Archive/**"
       - ".github/workflows/backend-ci.yml"
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "backend/Archive/Archive/**"
       - ".github/workflows/backend-ci.yml"
 
 permissions:
   contents: read
+concurrency:
+  group: backend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   compile-and-unit-test:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: central_archive
+          POSTGRES_DB: central_archive_test
           POSTGRES_USER: archive_user
-          POSTGRES_PASSWORD: archive_password
-        ports:
-          - 5432:5432
+          POSTGRES_PASSWORD: archive_test_password
+        ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U archive_user -d central_archive"
+          --health-cmd "pg_isready -U archive_user -d central_archive_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-
     defaults:
       run:
+        shell: bash
         working-directory: backend/Archive/Archive
-
     env:
-      DB_URL: jdbc:postgresql://localhost:5432/central_archive
-      # src/test/resources/application-test.properties sends the suite to TEST_DB_URL rather than
-      # DB_URL, so a developer cannot accidentally point a local run at their own data. CI has no
-      # such data to protect, so its tests keep using the same throwaway database as the build.
-      TEST_DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      DB_URL: jdbc:postgresql://localhost:5432/central_archive_test
+      TEST_DB_URL: jdbc:postgresql://localhost:5432/central_archive_test
       DB_USERNAME: archive_user
-      DB_PASSWORD: archive_password
-      LEGACY_DB_URL: jdbc:postgresql://localhost:5432/central_archive
+      DB_PASSWORD: archive_test_password
+      LEGACY_DB_URL: jdbc:postgresql://localhost:5432/central_archive_test
       LEGACY_DB_USERNAME: archive_user
-      LEGACY_DB_PASSWORD: archive_password
+      LEGACY_DB_PASSWORD: archive_test_password
       BOOTSTRAP_ADMIN_ENABLED: "false"
       ARCHIVE_INSTANCE_UUID: 00000000-0000-0000-0000-000000000001
       MINIO_ENDPOINT: http://localhost:9000
       MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin123
+      MINIO_SECRET_KEY: minio-test-password
       MINIO_BUCKET: archive-files-ci
-
+      MINIO_RELEASE: RELEASE.2025-10-15T17-29-55Z
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
+        with:
+          persist-credentials: false
       - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
@@ -67,45 +66,100 @@ jobs:
           java-version: "21"
           cache: maven
           cache-dependency-path: backend/Archive/Archive/pom.xml
-
-      - name: Start MinIO
+      - name: Set up Go for the pinned MinIO test server
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.8"
+          cache: false
+      - name: Cache the pinned MinIO test binary
+        id: minio-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/minio
+          key: minio-${{ runner.os }}-${{ runner.arch }}-go1.24.8-${{ env.MINIO_RELEASE }}
+      - name: Build MinIO from its published source release
+        if: steps.minio-cache.outputs.cache-hit != 'true'
+        run: go install github.com/minio/minio@${MINIO_RELEASE}
+      - name: Start isolated MinIO
         run: |
-          curl -fL --retry 5 --retry-delay 2 \
-            -o /tmp/minio \
-            https://dl.min.io/server/minio/release/linux-amd64/minio
-          chmod +x /tmp/minio
-          MINIO_ROOT_USER=minioadmin \
-          MINIO_ROOT_PASSWORD=minioadmin123 \
-          /tmp/minio server /tmp/minio-data --address :9000 > /tmp/minio.log 2>&1 &
-          for i in {1..30}; do
-            if curl -fsS http://localhost:9000/minio/health/ready >/dev/null; then
-              exit 0
-            fi
+          mkdir -p "$RUNNER_TEMP/minio-data"
+          MINIO_ROOT_USER="$MINIO_ACCESS_KEY" MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+            "$HOME/go/bin/minio" server "$RUNNER_TEMP/minio-data" --address 127.0.0.1:9000 \
+            > "$RUNNER_TEMP/minio.log" 2>&1 &
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then exit 0; fi
             sleep 1
           done
-          cat /tmp/minio.log
+          cat "$RUNNER_TEMP/minio.log"
           exit 1
-
-      - name: Compile backend
-        run: bash mvnw -B -DskipTests package
-
-      - name: Run focused unit tests
-        run: bash mvnw -B -Dtest=PackageArchiveServiceTest,BranchPackageServiceTest,ImportOperationServiceTest,MigrationServiceTest,LegacyMigrationServiceFilePreparationTest,ConfidentialityAccessServiceTest,ExportServiceTest,JwtTokenProviderTest,AuthServiceTest,ProjectServiceTest,ProjectMemberServiceTest,OrganizationServiceTest,RoleServiceTest,UserServiceTest,ConfidentialityLevelServiceTest,ProjectTypeServiceTest,FileContentInspectorTest,FileCategoryServiceTest,FileTypeServiceTest,FileServiceTest,RequestCorrelationFilterTest,DashboardServiceTest,AuditAspectTest,FlywayMigrationConfigTest,DataInitializerTest,GlobalExceptionHandlerTest,MinioHealthIndicatorTest,StorageReconciliationServiceTest test
-
-      - name: Run authentication and object authorization HTTP integration tests
-        run: bash mvnw -B -Dtest=AuthHttpIntegrationTest,ObjectAuthorizationHttpIntegrationTest test
-
-      - name: Run backend workflow HTTP E2E tests
-        run: bash mvnw -B -Dtest=ProjectWorkflowHttpE2ETest,PackageImportHttpE2ETest test
-
-      - name: Run legacy migration E2E tests
-        run: bash mvnw -B -Dtest=LegacyMigrationHttpE2ETest test
-
-      - name: Run MinIO integration and readiness tests
-        run: bash mvnw -B -Dtest=MinioServiceIntegrationTest,MinioReadinessHttpIntegrationTest test
-
-      - name: Verify PostgreSQL schema invariants
-        run: bash mvnw -B -Dtest=PostgresSchemaIntegrationTest test
-
-      - name: Verify Flyway migrations and Hibernate schema
-        run: bash mvnw -B -Dtest=ArchiveApplicationTests test
+      - name: Preserve versioned validation inputs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, zipfile
+          target = Path(os.environ['RUNNER_TEMP']) / 'validation-source.zip'
+          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+              for path in Path('src').rglob('*'):
+                  if path.is_file() and path.suffix in ('.java', '.sql', '.properties', '.py', '.md'):
+                      archive.write(path)
+              archive.write('pom.xml')
+          PY
+      - name: Compile and run ALL unit, integration and workflow tests
+        run: bash mvnw -B -ntp -DfailIfNoTests=true verify | tee "$RUNNER_TEMP/backend-verify.log"
+      - name: Exercise packaged JAR with valid and invalid values against disposable data
+        env:
+          SMOKE_DISPOSABLE_ENV: "1"
+          SMOKE_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          export PGPASSWORD="$DB_PASSWORD" PGCLIENTENCODING=UTF8
+          mkdir -p "$RUNNER_TEMP/pg-test-bin"
+          chmod +x src/test/blackbox/pg_client.py
+          for tool in psql pg_dump pg_restore; do
+            ln -s "$PWD/src/test/blackbox/pg_client.py" "$RUNNER_TEMP/pg-test-bin/$tool"
+          done
+          export PATH="$RUNNER_TEMP/pg-test-bin:$PATH"
+          pg_dump --version
+          pg_restore --version
+          psql -X -h 127.0.0.1 -U archive_user -d postgres -Atc 'SELECT version()'
+          python3 -m py_compile src/test/blackbox/*.py
+          python3 src/test/blackbox/s3_fixture.py
+          python3 src/test/blackbox/input_validation_cases.py 2>&1 | tee "$RUNNER_TEMP/live-api-console.log"
+      - name: Summarize test results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          import os
+          files = sorted(Path('target/surefire-reports').glob('TEST-*.xml'))
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in files:
+              root = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(root.get(key, '0'))
+              for case in root.findall('testcase'):
+                  for kind in ('failure', 'error'):
+                      node = case.find(kind)
+                      if node is not None:
+                          print(f"{kind.upper()}: {case.get('classname')}.{case.get('name')}: {node.get('message', '')}")
+          line = f"Suites: {len(files)}; " + '; '.join(f'{key}: {value}' for key, value in totals.items())
+          print(line)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Backend test results\n\n' + line + '\n')
+          if not files:
+              print('No test report was produced; this is NOT a successful test run.')
+          PY
+      - name: Preserve test evidence and infrastructure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-evidence-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            backend/Archive/Archive/target/surefire-reports/
+            ${{ runner.temp }}/backend-verify.log
+            ${{ runner.temp }}/minio.log
+            ${{ runner.temp }}/live-api-console.log
+            ${{ runner.temp }}/live-api-evidence/
+            ${{ runner.temp }}/validation-source.zip
