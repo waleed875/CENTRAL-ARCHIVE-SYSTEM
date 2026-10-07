@@ -2,7 +2,9 @@ package com.centralArchiveSystem.Archive.config;
 
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevel;
 import com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevelRepository;
+import com.centralArchiveSystem.Archive.core.role.Role;
 import com.centralArchiveSystem.Archive.core.role.RoleRepository;
+import com.centralArchiveSystem.Archive.core.user.User;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
 import com.centralArchiveSystem.Archive.project.filetype.FileTypeRepository;
@@ -16,6 +18,7 @@ import java.lang.reflect.Field;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,6 +43,55 @@ class DataInitializerTest {
 
         verify(users, never()).findByUsername(anyString());
         verify(users, never()).save(any());
+    }
+
+    @Test
+    void givesTheBootstrappedAdminTheClearanceItsJobNeeds() throws Exception {
+        UUID topSecret = UUID.randomUUID();
+        UserRepository users = mock(UserRepository.class);
+        when(users.findByUsername("admin")).thenReturn(Optional.empty());
+
+        DataInitializer initializer = adminInitializer(users, topSecret);
+        initializer.run();
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        // Without a clearance the account with the most authority is refused on ordinary work:
+        // ConfidentialityAccessService.requireReadAccess throws whenever the caller's clearance is
+        // unset and the record names a level, and the upload and project forms both do. It answers 403,
+        // which reads as a role problem and is not one.
+        assertEquals(topSecret, saved.getValue().getMaxConfidentialityLevelId());
+    }
+
+    @Test
+    void topsUpAnExistingAdminWhoseClearanceWasNeverSet() throws Exception {
+        UUID topSecret = UUID.randomUUID();
+        UserRepository users = mock(UserRepository.class);
+        when(users.findByUsername("admin")).thenReturn(Optional.of(existingAdmin(null)));
+
+        DataInitializer initializer = adminInitializer(users, topSecret);
+        initializer.run();
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        assertEquals(topSecret, saved.getValue().getMaxConfidentialityLevelId());
+    }
+
+    @Test
+    void leavesAClearanceSomebodyChoseDeliberatelyAlone() throws Exception {
+        UUID topSecret = UUID.randomUUID();
+        UUID chosen = UUID.randomUUID();
+        UserRepository users = mock(UserRepository.class);
+        when(users.findByUsername("admin")).thenReturn(Optional.of(existingAdmin(chosen)));
+
+        DataInitializer initializer = adminInitializer(users, topSecret);
+        initializer.run();
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        // A narrower clearance is a restriction somebody put there on purpose, and widening it because
+        // the bootstrap runs again is not ours to do.
+        assertEquals(chosen, saved.getValue().getMaxConfidentialityLevelId());
     }
 
     @Test
@@ -122,6 +174,45 @@ class DataInitializerTest {
         level.setName(code);
         level.setLevelOrder(order);
         return level;
+    }
+
+    /**
+     * A bootstrap run with the admin provisioning switched on, a system_admin role to hand out, and a
+     * confidentiality ladder whose top is {@code topLevelId}.
+     */
+    private static DataInitializer adminInitializer(UserRepository users, UUID topLevelId) throws Exception {
+        RoleRepository roles = mock(RoleRepository.class);
+        when(roles.existsByCode(anyString())).thenReturn(false);
+        Role systemAdmin = mock(Role.class);
+        when(systemAdmin.getCode()).thenReturn("system_admin");
+        when(roles.findByCode("system_admin")).thenReturn(Optional.of(systemAdmin));
+
+        ConfidentialityLevelRepository levels = mock(ConfidentialityLevelRepository.class);
+        when(levels.findByCode(anyString())).thenReturn(Optional.empty());
+        when(levels.findAll()).thenReturn(List.of());
+        ConfidentialityLevel top = mock(ConfidentialityLevel.class);
+        when(top.getId()).thenReturn(topLevelId);
+        when(levels.findAllByOrderByLevelOrderAsc()).thenReturn(List.of(top));
+
+        DataInitializer initializer = initializer(roles, users, mock(PasswordEncoder.class), levels,
+                emptyCategoryRepository(), mock(FileTypeRepository.class),
+                mock(ProjectTypeRepository.class));
+        setField(initializer, "bootstrapAdminEnabled", true);
+        setField(initializer, "bootstrapAdminUsername", "admin");
+        setField(initializer, "bootstrapAdminPassword", "secret");
+        setField(initializer, "bootstrapAdminEmail", "admin@example.test");
+        return initializer;
+    }
+
+    /** An admin already on file, holding {@code clearance} — null standing for never having had one. */
+    private static User existingAdmin(UUID clearance) {
+        User admin = new User();
+        admin.setUsername("admin");
+        admin.setFullName("System Administrator");
+        admin.setEmail("admin@example.test");
+        admin.setStatus(User.UserStatus.ACTIVE);
+        admin.setMaxConfidentialityLevelId(clearance);
+        return admin;
     }
 
     private static DataInitializer initializer(RoleRepository roles, UserRepository users,

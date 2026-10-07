@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Component
 public class DataInitializer implements CommandLineRunner {
@@ -292,12 +293,21 @@ public class DataInitializer implements CommandLineRunner {
 
         Optional<User> existingAdmin = userRepository.findByUsername(bootstrapAdminUsername);
         Role systemAdminRole = roleRepository.findByCode("system_admin").orElse(null);
+        // The system administrator is the one account that has to reach every record, so it is given the
+        // top clearance. Left without one it is the most locked-out account in the system rather than the
+        // least: `ConfidentialityAccessService.requireReadAccess` refuses any record naming a
+        // confidentiality level whenever the caller's clearance is unset, and that is every project and
+        // file filled in properly — the answer is a bare 403 that names a role problem and is not one.
+        UUID fullClearance = highestConfidentialityLevelId();
 
         if (existingAdmin.isPresent() && systemAdminRole != null) {
             User admin = existingAdmin.get();
             admin.getRoles().add(systemAdminRole);
             if (admin.getStatus() != User.UserStatus.ACTIVE) {
                 admin.setStatus(User.UserStatus.ACTIVE);
+            }
+            if (admin.getMaxConfidentialityLevelId() == null && fullClearance != null) {
+                admin.setMaxConfidentialityLevelId(fullClearance);
             }
             userRepository.save(admin);
             log.info("Assigning system_admin role to existing bootstrap admin user (username={})", bootstrapAdminUsername);
@@ -314,6 +324,7 @@ public class DataInitializer implements CommandLineRunner {
         admin.setFullName("System Administrator");
         admin.setEmail(bootstrapAdminEmail);
         admin.setStatus(User.UserStatus.ACTIVE);
+        admin.setMaxConfidentialityLevelId(fullClearance);
 
         Set<Role> roles = new HashSet<>();
         if (systemAdminRole != null) {
@@ -323,5 +334,16 @@ public class DataInitializer implements CommandLineRunner {
 
         userRepository.save(admin);
         log.info("Seeded bootstrap admin user (username={})", bootstrapAdminUsername);
+    }
+
+    /**
+     * The strictest level on the ladder, which is the clearance that lets its holder read everything.
+     *
+     * <p>Null before the ladder is seeded, and left null rather than guessed at: a clearance has to name a
+     * level that exists, and inventing one would fail the foreign key on save.
+     */
+    private UUID highestConfidentialityLevelId() {
+        List<ConfidentialityLevel> ladder = confidentialityLevelRepository.findAllByOrderByLevelOrderAsc();
+        return ladder.isEmpty() ? null : ladder.get(ladder.size() - 1).getId();
     }
 }

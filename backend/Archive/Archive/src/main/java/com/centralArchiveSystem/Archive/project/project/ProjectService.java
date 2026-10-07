@@ -290,7 +290,7 @@ public class ProjectService {
                 .collect(Collectors.toList());
     }
 
-    public ProjectResponse submitForReview(UUID id) {
+    public ProjectResponse submitForReview(UUID id, UUID submittedBy) {
         Project project = requireAccessibleProject(id);
 
         if (project.getStatus() != Project.ProjectStatus.DRAFT
@@ -301,13 +301,29 @@ public class ProjectService {
                             + "حالة المشروع الحالية: " + project.getStatus().describe());
         }
         if (project.getDataCompletionStatus() != Project.DataCompletionStatus.COMPLETE) {
+            // Named for what actually refuses it. The gate reads one field — data_completion_status —
+            // and says so, because the previous wording sent the reader to the incomplete-data report,
+            // which is built from the missing_fields column: a list only the legacy migration fills in.
+            // A project entered by hand has nothing in that column, so the report showed "2 incomplete"
+            // beside zero named fields and the reader had no way forward from there. The requirements
+            // report frames that report as a migration screen throughout (data completion and missing
+            // fields are both "بعد الترحيل"), so there is no field list to point at for any other
+            // project, and inventing one here would be a rule this system does not have.
             throw new BusinessRuleException(
-                    "لا يمكن إرسال مشروع ناقص البيانات للمراجعة. "
-                            + "أكمل الحقول الناقصة أولاً — راجع تقرير البيانات الناقصة");
+                    "لا يمكن إرسال المشروع للمراجعة قبل ضبط «حالة اكتمال البيانات» على «مكتمل». "
+                            + "افتح «تعديل مشروع» واضبطها. "
+                            + "الحالة الحالية: " + project.getDataCompletionStatus());
         }
 
         project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
-        project.setReviewNotes(null);
+        // reviewNotes is left alone. This method used to null it, on the reasoning that a new review
+        // round starts with a clean slate — but the note is the instruction the person fixing the
+        // project is following, and they press this button when they have finished following it. So
+        // the clearing happened at the one moment the note still mattered, and it left only a JSON
+        // snapshot in the audit log. A fresh instruction arrives with the next requestCorrection,
+        // which overwrites this column on purpose; a resubmission must not.
+        project.setSubmittedBy(submittedBy);
+        project.setSubmittedAt(LocalDateTime.now());
         Project saved = projectRepository.save(project);
         return ProjectResponse.fromEntity(saved);
     }
@@ -358,7 +374,11 @@ public class ProjectService {
         }
 
         project.setStatus(Project.ProjectStatus.REJECTED);
-        project.setReviewNotes(rejectionReason);
+        // Its own column. This used to write the reason into reviewNotes, the same column
+        // requestCorrection uses for the instruction it hands the person fixing the project — so
+        // asking for a correction and turning a project down overwrote each other, and a reason
+        // written here was indistinguishable from a correction note to whoever read it next.
+        project.setRejectionReason(rejectionReason);
         Project saved = projectRepository.save(project);
         return ProjectResponse.fromEntity(saved);
     }

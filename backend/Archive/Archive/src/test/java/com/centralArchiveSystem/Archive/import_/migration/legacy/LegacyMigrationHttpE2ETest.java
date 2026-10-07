@@ -17,10 +17,15 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.io.IOException;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,11 +45,49 @@ class LegacyMigrationHttpE2ETest {
                         "DB_URL",
                         "jdbc:postgresql://localhost:5433/central_archive_test"
                 ));
-        registry.add("legacy.datasource.username", () ->
-                System.getenv().getOrDefault("DB_USERNAME", "archive_user"));
-        registry.add("legacy.datasource.password", () ->
-                System.getenv().getOrDefault("DB_PASSWORD", "archive_password"));
+        registry.add("legacy.datasource.username", () -> credential("DB_USERNAME", "archive_user"));
+        registry.add("legacy.datasource.password", () -> credential("DB_PASSWORD", "archive_password"));
         registry.add("legacy.datasource.driver-class-name", () -> "org.postgresql.Driver");
+    }
+
+    /**
+     * A database credential, resolved the way the application itself resolves it.
+     *
+     * <p>Reading {@code System.getenv} on its own is not the same lookup. The main configuration imports
+     * the project root .env through {@code spring.config.import}, so locally the username and password
+     * arrive from that file while the environment variables are unset — and an environment variable
+     * cannot be told apart from an imported one. Asking the environment alone therefore fell through to
+     * an account that exists on no machine this runs on, and all three tests here failed on a connection
+     * it could not authenticate, reported as a migration failure, which it is not.
+     *
+     * <p>So the environment is asked first, which is what CI populates, and the .env the application reads
+     * is read here too, which is what a developer has.
+     */
+    private static String credential(String key, String fallback) {
+        String fromEnvironment = System.getenv(key);
+        if (fromEnvironment != null && !fromEnvironment.isBlank()) {
+            return fromEnvironment;
+        }
+        String fromEnvFile = projectEnv().getProperty(key);
+        return fromEnvFile == null || fromEnvFile.isBlank() ? fallback : fromEnvFile;
+    }
+
+    /**
+     * The project root .env — the same three levels up that {@code spring.config.import} names. Empty
+     * when it is absent, so a checkout without one falls back rather than failing to read.
+     */
+    private static Properties projectEnv() {
+        Properties properties = new Properties();
+        Path env = Path.of("").toAbsolutePath().resolve("../../../.env");
+        if (!Files.isReadable(env)) {
+            return properties;
+        }
+        try (Reader reader = Files.newBufferedReader(env, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+        } catch (IOException unreadable) {
+            return new Properties();
+        }
+        return properties;
     }
 
     @Autowired JdbcTemplate jdbcTemplate;

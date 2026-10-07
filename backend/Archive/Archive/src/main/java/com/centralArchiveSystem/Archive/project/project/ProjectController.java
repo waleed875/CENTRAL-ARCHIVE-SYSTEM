@@ -97,7 +97,7 @@ public class ProjectController {
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
     @Operation(summary = "Submit a project for review")
     public ResponseEntity<ApiResponse<ProjectResponse>> submitForReview(@PathVariable UUID id) {
-        ProjectResponse response = projectService.submitForReview(id);
+        ProjectResponse response = projectService.submitForReview(id, currentUserService.userId());
         return ResponseEntity.ok(ApiResponse.success(response, "Project submitted for review"));
     }
 
