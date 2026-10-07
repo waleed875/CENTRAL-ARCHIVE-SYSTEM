@@ -136,10 +136,18 @@ class ProjectWorkflowHttpE2ETest {
         file.setSourceType("MANUAL");
         UUID fileId = fileRepository.save(file).getId();
 
-        mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", projectId)
+        String firstSubmit = mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", projectId)
                         .header("Authorization", "Bearer " + entryToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"));
+                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"))
+                .andReturn().getResponse().getContentAsString();
+
+        // Who sent it, and when. "Under review" carried no age before these existed, so a project
+        // submitted this morning and one waiting since last month read identically.
+        JsonNode submitted = objectMapper.readTree(firstSubmit).path("data");
+        assertFalse(submitted.path("submittedAt").isNull(), "submittedAt must reach the client, not only the table");
+        User sender = userRepository.findByUsername(dataEntryUsername).orElseThrow();
+        assertEquals(sender.getId().toString(), submitted.path("submittedBy").asText());
 
         String memberBody = """
                 {"person_name":"Locked Member","role_name":"Reviewer"}
@@ -161,7 +169,8 @@ class ProjectWorkflowHttpE2ETest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"review_notes\":\"Please add a member\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("NEEDS_CORRECTION"));
+                .andExpect(jsonPath("$.data.status").value("NEEDS_CORRECTION"))
+                .andExpect(jsonPath("$.data.reviewNotes").value("Please add a member"));
 
         mockMvc.perform(post("/api/v1/projects/{projectId}/members", projectId)
                         .header("Authorization", "Bearer " + entryToken)
@@ -171,10 +180,19 @@ class ProjectWorkflowHttpE2ETest {
 
         assertEquals(1, projectMemberRepository.findByProjectId(projectId).size());
 
+        // The resubmission is the moment the note used to die: submitForReview cleared review_notes,
+        // and the person clears it by finishing the work the note asked for. It has to survive.
         mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", projectId)
                         .header("Authorization", "Bearer " + entryToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"));
+                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data.reviewNotes").value("Please add a member"));
+
+        Project resubmitted = projectRepository.findById(projectId).orElseThrow();
+        assertEquals("Please add a member", resubmitted.getReviewNotes(),
+                "the correction note must still be there after resubmitting");
+        assertEquals(sender.getId(), resubmitted.getSubmittedBy(),
+                "a resubmission re-stamps who is waiting on the project now");
 
         mockMvc.perform(patch("/api/v1/projects/{id}/approve", projectId)
                         .header("Authorization", "Bearer " + auditorToken))
@@ -229,6 +247,50 @@ class ProjectWorkflowHttpE2ETest {
                 Project.ProjectStatus.DRAFT,
                 projectRepository.findById(projectId).orElseThrow().getStatus()
         );
+    }
+
+    @Test
+    void rejectionAndCorrectionKeepSeparateRecordsOverHttp() throws Exception {
+        String entryToken = login(dataEntryUsername);
+        String auditorToken = login(auditorUsername);
+
+        String createResponse = mockMvc.perform(post("/api/v1/projects")
+                        .header("Authorization", "Bearer " + entryToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationId":"%s",
+                                  "projectNumber":"WF-REJECT-%s",
+                                  "name":"Rejected Workflow Project",
+                                  "year":2026,
+                                  "dataCompletionStatus":"COMPLETE"
+                                }
+                                """.formatted(organizationId, UUID.randomUUID().toString().substring(0, 8))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        UUID projectId = UUID.fromString(objectMapper.readTree(createResponse).path("data").path("id").asText());
+
+        mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", projectId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isOk());
+
+        // Both used to land in review_notes, so the second overwrote the first and a reason read
+        // back as a correction note.
+        mockMvc.perform(patch("/api/v1/projects/{id}/reject", projectId)
+                        .header("Authorization", "Bearer " + auditorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rejection_reason":"belongs to another organization"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("belongs to another organization"));
+
+        Project persisted = projectRepository.findById(projectId).orElseThrow();
+        assertEquals("belongs to another organization", persisted.getRejectionReason());
+        assertNull(persisted.getReviewNotes(),
+                "a rejection must not leave its reason sitting in the correction-notes column");
     }
 
     private String login(String username) throws Exception {

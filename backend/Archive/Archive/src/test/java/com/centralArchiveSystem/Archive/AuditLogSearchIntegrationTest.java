@@ -3,14 +3,18 @@ package com.centralArchiveSystem.Archive;
 import com.centralArchiveSystem.Archive.audit.AuditLog;
 import com.centralArchiveSystem.Archive.audit.AuditLogRepository;
 import com.centralArchiveSystem.Archive.audit.AuditLogService;
+import com.centralArchiveSystem.Archive.core.user.User;
 import com.centralArchiveSystem.Archive.core.user.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,7 +34,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * for a row.
  */
 @SpringBootTest
+@Transactional
 class AuditLogSearchIntegrationTest {
+
+    /** The user the audit rows below are attributed to. audit_logs.user_id is a foreign key. */
+    private static final String PROBE_USERNAME = "audit-search-probe";
 
     @Autowired
     AuditLogRepository auditLogRepository;
@@ -40,6 +48,54 @@ class AuditLogSearchIntegrationTest {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    PasswordEncoder passwordEncoder;
+
+    /**
+     * Writes the rows these assertions are about, instead of looking for rows that some earlier
+     * test happened to leave behind.
+     *
+     * <p>Until the suite was moved off the development database this class seeded nothing: it
+     * asked the audit log for rows and asserted they were there. That held only when something
+     * else had already written them into the same database, which is why it passed in CI (its
+     * steps share one container database, so earlier steps filled the table) and passed locally
+     * (the development database had collected rows from earlier runs), and failed the moment it
+     * was pointed at an empty database of its own.
+     *
+     * <p>Rolled back rather than deleted, because the schema refuses a direct delete on this
+     * table: {@code audit.audit_logs DELETE requires controlled retention purge mode}. That guard
+     * is deliberate — an audit trail a test can quietly erase is not an audit trail — so the rows
+     * are written and unwound inside the transaction the class already runs in.
+     */
+    @BeforeEach
+    void seedAuditRows() {
+        User probe = userRepository.findByUsername(PROBE_USERNAME).orElseGet(() -> {
+            User created = new User();
+            created.setUsername(PROBE_USERNAME);
+            created.setPasswordHash(passwordEncoder.encode("never-used-in-this-test"));
+            created.setFullName("Audit Search Probe");
+            created.setEmail(PROBE_USERNAME + "@example.test");
+            created.setStatus(User.UserStatus.ACTIVE);
+            return userRepository.save(created);
+        });
+
+        // Staggered on purpose: the ordering assertion needs one timestamp per row, and a column
+        // default of now() would give every row in this single transaction the same value.
+        LocalDateTime first = LocalDateTime.of(2026, 1, 1, 9, 0);
+        for (int i = 0; i < 25; i++) {
+            AuditLog row = new AuditLog();
+            // Only half the rows carry the user, so filtering by it has something to exclude.
+            row.setUserId(i % 2 == 0 ? probe.getId() : null);
+            row.setAction(i % 2 == 0 ? "READ" : "CREATE");
+            row.setEntityType("AUDIT_SEARCH_SEED");
+            row.setEntityId(UUID.randomUUID());
+            row.setDescription("written by AuditLogSearchIntegrationTest");
+            row.setCreatedAt(first.plusMinutes(i));
+            auditLogRepository.save(row);
+        }
+        auditLogRepository.flush();
+    }
 
     @Test
     void everyFilterNullReturnsRowsRatherThanFailing() {
@@ -83,7 +139,7 @@ class AuditLogSearchIntegrationTest {
         // The one filter whose Java type is not a String, and the one where a null bind has no type
         // to fall back on. A real user, because `audit_logs.user_id` is a foreign key and a made-up
         // one would be rejected by the column before the filter was ever exercised.
-        var user = userRepository.findByUsername("admin").orElseThrow();
+        var user = userRepository.findByUsername(PROBE_USERNAME).orElseThrow();
         var page = auditLogService.search(user.getId(), null, null, null, null, null, 0, 20);
 
         assertNotNull(page);
@@ -116,7 +172,7 @@ class AuditLogSearchIntegrationTest {
         //
         // `audit_logs.user_id` is a foreign key to `core.users`, so this needs a real user rather
         // than a fresh UUID: the column rejects a made-up one, which is the schema doing its job.
-        var user = userRepository.findByUsername("admin").orElseThrow();
+        var user = userRepository.findByUsername(PROBE_USERNAME).orElseThrow();
         var marker = UUID.randomUUID();
         AuditLog row = new AuditLog();
         row.setUserId(user.getId());

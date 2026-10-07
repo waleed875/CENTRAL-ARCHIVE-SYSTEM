@@ -55,7 +55,7 @@ public class ProjectTypeController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<ProjectTypeResponse>> update(
             @PathVariable UUID id,
-            @RequestBody ProjectTypeUpdateRequest request) {
+            @Valid @RequestBody ProjectTypeUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(projectTypeService.update(id, request), "Project type updated"));
     }
 

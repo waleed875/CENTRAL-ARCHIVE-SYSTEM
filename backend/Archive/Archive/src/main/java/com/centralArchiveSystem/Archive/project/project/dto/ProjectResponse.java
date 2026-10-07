@@ -28,12 +28,15 @@ public record ProjectResponse(
     @Schema(description = "Keywords") String keywords,
     @Schema(description = "Project status") Project.ProjectStatus status,
     @Schema(description = "Data completion status") Project.DataCompletionStatus dataCompletionStatus,
-    @Schema(description = "Review notes") String reviewNotes,
+    @Schema(description = "Correction instruction from the reviewer. Survives resubmission") String reviewNotes,
+      @Schema(description = "Why the project was rejected, when it was rejected") String rejectionReason,
     @Schema(description = "Source type") Project.SourceType sourceType,
     @Schema(description = "Source reference") String sourceReference,
     @Schema(description = "Created by user ID") UUID createdBy,
     @Schema(description = "Approved by user ID") UUID approvedBy,
     @Schema(description = "Approval timestamp") LocalDateTime approvedAt,
+      @Schema(description = "User who last submitted the project for review") UUID submittedBy,
+      @Schema(description = "When the project was last submitted for review. The queue's wait time") LocalDateTime submittedAt,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt,
     @Schema(description = "Last update timestamp") LocalDateTime updatedAt
 ) {
@@ -60,11 +63,14 @@ public record ProjectResponse(
             project.getStatus(),
             project.getDataCompletionStatus(),
             project.getReviewNotes(),
+            project.getRejectionReason(),
             project.getSourceType(),
             project.getSourceReference(),
             project.getCreatedBy(),
             project.getApprovedBy(),
             project.getApprovedAt(),
+            project.getSubmittedBy(),
+            project.getSubmittedAt(),
             project.getCreatedAt(),
             project.getUpdatedAt()
         );

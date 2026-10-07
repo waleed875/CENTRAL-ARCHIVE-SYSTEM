@@ -1,0 +1,46 @@
+{
+  "info": {
+    "name": "Central Archive - 07 Backend Functional Regression",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Companion to BACKEND_FUNCTIONAL_AUDIT.md. Run only against a test/staging server. Set username/password for an existing system_admin or auditor with appropriate clearance. The collection performs login/read/error-contract checks only: it does not create, approve, delete or import archive data. CI evidence comes from the Java regression suites, not from a claim that this collection was executed. Rejection requests use rejection_reason; responses use data.rejectionReason, while data.reviewNotes remains the correction instruction."
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:8080"},
+    {"key": "username", "value": ""},
+    {"key": "password", "value": ""},
+    {"key": "token", "value": ""}
+  ],
+  "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]},
+  "item": [
+    {
+      "name": "Login - capture test account token",
+      "request": {"method": "POST", "auth": {"type": "noauth"}, "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}"}, "url": "{{baseUrl}}/api/v1/auth/login"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Login succeeds', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('token', pm.response.json().data.token);"]}}]
+    },
+    {
+      "name": "Unknown account - 401 without account disclosure",
+      "request": {"method": "POST", "auth": {"type": "noauth"}, "header": [{"key": "Content-Type", "value": "application/json"}], "body": {"mode": "raw", "raw": "{\"username\":\"unknown-{{$guid}}\",\"password\":\"intentionally-invalid\"}"}, "url": "{{baseUrl}}/api/v1/auth/login"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('401 instead of 500', () => pm.response.to.have.status(401));", "pm.test('Stable authentication code', () => pm.expect(pm.response.json().data.code).to.eql('INVALID_CREDENTIALS'));"]}}]
+    },
+    {
+      "name": "Review queue - oldest submitted first",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/v1/projects/review-queue?page=1&size=20"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Queue succeeds', () => pm.response.to.have.status(200));", "pm.test('Queue contains only latest projects under review', () => { const rows = pm.response.json().data.data; rows.forEach(row => { pm.expect(row.status).to.eql('UNDER_REVIEW'); pm.expect(row.isLatestVersion).to.eql(true); }); });", "pm.test('Known submission dates are ordered before unknown dates', () => { let last = -Infinity, seenNull = false; for (const row of pm.response.json().data.data) { if (row.submittedAt == null) { seenNull = true; continue; } pm.expect(seenNull).to.eql(false); const date = Date.parse(row.submittedAt); pm.expect(Number.isFinite(date)).to.eql(true); pm.expect(date).to.be.at.least(last); last = date; } });"]}}]
+    },
+    {
+      "name": "Zero page size is rejected",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/v1/projects?size=0"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Invalid size returns 400', () => pm.response.to.have.status(400));"]}}]
+    },
+    {
+      "name": "Pagination envelope reports executed cap",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/v1/projects?size=999&page=1"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Capped request succeeds', () => pm.response.to.have.status(200));", "pm.test('Actual limit is 100', () => pm.expect(pm.response.json().data.limit).to.eql(100));"]}}]
+    },
+    {
+      "name": "Enums - audit and dashboard are distinct additive vocabularies",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/v1/enums"},
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": ["pm.test('Enums succeed', () => pm.response.to.have.status(200));", "pm.test('New sort field and dashboard keys exist', () => { const d=pm.response.json().data; pm.expect(d.projectSortFields).to.include('submittedAt'); pm.expect(d.dashboardAction).to.include('FILE_UPLOADED'); pm.expect(d.dashboardEntityType).to.include('PACKAGE'); pm.expect(d.auditAction).to.include('READ'); pm.expect(d.auditEntityType).to.include('Project'); });"]}}]
+    }
+  ]
+}

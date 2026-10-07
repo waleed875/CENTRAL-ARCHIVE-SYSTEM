@@ -57,7 +57,7 @@ public class FileCategoryController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileCategoryResponse>> update(
             @PathVariable UUID id,
-            @RequestBody FileCategoryUpdateRequest request) {
+            @Valid @RequestBody FileCategoryUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileCategoryService.update(id, request), "File category updated successfully"));
     }
 

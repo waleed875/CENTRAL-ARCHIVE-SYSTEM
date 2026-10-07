@@ -47,6 +47,7 @@ import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -67,6 +68,10 @@ public class BranchPackageService {
     private final MinioService minioService;
     private final MinioConfig minioConfig;
     private final PackageArchiveService packageArchiveService;
+    private final SealedPackageInspector sealedPackageInspector;
+    private final SealedPackageDecryptor sealedPackageDecryptor;
+    private final DecryptedPayloadValidator decryptedPayloadValidator;
+    private final SealedPayloadCanonicalizer sealedPayloadCanonicalizer;
     private final ImportOperationService importOperationService;
     private final OrganizationRepository organizationRepository;
     private final ProjectTypeRepository projectTypeRepository;
@@ -84,6 +89,10 @@ public class BranchPackageService {
                                 MinioService minioService,
                                 MinioConfig minioConfig,
                                 PackageArchiveService packageArchiveService,
+                                SealedPackageInspector sealedPackageInspector,
+                                SealedPackageDecryptor sealedPackageDecryptor,
+                                DecryptedPayloadValidator decryptedPayloadValidator,
+                                SealedPayloadCanonicalizer sealedPayloadCanonicalizer,
                                 ImportOperationService importOperationService,
                                 OrganizationRepository organizationRepository,
                                 ProjectTypeRepository projectTypeRepository,
@@ -100,6 +109,10 @@ public class BranchPackageService {
         this.minioService = minioService;
         this.minioConfig = minioConfig;
         this.packageArchiveService = packageArchiveService;
+        this.sealedPackageInspector = sealedPackageInspector;
+        this.sealedPackageDecryptor = sealedPackageDecryptor;
+        this.decryptedPayloadValidator = decryptedPayloadValidator;
+        this.sealedPayloadCanonicalizer = sealedPayloadCanonicalizer;
         this.importOperationService = importOperationService;
         this.organizationRepository = organizationRepository;
         this.projectTypeRepository = projectTypeRepository;
@@ -128,6 +141,20 @@ public class BranchPackageService {
     }
 
     public PackageResponse receive(MultipartFile packageFile, UUID receivedBy) throws Exception {
+        return receive(packageFile, null, receivedBy);
+    }
+
+    public PackageResponse receive(MultipartFile packageFile,
+                                   String passphrase,
+                                   UUID receivedBy) throws Exception {
+        String originalName = packageFile != null ? packageFile.getOriginalFilename() : null;
+        if (sealedPackageInspector.supportsFilename(originalName)) {
+            return receiveSealed(packageFile, passphrase, receivedBy);
+        }
+        return receivePlain(packageFile, receivedBy);
+    }
+
+    private PackageResponse receivePlain(MultipartFile packageFile, UUID receivedBy) throws Exception {
         PackageArchiveService.Inspection inspection = packageArchiveService.inspect(packageFile);
         JsonNode manifest = inspection.manifest();
 
@@ -140,60 +167,260 @@ public class BranchPackageService {
         if (!packageArchiveService.isSchemaSupported(schemaVersion)) {
             throw new IllegalArgumentException("Unsupported schema_version: " + schemaVersion);
         }
-
-        if (branchPackageRepository.existsByPackageUuid(packageUuid)) {
-            throw new ConflictException("BranchPackage", "package_uuid", packageUuid);
-        }
-        if (branchPackageRepository.existsByPackageHash(inspection.packageHash())) {
-            throw new ConflictException("BranchPackage", "package_hash", inspection.packageHash());
-        }
+        rejectDuplicatePackage(packageUuid, inspection.packageHash());
 
         JsonNode projects = manifest.path("projects");
         if (!projects.isArray()) {
             throw new IllegalArgumentException("Manifest projects must be an array");
         }
 
-        int projectsCount = projects.size();
-        int filesCount = countFiles(projects);
-        String packageName = packageFile.getOriginalFilename() != null
-                ? packageFile.getOriginalFilename()
-                : requiredText(manifest, "package_name");
+        BranchPackage pkg = basePackage(
+                packageUuid,
+                sourceOrganizationId,
+                sourceTerminalUuid,
+                sourceUsername,
+                packageFile.getOriginalFilename() != null
+                        ? packageFile.getOriginalFilename()
+                        : requiredText(manifest, "package_name"),
+                inspection.packageHash(),
+                schemaVersion,
+                projects.size(),
+                countFiles(projects),
+                receivedBy
+        );
+        pkg.setManifestHash(inspection.manifestHash());
+        pkg.setManifestData(inspection.manifestJson());
+        pkg.setPackageFormat("central-archive/pkg");
+        pkg.setEncrypted(false);
+        pkg.setStatus(BranchPackage.PackageStatus.RECEIVED);
+        return storeReceivedPackage(packageFile, pkg);
+    }
 
+    private PackageResponse receiveSealed(MultipartFile packageFile,
+                                                String passphrase,
+                                                UUID receivedBy) throws Exception {
+        SealedPackageInspector.Inspection inspection = sealedPackageInspector.inspect(packageFile);
+
+        if (!packageArchiveService.isSchemaSupported(inspection.schemaVersion())) {
+            throw new IllegalArgumentException(
+                    "Unsupported schema_version: " + inspection.schemaVersion());
+        }
+        if (passphrase == null || passphrase.isBlank()) {
+            throw new IllegalArgumentException(
+                    "passphrase is required for encrypted .zip/.nxpkg packages");
+        }
+
+        rejectDuplicatePackage(inspection.packageUuid(), inspection.packageHash());
+
+        try (SealedPackageDecryptor.DecryptedPayload decrypted =
+                     sealedPackageDecryptor.decrypt(packageFile, inspection, passphrase);
+             SealedPayloadCanonicalizer.CanonicalPackage canonical =
+                     sealedPayloadCanonicalizer.canonicalize(decrypted.path(), inspection.header())) {
+
+            PackageArchiveService.Verification verification;
+            try (InputStream input = java.nio.file.Files.newInputStream(canonical.path())) {
+                verification = packageArchiveService.verifyContents(
+                        input,
+                        canonical.manifestHash(),
+                        inspection.schemaVersion()
+                );
+            }
+
+            List<String> verificationErrors = new ArrayList<>(verification.errors());
+            if (!verification.manifestHashValid()) {
+                verificationErrors.add("Canonical manifest hash mismatch");
+            }
+            if (!verification.schemaVersionValid()) {
+                verificationErrors.add("Canonical schema_version is invalid");
+            }
+            if (!verification.filesValid()) {
+                verificationErrors.add("Canonical package file verification failed");
+            }
+            if (canonical.projectsCount() != inspection.projectsCount()) {
+                verificationErrors.add(
+                        "Canonical project count differs from signed header metadata");
+            }
+            if (canonical.filesCount() != inspection.filesCount()) {
+                verificationErrors.add(
+                        "Canonical file count differs from signed header metadata");
+            }
+            if (!verificationErrors.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Decrypted package verification failed: "
+                                + String.join("; ", verificationErrors));
+            }
+
+            BranchPackage pkg = basePackage(
+                    inspection.packageUuid(),
+                    inspection.sourceOrganizationId(),
+                    inspection.sourceTerminalUuid(),
+                    inspection.sourceUsername(),
+                    inspection.packageName() != null
+                            ? inspection.packageName()
+                            : packageFile.getOriginalFilename(),
+                    inspection.packageHash(),
+                    inspection.schemaVersion(),
+                    canonical.projectsCount(),
+                    canonical.filesCount(),
+                    receivedBy
+            );
+            pkg.setManifestHash(canonical.manifestHash());
+            pkg.setManifestData(canonical.manifestJson());
+            pkg.setPackageFormat(inspection.format());
+            pkg.setPackageVersion(inspection.version());
+            pkg.setEncrypted(true);
+            pkg.setHeaderHash(inspection.headerHash());
+            pkg.setPayloadHash(inspection.payloadHash());
+            pkg.setSignatureValid(inspection.signatureValid());
+            pkg.setTerminalFingerprint(inspection.terminalFingerprint());
+            pkg.setHeaderData(inspection.headerJson());
+            pkg.setPayloadSizeBytes(inspection.payloadSizeBytes());
+            pkg.setDecryptedPayloadHash(decrypted.sha256());
+            pkg.setDecryptedPayloadSizeBytes(decrypted.sizeBytes());
+            pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+            pkg.setVerifiedAt(LocalDateTime.now());
+            pkg.setErrorMessage(null);
+
+            return storeReceivedSealedPackage(
+                    decrypted.path(),
+                    decrypted.sizeBytes(),
+                    canonical.path(),
+                    canonical.sizeBytes(),
+                    pkg
+            );
+        }
+    }
+
+    private PackageResponse storeReceivedSealedPackage(
+                                                       java.nio.file.Path decryptedPayload,
+                                                       long decryptedPayloadSize,
+                                                       java.nio.file.Path canonicalPackage,
+                                                       long canonicalPackageSize,
+                                                       BranchPackage pkg) throws Exception {
         String bucket = minioConfig.getBucket();
-        String packageObjectKey = packageObjectKey(packageUuid);
-        boolean packageStored = false;
+        String decryptedKey = decryptedPackageObjectKey(pkg.getPackageUuid());
+        String canonicalKey = importReadyPackageObjectKey(pkg.getPackageUuid());
+        boolean decryptedStored = false;
+        boolean canonicalStored = false;
 
         try {
-            minioService.uploadFile(packageFile, bucket, packageObjectKey);
-            packageStored = true;
-            registerRollbackObjectCleanup(bucket, packageObjectKey);
+            try (InputStream input = java.nio.file.Files.newInputStream(decryptedPayload)) {
+                minioService.uploadRaw(
+                        input,
+                        bucket,
+                        decryptedKey,
+                        "application/zip",
+                        decryptedPayloadSize
+                );
+            }
+            decryptedStored = true;
+            registerRollbackObjectCleanup(bucket, decryptedKey);
 
-            BranchPackage pkg = new BranchPackage();
-            pkg.setPackageUuid(packageUuid);
-            pkg.setSourceOrganizationId(sourceOrganizationId);
-            pkg.setSourceTerminalUuid(sourceTerminalUuid);
-            pkg.setSourceUsername(sourceUsername);
-            pkg.setPackageName(packageName);
-            pkg.setPackageHash(inspection.packageHash());
-            pkg.setManifestHash(inspection.manifestHash());
-            pkg.setSchemaVersion(schemaVersion);
-            pkg.setProjectsCount(projectsCount);
-            pkg.setFilesCount(filesCount);
-            pkg.setStatus(BranchPackage.PackageStatus.RECEIVED);
-            pkg.setReceivedBy(receivedBy);
-            pkg.setReceivedAt(LocalDateTime.now());
-            pkg.setManifestData(inspection.manifestJson());
+            try (InputStream input = java.nio.file.Files.newInputStream(canonicalPackage)) {
+                minioService.uploadRaw(
+                        input,
+                        bucket,
+                        canonicalKey,
+                        "application/octet-stream",
+                        canonicalPackageSize
+                );
+            }
+            canonicalStored = true;
+            registerRollbackObjectCleanup(bucket, canonicalKey);
 
             BranchPackage saved = branchPackageRepository.save(pkg);
-            log.info("Package received: id={}, packageUuid={}, projects={}, files={}, objectKey={}",
-                    saved.getId(), packageUuid, projectsCount, filesCount, packageObjectKey);
+            log.info(
+                    "Encrypted package received, decrypted and verified; encrypted source not retained: id={}, packageUuid={}, format={}, projects={}, files={}, decryptedBytes={}, canonicalBytes={}",
+                    saved.getId(),
+                    saved.getPackageUuid(),
+                    saved.getPackageFormat(),
+                    saved.getProjectsCount(),
+                    saved.getFilesCount(),
+                    decryptedPayloadSize,
+                    canonicalPackageSize
+            );
+            return PackageResponse.fromEntity(saved);
+        } catch (Exception e) {
+            if (canonicalStored) {
+                try {
+                    minioService.deleteFile(bucket, canonicalKey);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to remove canonical package object: {}", canonicalKey, cleanupError);
+                }
+            }
+            if (decryptedStored) {
+                try {
+                    minioService.deleteFile(bucket, decryptedKey);
+                } catch (Exception cleanupError) {
+                    log.error("Failed to remove decrypted package object: {}", decryptedKey, cleanupError);
+                }
+            }
+            throw e;
+        }
+    }
+
+    private BranchPackage basePackage(UUID packageUuid,
+                                      UUID sourceOrganizationId,
+                                      UUID sourceTerminalUuid,
+                                      String sourceUsername,
+                                      String packageName,
+                                      String packageHash,
+                                      String schemaVersion,
+                                      int projectsCount,
+                                      int filesCount,
+                                      UUID receivedBy) {
+        BranchPackage pkg = new BranchPackage();
+        pkg.setPackageUuid(packageUuid);
+        pkg.setSourceOrganizationId(sourceOrganizationId);
+        pkg.setSourceTerminalUuid(sourceTerminalUuid);
+        pkg.setSourceUsername(sourceUsername);
+        pkg.setPackageName(packageName);
+        pkg.setPackageHash(packageHash);
+        pkg.setSchemaVersion(schemaVersion);
+        pkg.setProjectsCount(projectsCount);
+        pkg.setFilesCount(filesCount);
+        pkg.setReceivedBy(receivedBy);
+        pkg.setReceivedAt(LocalDateTime.now());
+        return pkg;
+    }
+
+    private void rejectDuplicatePackage(UUID packageUuid, String packageHash) {
+        if (branchPackageRepository.existsByPackageUuid(packageUuid)) {
+            throw new ConflictException("BranchPackage", "package_uuid", packageUuid);
+        }
+        if (branchPackageRepository.existsByPackageHash(packageHash)) {
+            throw new ConflictException("BranchPackage", "package_hash", packageHash);
+        }
+    }
+
+    private PackageResponse storeReceivedPackage(MultipartFile packageFile,
+                                                 BranchPackage pkg) throws Exception {
+        String bucket = minioConfig.getBucket();
+        String objectKey = packageObjectKey(pkg.getPackageUuid());
+        boolean packageStored = false;
+        try {
+            minioService.uploadFile(packageFile, bucket, objectKey);
+            packageStored = true;
+            registerRollbackObjectCleanup(bucket, objectKey);
+
+            BranchPackage saved = branchPackageRepository.save(pkg);
+            log.info(
+                    "Package received: id={}, packageUuid={}, format={}, encrypted={}, projects={}, files={}, objectKey={}",
+                    saved.getId(),
+                    saved.getPackageUuid(),
+                    saved.getPackageFormat(),
+                    saved.getEncrypted(),
+                    saved.getProjectsCount(),
+                    saved.getFilesCount(),
+                    objectKey
+            );
             return PackageResponse.fromEntity(saved);
         } catch (Exception e) {
             if (packageStored) {
                 try {
-                    minioService.deleteFile(bucket, packageObjectKey);
+                    minioService.deleteFile(bucket, objectKey);
                 } catch (Exception cleanupError) {
-                    log.error("Failed to remove orphan package object: {}", packageObjectKey, cleanupError);
+                    log.error("Failed to remove orphan package object: {}", objectKey, cleanupError);
                 }
             }
             throw e;
@@ -202,6 +429,10 @@ public class BranchPackageService {
 
     public PackageVerifyResponse verify(UUID id) {
         BranchPackage pkg = findPackage(id);
+
+        if (Boolean.TRUE.equals(pkg.getEncrypted())) {
+            return verifySealed(pkg);
+        }
 
         if (pkg.getStatus() != BranchPackage.PackageStatus.RECEIVED
                 && pkg.getStatus() != BranchPackage.PackageStatus.FAILED) {
@@ -318,6 +549,167 @@ public class BranchPackageService {
         }
     }
 
+    private PackageVerifyResponse verifySealed(BranchPackage pkg) {
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        JsonNode verifiedManifest = null;
+        long verifiedBytes = 0L;
+
+        try {
+            String bucket = minioConfig.getBucket();
+
+            boolean signedHeaderValid = Boolean.TRUE.equals(pkg.getSignatureValid())
+                    && pkg.getHeaderData() != null
+                    && pkg.getHeaderHash() != null;
+            JsonNode storedHeader = readHeaderForDisplay(pkg);
+            if (!signedHeaderValid || storedHeader == null) {
+                errors.add("Stored signed header metadata is missing or invalid");
+            } else {
+                try (InputStream headerStream = new java.io.ByteArrayInputStream(
+                        pkg.getHeaderData().getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                    String actualHeaderHash = packageArchiveService.sha256(headerStream);
+                    if (!actualHeaderHash.equalsIgnoreCase(pkg.getHeaderHash())) {
+                        signedHeaderValid = false;
+                        errors.add("Stored signed header hash mismatch");
+                    }
+                }
+            }
+
+            boolean decryptedIntegrityValid = false;
+            if (pkg.getDecryptedPayloadHash() != null) {
+                try (InputStream input = minioService.downloadFile(
+                        bucket,
+                        decryptedPackageObjectKey(pkg.getPackageUuid()))) {
+                    String actualDecryptedHash = packageArchiveService.sha256(input);
+                    decryptedIntegrityValid =
+                            actualDecryptedHash.equalsIgnoreCase(pkg.getDecryptedPayloadHash());
+                }
+                if (!decryptedIntegrityValid) {
+                    errors.add("Decrypted payload hash mismatch");
+                }
+            } else {
+                errors.add("Decrypted payload integrity metadata is missing");
+            }
+
+            PackageArchiveService.Verification canonicalVerification = null;
+            if (errors.isEmpty()) {
+                try (InputStream input = minioService.downloadFile(
+                        bucket,
+                        importReadyPackageObjectKey(pkg.getPackageUuid()))) {
+                    canonicalVerification = packageArchiveService.verifyContents(
+                            input,
+                            pkg.getManifestHash(),
+                            pkg.getSchemaVersion()
+                    );
+                }
+
+                verifiedManifest = canonicalVerification.manifest();
+                verifiedBytes = canonicalVerification.verifiedFileBytes();
+                errors.addAll(canonicalVerification.errors());
+
+                if (!canonicalVerification.manifestHashValid()) {
+                    errors.add("Canonical manifest hash mismatch");
+                }
+                if (!canonicalVerification.schemaVersionValid()) {
+                    errors.add("Canonical schema_version is invalid");
+                }
+                if (!canonicalVerification.filesValid()) {
+                    errors.add("Canonical package file verification failed");
+                }
+
+                int signedProjects = storedHeader != null && storedHeader.path("projects").isArray()
+                        ? storedHeader.path("projects").size()
+                        : pkg.getProjectsCount();
+                int signedFiles = storedHeader != null
+                        ? countFiles(storedHeader.path("projects"))
+                        : pkg.getFilesCount();
+
+                if (canonicalVerification.projectsCount() != pkg.getProjectsCount()
+                        || canonicalVerification.projectsCount() != signedProjects) {
+                    errors.add("Canonical project count differs from signed metadata");
+                }
+                if (canonicalVerification.filesCount() != pkg.getFilesCount()
+                        || canonicalVerification.filesCount() != signedFiles) {
+                    errors.add("Canonical file count differs from signed metadata");
+                }
+                warnings.addAll(canonicalVerification.warnings());
+            }
+
+            boolean schemaVersionValid =
+                    packageArchiveService.isSchemaSupported(pkg.getSchemaVersion());
+            boolean valid = signedHeaderValid
+                    && decryptedIntegrityValid
+                    && schemaVersionValid
+                    && canonicalVerification != null
+                    && canonicalVerification.manifestHashValid()
+                    && canonicalVerification.filesValid()
+                    && errors.isEmpty();
+
+            if (valid) {
+                pkg.setStatus(BranchPackage.PackageStatus.VERIFIED);
+                pkg.setVerifiedAt(LocalDateTime.now());
+                pkg.setErrorMessage(null);
+                if (verifiedManifest != null) {
+                    pkg.setManifestData(objectMapper.writeValueAsString(verifiedManifest));
+                }
+            } else {
+                pkg.setStatus(BranchPackage.PackageStatus.FAILED);
+                pkg.setErrorMessage(String.join("; ", errors));
+            }
+            branchPackageRepository.save(pkg);
+
+            return new PackageVerifyResponse(
+                    pkg.getId(),
+                    pkg.getPackageUuid().toString(),
+                    valid,
+                    canonicalVerification != null && canonicalVerification.manifestHashValid(),
+                    signedHeaderValid && decryptedIntegrityValid,
+                    schemaVersionValid,
+                    canonicalVerification != null
+                            ? canonicalVerification.projectsCount()
+                            : pkg.getProjectsCount(),
+                    canonicalVerification != null
+                            ? canonicalVerification.filesCount()
+                            : pkg.getFilesCount(),
+                    LocalDateTime.now(),
+                    errors,
+                    warnings,
+                    buildProjectDetails(
+                            verifiedManifest != null ? verifiedManifest : storedHeader),
+                    verifiedBytes
+            );
+        } catch (Exception e) {
+            log.error("Encrypted package verification failed: id={}", pkg.getId(), e);
+            pkg.setStatus(BranchPackage.PackageStatus.FAILED);
+            pkg.setErrorMessage(e.getMessage());
+            branchPackageRepository.save(pkg);
+            errors.add("Verification error: " + e.getMessage());
+            return new PackageVerifyResponse(
+                    pkg.getId(),
+                    pkg.getPackageUuid().toString(),
+                    false,
+                    false,
+                    false,
+                    false,
+                    pkg.getProjectsCount(),
+                    pkg.getFilesCount(),
+                    LocalDateTime.now(),
+                    errors,
+                    warnings,
+                    buildProjectDetails(readHeaderForDisplay(pkg)),
+                    verifiedBytes
+            );
+        }
+    }
+
+    private JsonNode readHeaderForDisplay(BranchPackage pkg) {
+        try {
+            return pkg.getHeaderData() == null ? null : objectMapper.readTree(pkg.getHeaderData());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     @Transactional(readOnly = true)
     public void assertImportable(UUID id, PackageImportRequest request) {
         BranchPackage pkg = findPackage(id);
@@ -336,23 +728,8 @@ public class BranchPackageService {
                 throw new IllegalArgumentException("Stored manifest has no projects array");
             }
 
-            Map<UUID, UUID> mapping = request.organizationMapping() != null
-                    ? request.organizationMapping()
-                    : Map.of();
-
             for (JsonNode projectNode : projects) {
-                UUID sourceOrgId = sourceOrganizationId(projectNode, pkg);
-                if (sourceOrgId == null) {
-                    throw new IllegalArgumentException(
-                            "Project has no source organization that can be mapped");
-                }
-
-                UUID targetOrgId = mapping.get(sourceOrgId);
-                if (targetOrgId == null) {
-                    throw new IllegalArgumentException(
-                            "Missing organization mapping for source organization: " + sourceOrgId);
-                }
-
+                UUID targetOrgId = resolveOrganization(projectNode, pkg, request);
                 Organization targetOrganization = organizationRepository.findById(targetOrgId)
                         .orElseThrow(() -> new IllegalArgumentException(
                                 "Target organization does not exist: " + targetOrgId));
@@ -361,68 +738,79 @@ public class BranchPackageService {
                             "Target organization is inactive: " + targetOrgId);
                 }
 
-                UUID projectTypeId = optionalUuid(projectNode, "project_type_id");
-                if (projectTypeId != null) {
-                    ProjectType projectType = projectTypeRepository.findById(projectTypeId)
-                            .orElseThrow(() -> new IllegalArgumentException(
-                                    "Project type does not exist: " + projectTypeId));
-                    if (!Boolean.TRUE.equals(projectType.getIsActive())) {
-                        throw new IllegalArgumentException(
-                                "Project type is inactive: " + projectTypeId);
-                    }
-                }
-
-                UUID projectLevelId = optionalUuid(projectNode, "confidentiality_level_id");
-                if (projectLevelId == null) {
-                    projectLevelId = request.confidentialityLevelId();
-                }
-                confidentialityAccessService.requireReadAccess(projectLevelId);
+                resolveProjectType(projectNode, request);
+                UUID projectLevelId = resolveProjectConfidentiality(projectNode, request);
 
                 JsonNode files = projectNode.path("files");
                 if (files.isArray()) {
                     for (JsonNode fileNode : files) {
-                        UUID categoryId = optionalUuid(fileNode, "category_id");
-                        FileCategory category = null;
-                        if (categoryId != null) {
-                            category = fileCategoryRepository.findById(categoryId)
-                                    .orElseThrow(() -> new IllegalArgumentException(
-                                            "File category does not exist: " + categoryId));
-                            if (!Boolean.TRUE.equals(category.getIsActive())) {
-                                throw new IllegalArgumentException(
-                                        "File category is inactive: " + categoryId);
-                            }
-                        }
-
-                        UUID typeId = optionalUuid(fileNode, "type_id");
-                        if (typeId != null) {
-                            FileType fileType = fileTypeRepository.findById(typeId)
-                                    .orElseThrow(() -> new IllegalArgumentException(
-                                            "File type does not exist: " + typeId));
-                            if (!Boolean.TRUE.equals(fileType.getIsActive())) {
-                                throw new IllegalArgumentException(
-                                        "File type is inactive: " + typeId);
-                            }
-                            if (categoryId == null) {
-                                throw new IllegalArgumentException(
-                                        "File type requires category_id: " + typeId);
-                            }
-                            if (!categoryId.equals(fileType.getCategoryId())) {
-                                throw new IllegalArgumentException(
-                                        "File type does not belong to category: " + typeId);
-                            }
-                        }
-
-                        UUID fileLevelId = optionalUuid(fileNode, "confidentiality_level_id");
-                        if (fileLevelId == null) {
-                            fileLevelId = projectLevelId;
-                        }
-                        confidentialityAccessService.requireReadAccess(fileLevelId);
+                        UUID categoryId = resolveFileCategory(fileNode, request);
+                        resolveFileType(fileNode, categoryId, request);
+                        resolveFileConfidentiality(fileNode, projectLevelId, request);
                     }
                 }
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new IllegalArgumentException("Stored package manifest is invalid", e);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, List<UUID>> getReferenceRequirements(UUID id) {
+        BranchPackage pkg = findPackage(id);
+        LinkedHashSet<UUID> organizations = new LinkedHashSet<>();
+        LinkedHashSet<UUID> projectTypes = new LinkedHashSet<>();
+        LinkedHashSet<UUID> confidentialityLevels = new LinkedHashSet<>();
+        LinkedHashSet<UUID> fileCategories = new LinkedHashSet<>();
+        LinkedHashSet<UUID> fileTypes = new LinkedHashSet<>();
+
+        try {
+            JsonNode manifest = objectMapper.readTree(pkg.getManifestData());
+            JsonNode projects = manifest.path("projects");
+            if (!projects.isArray()) {
+                return Map.of(
+                        "organizations", List.of(),
+                        "projectTypes", List.of(),
+                        "confidentialityLevels", List.of(),
+                        "fileCategories", List.of(),
+                        "fileTypes", List.of()
+                );
+            }
+
+            for (JsonNode project : projects) {
+                UUID organizationId = sourceOrganizationId(project, pkg);
+                if (organizationId != null) organizations.add(organizationId);
+
+                UUID projectTypeId = optionalUuid(project, "project_type_id");
+                if (projectTypeId != null) projectTypes.add(projectTypeId);
+
+                UUID projectLevelId = optionalUuid(project, "confidentiality_level_id");
+                if (projectLevelId != null) confidentialityLevels.add(projectLevelId);
+
+                JsonNode files = project.path("files");
+                if (!files.isArray()) continue;
+                for (JsonNode file : files) {
+                    UUID categoryId = optionalUuid(file, "category_id");
+                    if (categoryId != null) fileCategories.add(categoryId);
+
+                    UUID typeId = optionalUuid(file, "type_id");
+                    if (typeId != null) fileTypes.add(typeId);
+
+                    UUID fileLevelId = optionalUuid(file, "confidentiality_level_id");
+                    if (fileLevelId != null) confidentialityLevels.add(fileLevelId);
+                }
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("Stored package manifest is invalid", e);
+        }
+
+        Map<String, List<UUID>> result = new LinkedHashMap<>();
+        result.put("organizations", List.copyOf(organizations));
+        result.put("projectTypes", List.copyOf(projectTypes));
+        result.put("confidentialityLevels", List.copyOf(confidentialityLevels));
+        result.put("fileCategories", List.copyOf(fileCategories));
+        result.put("fileTypes", List.copyOf(fileTypes));
+        return result;
     }
 
     @Async
@@ -570,19 +958,50 @@ public class BranchPackageService {
 
     private JsonNode revalidateStoredPackageForImport(BranchPackage pkg) throws Exception {
         String bucket = minioConfig.getBucket();
-        String objectKey = packageObjectKey(pkg.getPackageUuid());
+        String verificationKey = Boolean.TRUE.equals(pkg.getEncrypted())
+                ? importReadyPackageObjectKey(pkg.getPackageUuid())
+                : packageObjectKey(pkg.getPackageUuid());
 
-        String actualPackageHash;
-        try (InputStream packageStream = minioService.downloadFile(bucket, objectKey)) {
-            actualPackageHash = packageArchiveService.sha256(packageStream);
-        }
+        if (!Boolean.TRUE.equals(pkg.getEncrypted())) {
+            String actualPackageHash;
+            try (InputStream packageStream = minioService.downloadFile(
+                    bucket,
+                    packageObjectKey(pkg.getPackageUuid()))) {
+                actualPackageHash = packageArchiveService.sha256(packageStream);
+            }
 
-        if (!actualPackageHash.equalsIgnoreCase(pkg.getPackageHash())) {
-            throw new IllegalStateException("Package hash changed after verification");
+            if (!actualPackageHash.equalsIgnoreCase(pkg.getPackageHash())) {
+                throw new IllegalStateException("Package hash changed after verification");
+            }
+        } else {
+            if (!Boolean.TRUE.equals(pkg.getSignatureValid())
+                    || pkg.getHeaderData() == null
+                    || pkg.getHeaderHash() == null) {
+                throw new IllegalStateException(
+                        "Stored signed header metadata is missing for encrypted package");
+            }
+            try (InputStream headerStream = new java.io.ByteArrayInputStream(
+                    pkg.getHeaderData().getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                String actualHeaderHash = packageArchiveService.sha256(headerStream);
+                if (!actualHeaderHash.equalsIgnoreCase(pkg.getHeaderHash())) {
+                    throw new IllegalStateException(
+                            "Stored signed header changed after verification");
+                }
+            }
+            try (InputStream decrypted = minioService.downloadFile(
+                    bucket,
+                    decryptedPackageObjectKey(pkg.getPackageUuid()))) {
+                String actualDecryptedHash = packageArchiveService.sha256(decrypted);
+                if (pkg.getDecryptedPayloadHash() == null
+                        || !actualDecryptedHash.equalsIgnoreCase(pkg.getDecryptedPayloadHash())) {
+                    throw new IllegalStateException(
+                            "Decrypted payload hash changed after verification");
+                }
+            }
         }
 
         PackageArchiveService.Verification verification;
-        try (InputStream packageStream = minioService.downloadFile(bucket, objectKey)) {
+        try (InputStream packageStream = minioService.downloadFile(bucket, verificationKey)) {
             verification = packageArchiveService.verifyContents(
                     packageStream,
                     pkg.getManifestHash(),
@@ -672,6 +1091,7 @@ public class BranchPackageService {
                             savedProject.getId(),
                             savedProject.getConfidentialityLevelId(),
                             pkg,
+                            request,
                             importedBy
                     );
                     projectObjects.add(storedObject);
@@ -734,12 +1154,8 @@ public class BranchPackageService {
         project.setNotes(optionalText(projectNode, "notes"));
         project.setTableOfContents(optionalText(projectNode, "table_of_contents"));
         project.setKeywords(optionalText(projectNode, "keywords"));
-        project.setProjectTypeId(optionalUuid(projectNode, "project_type_id"));
-        UUID projectLevelId = optionalUuid(projectNode, "confidentiality_level_id");
-        if (projectLevelId == null) {
-            projectLevelId = request.confidentialityLevelId();
-        }
-        project.setConfidentialityLevelId(projectLevelId);
+        project.setProjectTypeId(resolveProjectType(projectNode, request));
+        project.setConfidentialityLevelId(resolveProjectConfidentiality(projectNode, request));
         project.setStatus(Project.ProjectStatus.IMPORTED);
         project.setDataCompletionStatus(Project.DataCompletionStatus.COMPLETE);
         project.setSourceType(Project.SourceType.BRANCH_PACKAGE);
@@ -776,6 +1192,7 @@ public class BranchPackageService {
                                     UUID projectId,
                                     UUID projectConfidentialityLevelId,
                                     BranchPackage pkg,
+                                    PackageImportRequest request,
                                     UUID uploadedBy) throws Exception {
         String originalName = fileNode.path("original_name").asText(
                 fileNode.path("name").asText("file"));
@@ -798,9 +1215,12 @@ public class BranchPackageService {
 
         boolean uploadedToObjectStorage = false;
         try {
+            String sourcePackageKey = Boolean.TRUE.equals(pkg.getEncrypted())
+                    ? importReadyPackageObjectKey(pkg.getPackageUuid())
+                    : packageObjectKey(pkg.getPackageUuid());
             try (InputStream packageStream = minioService.downloadFile(
                     bucket,
-                    packageObjectKey(pkg.getPackageUuid()))) {
+                    sourcePackageKey)) {
 
                 packageArchiveService.withEntry(packageStream, sourceEntryPath, (entryStream, declaredSize) -> {
                     long uploadSize = expectedSize >= 0 ? expectedSize : declaredSize;
@@ -815,13 +1235,11 @@ public class BranchPackageService {
 
             FileEntity file = new FileEntity();
             file.setProjectId(projectId);
-            file.setCategoryId(optionalUuid(fileNode, "category_id"));
-            file.setTypeId(optionalUuid(fileNode, "type_id"));
-            UUID fileLevelId = optionalUuid(fileNode, "confidentiality_level_id");
-            if (fileLevelId == null) {
-                fileLevelId = projectConfidentialityLevelId;
-            }
-            file.setConfidentialityLevelId(fileLevelId);
+            UUID categoryId = resolveFileCategory(fileNode, request);
+            file.setCategoryId(categoryId);
+            file.setTypeId(resolveFileType(fileNode, categoryId, request));
+            file.setConfidentialityLevelId(
+                    resolveFileConfidentiality(fileNode, projectConfidentialityLevelId, request));
             file.setOriginalName(originalName);
             file.setStoredName(storedName);
             file.setBucketName(bucket);
@@ -913,17 +1331,145 @@ public class BranchPackageService {
     private UUID resolveOrganization(JsonNode projectNode,
                                      BranchPackage pkg,
                                      PackageImportRequest request) {
-        Map<UUID, UUID> mapping = request.organizationMapping() != null
-                ? request.organizationMapping()
-                : Map.of();
-
         UUID sourceOrgId = sourceOrganizationId(projectNode, pkg);
-        return sourceOrgId != null ? mapping.get(sourceOrgId) : null;
+        if (sourceOrgId == null) {
+            throw new IllegalArgumentException(
+                    "Project has no source organization that can be mapped");
+        }
+
+        UUID targetOrgId = request.organizationMapping().get(sourceOrgId);
+        if (targetOrgId == null) {
+            targetOrgId = organizationRepository.findById(sourceOrgId)
+                    .filter(org -> Boolean.TRUE.equals(org.getIsActive()))
+                    .map(Organization::getId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Missing organization mapping for source organization: " + sourceOrgId));
+        }
+        return targetOrgId;
+    }
+
+    private UUID resolveProjectType(JsonNode projectNode, PackageImportRequest request) {
+        UUID sourceId = optionalUuid(projectNode, "project_type_id");
+        if (sourceId == null) {
+            return null;
+        }
+
+        UUID targetId = request.projectTypeMapping().getOrDefault(sourceId, sourceId);
+        ProjectType projectType = projectTypeRepository.findById(targetId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        request.projectTypeMapping().containsKey(sourceId)
+                                ? "Mapped project type does not exist: " + targetId
+                                : "Missing project type mapping for source project type: " + sourceId));
+        if (!Boolean.TRUE.equals(projectType.getIsActive())) {
+            throw new IllegalArgumentException("Project type is inactive: " + targetId);
+        }
+        return targetId;
+    }
+
+    private UUID resolveProjectConfidentiality(JsonNode projectNode,
+                                               PackageImportRequest request) {
+        UUID sourceId = optionalUuid(projectNode, "confidentiality_level_id");
+        return resolveConfidentiality(sourceId, request, request.confidentialityLevelId());
+    }
+
+    private UUID resolveFileConfidentiality(JsonNode fileNode,
+                                            UUID projectLevelId,
+                                            PackageImportRequest request) {
+        UUID sourceId = optionalUuid(fileNode, "confidentiality_level_id");
+        return resolveConfidentiality(sourceId, request, projectLevelId);
+    }
+
+    private UUID resolveConfidentiality(UUID sourceId,
+                                        PackageImportRequest request,
+                                        UUID fallbackId) {
+        UUID targetId;
+        if (sourceId == null) {
+            targetId = fallbackId;
+            if (targetId == null) {
+                return null;
+            }
+            try {
+                confidentialityAccessService.requireReadAccess(targetId);
+                return targetId;
+            } catch (RuntimeException error) {
+                throw new IllegalArgumentException(
+                        "Invalid default confidentiality level: " + targetId,
+                        error
+                );
+            }
+        }
+
+        targetId = request.confidentialityMapping().getOrDefault(sourceId, sourceId);
+        try {
+            confidentialityAccessService.requireReadAccess(targetId);
+            return targetId;
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(
+                    "Missing or inaccessible confidentiality mapping for source level: " + sourceId,
+                    error
+            );
+        }
+    }
+
+    private UUID resolveFileCategory(JsonNode fileNode, PackageImportRequest request) {
+        UUID sourceId = optionalUuid(fileNode, "category_id");
+        if (sourceId == null) {
+            return null;
+        }
+
+        UUID targetId = request.fileCategoryMapping().getOrDefault(sourceId, sourceId);
+        FileCategory category = fileCategoryRepository.findById(targetId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        request.fileCategoryMapping().containsKey(sourceId)
+                                ? "Mapped file category does not exist: " + targetId
+                                : "Missing file category mapping for source category: " + sourceId));
+        if (!Boolean.TRUE.equals(category.getIsActive())) {
+            throw new IllegalArgumentException("File category is inactive: " + targetId);
+        }
+        return targetId;
+    }
+
+    private UUID resolveFileType(JsonNode fileNode,
+                                 UUID resolvedCategoryId,
+                                 PackageImportRequest request) {
+        UUID sourceId = optionalUuid(fileNode, "type_id");
+        if (sourceId == null) {
+            return null;
+        }
+
+        UUID targetId = request.fileTypeMapping().getOrDefault(sourceId, sourceId);
+        FileType fileType = fileTypeRepository.findById(targetId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        request.fileTypeMapping().containsKey(sourceId)
+                                ? "Mapped file type does not exist: " + targetId
+                                : "Missing file type mapping for source file type: " + sourceId));
+        if (!Boolean.TRUE.equals(fileType.getIsActive())) {
+            throw new IllegalArgumentException("File type is inactive: " + targetId);
+        }
+        if (resolvedCategoryId == null) {
+            throw new IllegalArgumentException(
+                    "File type requires a mapped file category: " + targetId);
+        }
+        if (!resolvedCategoryId.equals(fileType.getCategoryId())) {
+            throw new IllegalArgumentException(
+                    "Mapped file type does not belong to mapped category: " + targetId);
+        }
+        return targetId;
     }
 
     private UUID sourceOrganizationId(JsonNode projectNode, BranchPackage pkg) {
-        UUID projectSourceOrg = optionalUuid(projectNode, "organization_id");
-        return projectSourceOrg != null ? projectSourceOrg : pkg.getSourceOrganizationId();
+        for (String field : List.of(
+                "organization_department_id",
+                "organization_line_id",
+                "organization_factory_id",
+                "organization_entity_id",
+                "organization_id")) {
+            UUID value = optionalUuid(projectNode, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return pkg.getSourceOrganizationId();
     }
 
     @Transactional(readOnly = true)
@@ -1030,6 +1576,14 @@ public class BranchPackageService {
 
     private String packageObjectKey(UUID packageUuid) {
         return "packages/" + packageUuid + "/original.pkg";
+    }
+
+    private String decryptedPackageObjectKey(UUID packageUuid) {
+        return "packages/" + packageUuid + "/decrypted-payload.zip";
+    }
+
+    private String importReadyPackageObjectKey(UUID packageUuid) {
+        return "packages/" + packageUuid + "/import-ready.pkg";
     }
 
     private int countFiles(JsonNode projects) {

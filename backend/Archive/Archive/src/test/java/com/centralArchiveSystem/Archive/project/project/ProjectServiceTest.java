@@ -136,6 +136,70 @@ class ProjectServiceTest {
     }
 
     @Test
+    void submittingForReviewStampsWhoSentItAndWhen() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        UUID sender = UUID.randomUUID();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = newService(repository, memberService, confidentiality)
+                .submitForReview(project.getId(), sender);
+
+        // Without these the queue has nothing to sort by: "under review" carried no age, so a project
+        // submitted this morning and one waiting since last month were indistinguishable.
+        assertEquals(sender, response.submittedBy());
+        assertNotNull(response.submittedAt());
+    }
+
+    @Test
+    void resubmittingKeepsTheCorrectionNoteItWasWrittenFor() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
+        project.setReviewNotes("أدخل الكادر العامل الناقص");
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = newService(repository, memberService, confidentiality)
+                .submitForReview(project.getId(), UUID.randomUUID());
+
+        // This method used to null reviewNotes. The person following the correction note presses
+        // submit the moment they finish following it, so the clearing fired at the one moment the
+        // note still mattered and left only a JSON snapshot in the audit log. A new instruction
+        // arrives with the next requestCorrection, which overwrites the column deliberately.
+        assertEquals("أدخل الكادر العامل الناقص", response.reviewNotes());
+    }
+
+    @Test
+    void rejectingWritesItsOwnColumnAndLeavesTheCorrectionNoteAlone() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        ProjectMemberService memberService = mock(ProjectMemberService.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.UNDER_REVIEW);
+        project.setReviewNotes("تصحيح سابق");
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = newService(repository, memberService, confidentiality)
+                .reject(project.getId(), "البيانات لا تخص هذا المشروع");
+
+        // Both used to live in review_notes, so asking for a correction and turning a project down
+        // overwrote each other, and a rejection reason read back as a correction note.
+        assertEquals("البيانات لا تخص هذا المشروع", response.rejectionReason());
+        assertEquals("تصحيح سابق", response.reviewNotes());
+    }
+
+    @Test
     void importedProjectCanBeSubmittedForReview() {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);
@@ -148,7 +212,7 @@ class ProjectServiceTest {
 
         ProjectService service = newService(repository, memberService, confidentiality);
 
-        ProjectResponse response = service.submitForReview(project.getId());
+        ProjectResponse response = service.submitForReview(project.getId(), UUID.randomUUID());
 
         assertEquals(Project.ProjectStatus.UNDER_REVIEW, response.status());
         verify(repository).save(project);
@@ -375,7 +439,7 @@ class ProjectServiceTest {
 
         assertThrows(
                 org.springframework.security.access.AccessDeniedException.class,
-                () -> service.submitForReview(project.getId())
+                () -> service.submitForReview(project.getId(), UUID.randomUUID())
         );
         verify(repository, never()).save(any(Project.class));
     }
@@ -496,9 +560,19 @@ class ProjectServiceTest {
 
         ProjectService service = newService(repository, memberService, confidentiality);
 
-        assertThrows(BusinessRuleException.class,
-                () -> service.submitForReview(project.getId()));
+        BusinessRuleException refusal = assertThrows(BusinessRuleException.class,
+                () -> service.submitForReview(project.getId(), UUID.randomUUID()));
         verify(repository, never()).save(any());
+
+        // The refusal has to name the field the gate actually reads. It used to send the reader to the
+        // incomplete-data report instead, which is assembled from the missing_fields column — a list only
+        // the legacy migration writes. A project entered by hand leaves that column empty, so the report
+        // answered "2 incomplete" with no field named and there was nothing the reader could do next.
+        assertTrue(refusal.getMessage().contains("حالة اكتمال البيانات"),
+                () -> "should name the field that refuses it: " + refusal.getMessage());
+        assertFalse(refusal.getMessage().contains("تقرير البيانات الناقصة"),
+                () -> "should not send the reader to a report that cannot name a field here: "
+                        + refusal.getMessage());
     }
 
     @Test

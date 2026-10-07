@@ -61,13 +61,16 @@ public class BranchPackageController {
 
     @PostMapping(value = "/receive", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
-    @Operation(summary = "Receive an offline .pkg package from a terminal")
+    @Operation(summary = "Receive a branch package; encrypted .zip/.nxpkg packages are decrypted during upload")
     public ResponseEntity<ApiResponse<PackageResponse>> receive(
-            @Parameter(description = "Package archive (.pkg)", required = true)
-            @RequestParam("package_file") MultipartFile packageFile) throws Exception {
+            @Parameter(description = "Package archive (.pkg, .zip or .nxpkg)", required = true)
+            @RequestParam("package_file") MultipartFile packageFile,
+            @Parameter(description = "Passphrase for encrypted .zip/.nxpkg packages; never persisted")
+            @RequestParam(value = "passphrase", required = false) String passphrase) throws Exception {
 
         PackageResponse response = branchPackageService.receive(
                 packageFile,
+                passphrase,
                 currentUserService.userId()
         );
 
@@ -119,6 +122,12 @@ public class BranchPackageController {
                     ),
                     "Import process started"
                 ));
+    }
+
+    @GetMapping("/{id}/references")
+    @Operation(summary = "Get source reference IDs that may require central mappings before import")
+    public ResponseEntity<ApiResponse<Map<String, List<UUID>>>> getReferences(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(branchPackageService.getReferenceRequirements(id)));
     }
 
     @GetMapping("/{id}/projects")

@@ -83,8 +83,25 @@ public class Project {
     @Column(name = "data_completion_status")
     private DataCompletionStatus dataCompletionStatus = DataCompletionStatus.INCOMPLETE;
 
+    /**
+     * The instruction handed to whoever has to fix the project, written when the project moves to
+     * {@link ProjectStatus#NEEDS_CORRECTION}. Held apart from {@link #rejectionReason} because the
+     * two answer different questions and used to overwrite each other in this one column.
+     *
+     * <p>Deliberately survives a resubmission. submitForReview used to null this out, which destroyed
+     * the note the correction round exists to deliver — at the exact moment the person acting on it
+     * pressed submit. It then survived only as a JSON snapshot in the audit log, which nobody opens
+     * while doing the work.
+     */
     @Column(name = "review_notes", columnDefinition = "TEXT")
     private String reviewNotes;
+
+    /**
+     * Why the auditor turned the project down. Its own column, so requesting a correction and
+     * rejecting a project stop contending for {@link #reviewNotes}.
+     */
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type")
@@ -109,6 +126,20 @@ public class Project {
 
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
+
+    /**
+     * Who last sent this project into review, and when. Without it a project sitting in
+     * {@link ProjectStatus#UNDER_REVIEW} carries no age, so one submitted this morning and one
+     * waiting since last month read identically, and a review queue has nothing to order by.
+     *
+     * <p>Rewritten on every submission, so it answers "who is waiting on this now" rather than
+     * preserving a first submission this reviewer never saw.
+     */
+    @Column(name = "submitted_by")
+    private UUID submittedBy;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
@@ -255,6 +286,9 @@ public class Project {
     public String getReviewNotes() { return reviewNotes; }
     public void setReviewNotes(String reviewNotes) { this.reviewNotes = reviewNotes; }
 
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+
     public SourceType getSourceType() { return sourceType; }
     public void setSourceType(SourceType sourceType) { this.sourceType = sourceType; }
 
@@ -272,6 +306,20 @@ public class Project {
 
     public LocalDateTime getApprovedAt() { return approvedAt; }
     public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
+
+    /**
+     * Who last sent this project into review, and when. Without it a project sitting in
+     * {@link ProjectStatus#UNDER_REVIEW} carries no age, so one submitted this morning and one
+     * waiting since last month read identically, and a review queue has nothing to order by.
+     *
+     * <p>Rewritten on every submission, so it answers "who is waiting on this now" rather than
+     * preserving a first submission this reviewer never saw.
+     */
+    public UUID getSubmittedBy() { return submittedBy; }
+    public void setSubmittedBy(UUID submittedBy) { this.submittedBy = submittedBy; }
+
+    public LocalDateTime getSubmittedAt() { return submittedAt; }
+    public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

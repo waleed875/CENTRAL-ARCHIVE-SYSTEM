@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.core.confidentiality.dto;
 
+import jakarta.validation.constraints.Size;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -9,11 +10,11 @@ import jakarta.validation.constraints.NotNull;
 public record ConfidentialityLevelRequest(
     @NotBlank(message = "حقل الرمز مطلوب")
     @Schema(description = "Unique code for the confidentiality level", example = "TOP_SECRET")
-    String code,
+    @Size(max = 60, message = "تجاوز طول الحقل الحد المسموح") String code,
 
     @NotBlank(message = "حقل الاسم مطلوب")
     @Schema(description = "Display name of the confidentiality level", example = "Top Secret")
-    String name,
+    @Size(max = 120, message = "تجاوز طول الحقل الحد المسموح") String name,
 
     @NotNull(message = "حقل ترتيب المستوى مطلوب")
     @Min(value = 1, message = "يجب ألا يقل ترتيب المستوى عن 1")

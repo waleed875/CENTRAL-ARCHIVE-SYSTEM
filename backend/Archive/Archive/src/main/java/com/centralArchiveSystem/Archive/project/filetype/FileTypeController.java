@@ -65,7 +65,7 @@ public class FileTypeController {
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<ApiResponse<FileTypeResponse>> update(
             @PathVariable UUID id,
-            @RequestBody FileTypeUpdateRequest request) {
+            @Valid @RequestBody FileTypeUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(fileTypeService.update(id, request), "File type updated successfully"));
     }
 

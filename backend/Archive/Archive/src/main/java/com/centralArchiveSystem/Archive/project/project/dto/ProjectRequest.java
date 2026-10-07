@@ -51,5 +51,5 @@ public record ProjectRequest(
     @Schema(description = "Data completion status") Project.DataCompletionStatus dataCompletionStatus,
 
     @Schema(description = "Optional project members created with the project. Manage later changes through the member endpoints.")
-    List<@Valid MemberCreateRequest> members
+    List<@NotNull(message = "لا تُقبل عناصر فارغة داخل القائمة") @Valid MemberCreateRequest> members
 ) {}

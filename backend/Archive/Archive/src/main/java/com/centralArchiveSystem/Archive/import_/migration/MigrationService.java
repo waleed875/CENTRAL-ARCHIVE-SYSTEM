@@ -1,5 +1,6 @@
 package com.centralArchiveSystem.Archive.import_.migration;
 
+import java.util.NoSuchElementException;
 import com.centralArchiveSystem.Archive.import_.migration.dto.*;
 import com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItemRepository;
 import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationRunner;
@@ -54,7 +55,7 @@ public class MigrationService {
     @Transactional(readOnly = true)
     public MigrationSourceResponse getSourceById(UUID id) {
         MigrationSource source = sourceRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Migration source not found: " + id));
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
         return toSourceResponse(source);
     }
 
@@ -78,7 +79,7 @@ public class MigrationService {
 
     public MigrationSourceResponse updateSource(UUID id, MigrationSourceUpdateRequest request) {
         MigrationSource source = sourceRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Migration source not found: " + id));
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
         if (request.name() != null) source.setName(request.name());
         if (request.sourceType() != null) source.setSourceType(request.sourceType());
         if (request.databaseName() != null) source.setDatabaseName(request.databaseName());
@@ -111,8 +112,9 @@ public class MigrationService {
                     request.port() != null ? request.port() : source.getPort(),
                     request.username() != null ? request.username() : source.getUsername(),
                     request.password());
-            requireCompleteConnection(source);
         }
+        // Validate the effective connection even when only databaseName changed.
+        requireCompleteConnection(source);
 
         MigrationSource saved = sourceRepository.save(source);
         log.info("Updated migration source: {}", saved.getId());
@@ -168,7 +170,7 @@ public class MigrationService {
 
     public void deleteSource(UUID id) {
         if (!sourceRepository.existsById(id)) {
-            throw new RuntimeException("Migration source not found: " + id);
+            throw new NoSuchElementException("Migration source not found: " + id);
         }
 
         long runningBatches = batchRepository.countByMigrationSourceIdAndStatus(
@@ -192,6 +194,9 @@ public class MigrationService {
 
     @Transactional(readOnly = true)
     public List<MigrationBatchResponse> listBatches(UUID sourceId) {
+        if (!sourceRepository.existsById(sourceId)) {
+            throw new NoSuchElementException("Migration source not found: " + sourceId);
+        }
         return batchRepository.findByMigrationSourceIdOrderByBatchNumberDesc(sourceId).stream()
                 .map(this::toBatchResponse)
                 .toList();
@@ -200,13 +205,13 @@ public class MigrationService {
     @Transactional(readOnly = true)
     public MigrationBatchResponse getBatchById(UUID id) {
         MigrationBatch batch = batchRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Migration batch not found: " + id));
+                .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + id));
         return toBatchResponse(batch);
     }
 
     public MigrationBatchResponse createBatch(UUID sourceId, MigrationBatchCreateRequest request) {
         if (!sourceRepository.existsById(sourceId)) {
-            throw new RuntimeException("Migration source not found: " + sourceId);
+            throw new NoSuchElementException("Migration source not found: " + sourceId);
         }
 
         String batchNumber = request.batchNumber().trim();
@@ -230,7 +235,7 @@ public class MigrationService {
 
     public MigrationBatchResponse updateBatch(UUID id, MigrationBatchUpdateRequest request) {
         MigrationBatch batch = batchRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Migration batch not found: " + id));
+                .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + id));
 
         if (batch.getStatus() == MigrationBatch.Status.RUNNING
                 || batch.getStatus() == MigrationBatch.Status.SUCCESS) {
@@ -249,7 +254,7 @@ public class MigrationService {
 
     public MigrationBatchResponse runBatch(UUID batchId, MigrationRunRequest runRequest) {
         MigrationBatch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Migration batch not found: " + batchId));
+                .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
 
         validateSupportedRunConfiguration(batch, runRequest);
 
@@ -298,7 +303,7 @@ public class MigrationService {
         }
 
         MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
-                .orElseThrow(() -> new RuntimeException(
+                .orElseThrow(() -> new NoSuchElementException(
                         "Migration source not found: " + batch.getMigrationSourceId()));
 
         MigrationRunRequest.MigrationConfig config = runRequest.migration_config();
@@ -354,7 +359,7 @@ public class MigrationService {
             UUID batchId,
             MigrationBatchCompleteRequest request) {
         MigrationBatch batch = batchRepository.findById(batchId)
-                .orElseThrow(() -> new RuntimeException("Migration batch not found: " + batchId));
+                .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
 
         if (request.status() != MigrationBatch.Status.SUCCESS
                 && request.status() != MigrationBatch.Status.PARTIAL
