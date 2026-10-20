@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authCookiesSecure } from "@/lib/api/cookie-options";
 import { loginSchema, apiEnvelopeSchema } from "@/lib/api/contracts";
 import {
   accessTokenCookie,
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
     const cookieOptions = {
       httpOnly: true,
       sameSite: "lax" as const,
-      secure: process.env.NODE_ENV === "production",
+      secure: authCookiesSecure(),
       path: "/",
     };
 

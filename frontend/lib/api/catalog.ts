@@ -1,4 +1,4 @@
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type Endpoint = {
   key: string;
@@ -10,6 +10,14 @@ export type Endpoint = {
 
 // This is a strict allow-list distilled from the supplied Postman collections.
 export const endpoints: Endpoint[] = [
+  { key: "enums.list", method: "GET", path: "/api/v1/enums", description: "List constrained values" },
+  { key: "organizations.all", method: "GET", path: "/api/v1/organizations/all", description: "List all organizations" },
+  { key: "roles.all", method: "GET", path: "/api/v1/roles/all", description: "List all roles" },
+  { key: "projects.delete", method: "DELETE", path: "/api/v1/projects/:id", description: "Delete draft project" },
+  { key: "projects.incompleteReport", method: "GET", path: "/api/v1/projects/incomplete-report", description: "Incomplete migration projects report" },
+  { key: "projects.reviewQueue", method: "GET", path: "/api/v1/projects/review-queue", description: "Projects awaiting review" },
+  { key: "migrationSettings.get", method: "GET", path: "/api/v1/migration-settings", description: "Migration settings" },
+  { key: "migrationSettings.update", method: "PUT", path: "/api/v1/migration-settings", body: "json", description: "Update migration settings" },
   { key: "auth.me", method: "GET", path: "/api/v1/auth/me", description: "Current user" },
   { key: "auth.refresh", method: "POST", path: "/api/v1/auth/refresh", body: "json", description: "Refresh token" },
   { key: "auth.changePassword", method: "PATCH", path: "/api/v1/auth/change-password", body: "json", description: "Change password" },

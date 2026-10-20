@@ -4,23 +4,99 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/api/client";
 import { DataView } from "@/components/data-view";
-
-type Metric = { name: string; value: string | number };
-function metricsFrom(value: unknown): Metric[] {
-  const payload = typeof value === "object" && value && "data" in value ? (value as { data: unknown }).data : value;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
-  return Object.entries(payload as Record<string, unknown>).filter(([, item]) => typeof item === "number" || typeof item === "string").slice(0, 8).map(([name, item]) => ({ name, value: item as string | number }));
-}
+import { DashboardStatsCards } from "@/components/dashboard-stats-cards";
 
 export default function DashboardPage() {
-  const stats = useQuery({ queryKey: ["dashboard.stats"], queryFn: () => apiRequest<unknown>("dashboard.stats", "GET") });
-  const activity = useQuery({ queryKey: ["dashboard.activity"], queryFn: () => apiRequest<unknown>("dashboard.activity", "GET", { limit: 20 }) });
-  const metrics = metricsFrom(stats.data);
-  return <div className="space-y-6">
-    <header className="flex flex-col justify-between gap-5 rounded-xl bg-white p-6 shadow-sm lg:flex-row lg:items-center"><div><div className="flex items-center gap-3"><span className="h-7 w-2.5 rounded-full bg-[#000c0b]" /><h1 className="text-2xl font-bold">لوحة التحكم</h1><span className="rounded-full bg-[#b4ebdd] px-2 py-1 text-xs text-[#386c61]">الواجهة التشغيلية</span></div><p className="mt-2 max-w-2xl text-sm text-[#414847]">نظرة عامة على منظومة الأرشيف المركزي وسير العمليات وسجلات التوثيق.</p></div><div className="flex items-center gap-3 rounded-lg bg-[#002623] px-5 py-3 text-white"><span className="h-2.5 w-2.5 rounded-full bg-[#b7ede0]" /><div><p className="text-xs text-[#d8c595]">حالة النظام</p><p className="text-sm font-bold text-[#f5e1af]">متصل ومؤمن</p></div></div></header>
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#eae8dd] p-4"><p className="text-sm font-semibold">إجراءات المهام الفورية</p><div className="flex flex-wrap gap-2"><Link href="/projects" className="rounded-md bg-[#000c0b] px-4 py-2 text-sm font-medium text-white">إدارة المشاريع</Link><Link href="/packages" className="rounded-md bg-white px-4 py-2 text-sm font-medium text-[#002623] shadow-sm">استقبال حزمة</Link><Link href="/audit-logs" className="rounded-md bg-white px-4 py-2 text-sm font-medium text-[#1b1c15] shadow-sm">سجل التدقيق</Link></div></section>
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{stats.isLoading && Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-36 animate-pulse rounded-xl bg-white" />)}{stats.isError && <div role="alert" className="col-span-full rounded-xl border border-red-200 bg-[#ffdad6] p-4 text-sm text-[#93000a]">تعذر تحميل مؤشرات لوحة التحكم.</div>}{metrics.map((metric, index) => <article key={metric.name} className={`relative overflow-hidden rounded-xl bg-white p-5 shadow-sm ${index === 7 ? "bg-[#002623] text-white" : ""}`}><span className="absolute -top-6 -left-6 h-24 w-24 rounded-full bg-[#33675d]/10" /><p className="relative text-xs font-semibold text-[#414847]">{metric.name}</p><p className="relative mt-5 text-3xl font-bold">{metric.value}</p><p className="relative mt-2 text-xs text-[#717977]">مؤشر مستخرج من خدمة لوحة التحكم</p></article>)}{!stats.isLoading && !stats.isError && metrics.length === 0 && <div className="col-span-full rounded-xl bg-white p-5 text-sm text-[#414847]">لم تتضمن استجابة الإحصاءات قيماً رقمية قابلة للعرض كبطاقات.</div>}</section>
-    <div className="grid gap-6 lg:grid-cols-12"><section className="overflow-hidden rounded-xl bg-white shadow-sm lg:col-span-8"><div className="flex items-start justify-between border-b-2 border-[#eae8dd] p-6 pb-4"><div><h2 className="font-bold">مؤشرات النظام</h2><p className="mt-1 text-sm text-[#414847]">تفاصيل الإحصاءات الواردة من الخدمة.</p></div><span className="rounded bg-[#f6f4e9] px-3 py-1 text-xs text-[#414847]">تحديث عند الطلب</span></div>{stats.data !== undefined && <DataView data={stats.data} />}</section><aside className="space-y-4 lg:col-span-4"><article className="rounded-xl bg-white p-5 shadow-sm"><h2 className="font-bold">سلامة النظام</h2><div className="mt-4 rounded-lg bg-[#f5e1af]/40 p-4 text-sm text-[#4b3e1a]">الطلبات تمر عبر طبقة BFF الداخلية، ولا يُكشف عنوان الخدمة أو رمز الدخول للمتصفح.</div></article><article className="rounded-xl bg-[#002623] p-5 text-white shadow-sm"><p className="text-sm font-bold text-[#f5e1af]">الختم الرقمي والتدقيق</p><p className="mt-2 text-sm leading-6 text-[#a9cec9]">تتوفر عمليات سجل التدقيق من قائمة التنقل عند امتلاك المستخدم الصلاحية اللازمة.</p></article></aside></div>
-    <section className="overflow-hidden rounded-xl bg-white shadow-sm"><div className="flex items-center justify-between border-b-2 border-[#eae8dd] p-6 pb-4"><div><h2 className="font-bold">النشاط الأخير وسجل العمليات</h2><p className="mt-1 text-sm text-[#414847]">متابعة العمليات كما تعيدها الخدمة.</p></div><span className="flex items-center gap-2 text-xs text-[#386c61]"><span className="h-2 w-2 rounded-full bg-[#33675d]" />تحديث تلقائي</span></div>{activity.isLoading && <p className="p-6 text-sm text-[#717977]">جارٍ التحميل…</p>}{activity.isError && <p role="alert" className="p-6 text-sm text-[#93000a]">تعذر تحميل النشاط الأخير.</p>}{activity.data !== undefined && <DataView data={activity.data} />}</section>
-  </div>;
+  const stats = useQuery({
+    queryKey: ["dashboard.stats"],
+    queryFn: () => apiRequest<unknown>("dashboard.stats", "GET"),
+  });
+  const activity = useQuery({
+    queryKey: ["dashboard.activity"],
+    queryFn: () =>
+      apiRequest<unknown>("dashboard.activity", "GET", { limit: 20 }),
+  });
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col justify-between gap-5 rounded-xl bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+        <div>
+          <div className="flex items-center gap-3">
+            <span className="h-7 w-2.5 rounded-full bg-[#000c0b]" />
+            <h1 className="text-2xl font-bold">لوحة التحكم</h1>
+          </div>
+          <p className="mt-2 max-w-2xl text-sm text-[#414847]">
+            المشاريع والملفات والحزم والنشاط الأخير.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 rounded-lg bg-[#002623] px-5 py-3 text-white">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#b7ede0]" />
+          <div>
+            <p className="text-xs text-[#d8c595]">حالة البيانات</p>
+            <p className="text-sm font-bold text-[#f5e1af]">{stats.isLoading ? "جارٍ التحميل" : stats.isError ? "تعذر التحديث" : "محدّثة"}</p>
+          </div>
+        </div>
+      </header>
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#eae8dd] p-4">
+        <p className="text-sm font-semibold">روابط سريعة</p>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/projects"
+            className="rounded-md bg-[#000c0b] px-4 py-2 text-sm font-medium text-white"
+          >
+            إدارة المشاريع
+          </Link>
+          <Link
+            href="/operations/packages.receive"
+            className="rounded-md bg-white px-4 py-2 text-sm font-medium text-[#002623] shadow-sm"
+          >
+            استقبال حزمة
+          </Link>
+          <Link
+            href="/audit-logs"
+            className="rounded-md bg-white px-4 py-2 text-sm font-medium text-[#1b1c15] shadow-sm"
+          >
+            سجل التدقيق
+          </Link>
+        </div>
+      </section>
+      {stats.isLoading && (
+        <section
+          aria-label="جارٍ تحميل مؤشرات الأداء"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-36 animate-pulse rounded-lg bg-white"
+            />
+          ))}
+        </section>
+      )}
+      {stats.isError && (
+        <p
+          role="alert"
+          className="rounded-lg border border-red-200 bg-[#ffdad6] p-4 text-sm text-[#93000a]"
+        >
+          تعذر تحميل مؤشرات لوحة التحكم.
+        </p>
+      )}
+      {stats.data !== undefined && <DashboardStatsCards data={stats.data} />}
+      <section className="overflow-hidden rounded-xl bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b-2 border-[#eae8dd] p-6 pb-4">
+          <div>
+            <h2 className="font-bold">النشاط الأخير</h2>
+          </div>
+        </div>
+        {activity.isLoading && (
+          <p className="p-6 text-sm text-[#717977]">جارٍ التحميل…</p>
+        )}
+        {activity.isError && (
+          <p role="alert" className="p-6 text-sm text-[#93000a]">
+            تعذر تحميل النشاط الأخير.
+          </p>
+        )}
+        {activity.data !== undefined && <DataView data={activity.data} />}
+      </section>
+    </div>
+  );
 }

@@ -202,7 +202,7 @@ Catalog entry to add:
 ## Verifying it yourself
 
 ```bash
-node handoff-contract.mjs      # from the repo root, with the backend on :8080
+node documents/handoff-contract.mjs      # from the repo root, with the backend on :8080
 ```
 
 It signs in as `admin` / `admin123` (the seeded password), creates a `DRAFT` under a fresh project

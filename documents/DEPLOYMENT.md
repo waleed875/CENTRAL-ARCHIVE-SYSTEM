@@ -2,10 +2,9 @@
 
 This guide describes the production deployment baseline for the central backend.
 
-> **Installing on a server?** Use [`deploy/linux/README.md`](deploy/linux/README.md). It has the
-> systemd units, the TLS gateway, the install and verification scripts, and the
-> troubleshooting table. The sections below are the general baseline and stay
-> authoritative for backups, restore, and audit retention.
+> For the local Docker setup, use [the Docker guide](../deploy/docker/README.md).
+> The sections below describe the production baseline, backups, restore, and audit retention.
+> Publishing the local setup on a shared server also requires HTTPS and the production configuration below.
 
 ## 1. Production architecture
 
@@ -90,7 +89,7 @@ Only enable forwarded-header handling when traffic reaches the application exclu
 6. Verify the health endpoint.
 7. Create/provision the first administrator using a controlled bootstrap window if required, then disable bootstrap again.
 
-Do not pre-load `Central_Platform_ERD/central_platform_mvp_postgresql.sql` into a new production database. The Flyway files under `backend/Archive/Archive/src/main/resources/db/migration` are the executable schema history.
+Do not pre-load `documents/Central_Platform_ERD/central_platform_mvp_postgresql.sql` into a new production database. The Flyway files under `backend/Archive/Archive/src/main/resources/db/migration` are the executable schema history.
 
 ## 4. Upgrading an existing pre-Flyway database
 

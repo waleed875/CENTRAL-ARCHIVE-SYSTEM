@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { endpointByKey, endpoints } from "./catalog";
 
 describe("Postman endpoint allow-list", () => {
+  it("includes the integrated dropdown, review and migration settings endpoints", () => {
+    expect(endpointByKey.get("organizations.all")?.path).toBe("/api/v1/organizations/all");
+    expect(endpointByKey.get("roles.all")?.path).toBe("/api/v1/roles/all");
+    expect(endpointByKey.get("projects.delete")?.method).toBe("DELETE");
+    expect(endpointByKey.get("projects.reviewQueue")?.path).toBe("/api/v1/projects/review-queue");
+    expect(endpointByKey.get("migrationSettings.update")?.method).toBe("PUT");
+  });
   it("contains only unique keys", () =>
     expect(new Set(endpoints.map((endpoint) => endpoint.key)).size).toBe(
       endpoints.length,

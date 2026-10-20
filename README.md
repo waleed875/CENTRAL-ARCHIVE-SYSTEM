@@ -1,14 +1,65 @@
-# Central Archive System — Backend
+# Central Archive System
 
-واجهة REST خلفية لنظام أرشفة مركزي. التطبيق مبني بـ Java 21 وSpring Boot ويستخدم PostgreSQL للبيانات الوصفية وMinIO لحفظ الملفات. لا يحتوي هذا المستودع على واجهة أمامية.
+نظام أرشفة مركزي يجمع واجهة Next.js داخل `frontend/` والباك Java 21 وSpring Boot داخل `backend/`، مع PostgreSQL للبيانات الوصفية وMinIO لحفظ الملفات.
 
-## المتطلبات
+## تشغيل النظام كاملًا بـDocker
+
+لسحب نسخة التجميع على جهاز جديد:
+
+```powershell
+git clone --branch chore/unified-docker https://github.com/abdullahhabbar-hub/CENTRAL-ARCHIVE-SYSTEM.git central-archive
+cd central-archive
+```
+
+افتح Docker Desktop بوضع Linux containers، ومن جذر المستودع نفّذ:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\docker\Start-Archive.ps1
+```
+
+الموقع على `http://localhost:3100` وSwagger على `http://localhost:8180/swagger-ui/index.html`.
+اسم المستخدم `admin` وكلمة مروره هي قيمة `DOCKER_ADMIN_PASSWORD` داخل `.env.docker`
+الذي يولّده السكربت مرة واحدة. هذه بيئة مستقلة بقاعدة جديدة، ولا تنقل بيانات نسختك القديمة.
+لا يلزم تثبيت Java أو Node.js لتشغيل Docker. التفاصيل وأوامر الإيقاف والتحديث في
+[دليل Docker](deploy/docker/README.md).
+
+لعرض كلمة مرور المدير محليًا:
+
+```powershell
+Select-String -Path .env.docker -Pattern '^DOCKER_ADMIN_PASSWORD='
+```
+
+انسخ القيمة بعد أول `=` فقط. لكل تثبيت جديد كلمة مرور ومفاتيح مستقلة؛ ملف
+`.env.docker` لا يُرفع إلى GitHub. تشغيل السكربت مجددًا يحافظ على الإعدادات والبيانات.
+
+للإيقاف مع الاحتفاظ بالبيانات:
+
+```powershell
+docker compose --env-file .env.docker down
+```
+
+## ترتيب المستودع
+
+```text
+CENTRAL-ARCHIVE-SYSTEM/
+├── backend/                  # Spring Boot وملفات Docker الخاصة بالباك
+├── frontend/                 # Next.js وملفات Docker الخاصة بالفرونت
+├── deploy/docker/            # سكربت البداية ودليل التشغيل
+├── documents/               # التقارير ومخططات ERD وسير العمل
+├── postman/                 # مجموعات اختبار الـAPI
+├── docker-compose.yml       # تشغيل الخدمات الأربع
+└── .env.docker.example      # قالب الإعدادات؛ لا يحتوي أسرار تثبيت حقيقية
+```
+
+راجع [فهرس المستندات](documents/README.md) للتصميم والتقارير ودليل النشر.
+
+## متطلبات التشغيل اليدوي خارج Docker
 
 - Docker Desktop مع Docker Compose.
 - JDK 21. يُفضّل تشغيل التطبيق بواسطة Maven Wrapper المرفق، فلا تحتاج إلى تثبيت Maven يدوياً.
 - PowerShell على Windows، أو أي صدفة تدعم متغيرات البيئة على Linux/macOS.
 
-## التشغيل المحلي السريع
+## التشغيل اليدوي للباك مع قاعدة وMinIO خارجيين
 
 نفّذ الأوامر التالية من جذر المشروع (`CENTRAL-ARCHIVE-SYSTEM`):
 
@@ -18,7 +69,7 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 في إعداد الجهاز الحالي لا تحتاج إلى تشغيل Docker Compose: التطبيق يستخدم PostgreSQL المحلي على `localhost:5433` وMinIO الموجود على `localhost:9000`. يقرأ Spring ملف `.env` تلقائياً عند تشغيله من مجلد `backend/Archive/Archive`.
 
-الأمر السابق يشغّل PostgreSQL فقط، حتى لا يتعارض مع MinIO الموجود لديك. اضبط القيم التالية في `.env` لتطابق بيانات MinIO الحالي:
+اضبط القيم التالية في `.env` لتطابق بيانات MinIO الحالي:
 
 ```text
 MINIO_ENDPOINT=http://localhost:9000
@@ -37,19 +88,8 @@ MINIO_BUCKET=archive-files
 | MinIO API | `http://localhost:9000` | تخزين ملفات S3-compatible |
 | MinIO Console | `http://localhost:9001` | إدارة MinIO محلياً |
 
-إذا لم يكن MinIO موجوداً مسبقاً وتريد تشغيل النسخة المرفقة بالمشروع، استخدم profile الاختياري التالي بدلاً من الأمر السابق:
-
-```powershell
-docker compose --profile bundled-minio up -d
-```
-
-إذا احتجت PostgreSQL معزولاً داخل Docker بدلاً من الخدمة المحلية الحالية، فهو اختياري ويعمل على `5434` لتجنب التعارض:
-
-```powershell
-docker compose --profile bundled-postgres up -d postgres
-```
-
-عند استخدامه غيّر `DB_URL` في `.env` إلى `jdbc:postgresql://localhost:5434/central_archive`، وغيّر `DB_USERNAME` و`DB_PASSWORD` إلى قيم `POSTGRES_USER` و`POSTGRES_PASSWORD`.
+ملف Compose الحالي يشغّل النظام كاملًا، وتبقى قاعدة البيانات وواجهة S3 داخليتين.
+إذا أردت التشغيل الكامل اتبع دليل Docker أعلاه؛ وللتشغيل اليدوي استخدم خدماتك الخارجية.
 
 انتظر حتى تصبح خدمة PostgreSQL بحالة `healthy` ثم حمّل إعدادات `.env` إلى جلسة PowerShell الحالية وشغّل الخلفية:
 
@@ -70,24 +110,20 @@ Set-Location backend/Archive/Archive
 
 بالنسبة لقاعدة قديمة أُنشئت قبل Flyway، يمكن تفعيل `FLYWAY_BASELINE_ON_MIGRATE=true` حتى تُسجل كـV1 ثم تطبق migrations التوافقية من V2 فصاعداً. يجب أخذ نسخة احتياطية موثوقة قبل أول ترقية من هذا النوع.
 
-ملف `Central_Platform_ERD/central_platform_mvp_postgresql.sql` يبقى مرجع تصميم، لكنه لم يعد آلية التهيئة التشغيلية في Docker أو الإنتاج.
+ملف `documents/Central_Platform_ERD/central_platform_mvp_postgresql.sql` يبقى مرجع تصميم، لكنه لم يعد آلية التهيئة التشغيلية في Docker أو الإنتاج.
 
 للتحقق من المخططات:
 
 ```powershell
-docker compose exec postgres psql -U archive_user -d central_archive -c "\dn"
+docker compose --env-file .env.docker exec postgres psql -U archive_user -d central_archive -c "\dn"
 ```
 
-لإعادة إنشاء **بيئة التطوير المحلية فقط** من الصفر (يحذف كل بيانات PostgreSQL وMinIO المحلية):
-
-```powershell
-docker compose down -v
-docker compose --profile bundled-postgres --profile bundled-minio up -d
-```
+إيقاف بيئة Docker المعتاد موضّح في دليل Docker ويحافظ على البيانات.
 
 ## MinIO والملفات
 
-استخدم بيانات MinIO الحالية للدخول إلى لوحة MinIO على `http://localhost:9001`. إذا شغّلت profile `bundled-minio`، استخدم `MINIO_ROOT_USER` و`MINIO_ROOT_PASSWORD` من `.env`.
+عند التشغيل اليدوي استخدم بيانات MinIO الخارجية. في Docker لوحة MinIO على
+`http://localhost:9101` بحساب `archive_storage` وكلمة مرور `DOCKER_MINIO_PASSWORD` من `.env.docker`.
 
 لا يلزم إنشاء bucket يدوياً: ينشئ الـbackend bucket المحدد في `MINIO_BUCKET` (الافتراضي `archive-files`) عند أول رفع ملف. تأكد فقط من أن MinIO يعمل قبل تجربة endpoint الرفع.
 
@@ -133,7 +169,7 @@ docker compose down
 - المشاريع المرحَّلة تُنشأ بلا مستوى سرية، وملفاتها ترث مستوى مشروعها. لتصنيف مشروع مرحَّل، عدّله من صفحة المشروع بعد الترحيل — التصنيف يُقرأ وقت ترحيل الملفات، فالمشروع المصنَّف مسبقًا يسحب ملفاته معه تلقائيًا.
 - لا تفعّل نافذة migration إلا بعد تجهيز staging DB مستقلة، نسخة احتياطية موثوقة، ومساحة spool محلية كافية لمعالجة أكبر ملف legacy بصورة streaming.
 
-للنشر الإنتاجي والنسخ الاحتياطي والاستعادة راجع [DEPLOYMENT.md](DEPLOYMENT.md).
+للنشر الإنتاجي والنسخ الاحتياطي والاستعادة راجع [DEPLOYMENT.md](documents/DEPLOYMENT.md).
 
 ## هيكل backend
 
@@ -145,7 +181,7 @@ backend/Archive/Archive/
 └── mvnw.cmd
 ```
 
-توجد مجموعات Postman في مجلد [postman](postman) وتصميم الـAPI في [API_ENDPOINTS_DESIGN.md](Central_Platform_ERD/API_ENDPOINTS_DESIGN.md).
+توجد مجموعات Postman في مجلد [postman](postman) وتصميم الـAPI في [API_ENDPOINTS_DESIGN.md](documents/Central_Platform_ERD/API_ENDPOINTS_DESIGN.md).
 
 ## القيم المقيدة للحقول
 
