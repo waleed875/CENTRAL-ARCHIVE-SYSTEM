@@ -1,15 +1,18 @@
 import { AppShell } from "@/components/app-shell";
-import { serverRequest } from "@/lib/api/server";
+import { ApiError, serverRequest } from "@/lib/api/server";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  let authenticated = false;
+  // Docker provides the backend URL at runtime, not during next build.
+  // Never prerender an authentication decision into the production image.
+  await connection();
   try {
     await serverRequest("/api/v1/auth/me");
-    authenticated = true;
-  } catch {
-    authenticated = false;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) redirect("/login");
+    // Preserve Next.js control-flow exceptions and actual service failures.
+    throw error;
   }
-  if (!authenticated) redirect("/login");
   return <AppShell>{children}</AppShell>;
 }

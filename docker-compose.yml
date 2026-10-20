@@ -1,38 +1,96 @@
+name: central-unified
+
 services:
   postgres:
-    profiles: ["bundled-postgres"]
     image: postgres:17-alpine
-    container_name: central-archive-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "${POSTGRES_PORT:-5434}:5432"
+      POSTGRES_DB: central_archive
+      POSTGRES_USER: archive_user
+      POSTGRES_PASSWORD: ${DOCKER_POSTGRES_PASSWORD:?Run deploy/docker/Start-Archive.ps1 first}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U archive_user -d central_archive"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 20
 
   minio:
-    profiles: ["bundled-minio"]
-    image: quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z
-    container_name: central-archive-minio
+    image: ${DOCKER_MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-08T15-41-24Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: archive_storage
+      MINIO_ROOT_PASSWORD: ${DOCKER_MINIO_PASSWORD:?Run deploy/docker/Start-Archive.ps1 first}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:${DOCKER_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
       - minio_data:/data
+
+  backend:
+    build: ./backend/Archive/Archive
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      DB_URL: jdbc:postgresql://postgres:5432/central_archive
+      DB_USERNAME: archive_user
+      DB_PASSWORD: ${DOCKER_POSTGRES_PASSWORD:?Missing DOCKER_POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: archive_storage
+      MINIO_SECRET_KEY: ${DOCKER_MINIO_PASSWORD:?Missing DOCKER_MINIO_PASSWORD}
+      MINIO_BUCKET: archive-files
+      INITIALIZE_MINIO_BUCKET: "true"
+      ARCHIVE_STORAGE_INITIALIZE_BUCKET: "true"
+      JWT_SECRET: ${DOCKER_JWT_SECRET:?Missing DOCKER_JWT_SECRET}
+      SETTINGS_ENCRYPTION_KEY: ${DOCKER_SETTINGS_ENCRYPTION_KEY:?Missing DOCKER_SETTINGS_ENCRYPTION_KEY}
+      ARCHIVE_INSTANCE_UUID: ${DOCKER_ARCHIVE_INSTANCE_UUID:?Missing DOCKER_ARCHIVE_INSTANCE_UUID}
+      CORS_ALLOWED_ORIGINS: http://localhost:${DOCKER_FRONTEND_PORT:-3100}
+      BOOTSTRAP_ADMIN_ENABLED: "true"
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: ${DOCKER_ADMIN_PASSWORD:?Missing DOCKER_ADMIN_PASSWORD}
+      BOOTSTRAP_ADMIN_EMAIL: admin@central-archive.local
+      LEGACY_MIGRATION_ENABLED: "false"
+      LEGACY_MIGRATION_SCHEDULE_ENABLED: "false"
+      SWAGGER_ENABLED: "true"
+      ARCHIVE_STORAGE_TEMP_DIR: /app/data/tmp
+    volumes:
+      - backend_data:/app/data
+    ports:
+      - "127.0.0.1:${DOCKER_BACKEND_PORT:-8180}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health/readiness"]
+      start_period: 90s
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      CENTRAL_ARCHIVE_API_URL: http://backend:8080
+      AUTH_COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:${DOCKER_FRONTEND_PORT:-3100}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
 volumes:
   postgres_data:
   minio_data:
+  backend_data:

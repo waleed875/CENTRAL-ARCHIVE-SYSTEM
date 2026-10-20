@@ -14,6 +14,9 @@ export class ApiClientError extends Error {
   }
 }
 
+// Both integrated screens and the standalone frontend use the same error type.
+export { ApiClientError as ApiRequestError };
+
 export type ApiRequestOptions = {
   query?: Record<string, Scalar>;
   pathParams?: Record<string, Scalar>;
@@ -108,5 +111,7 @@ export async function apiRequest<T>(
     throw await toApiClientError(response);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+  const contentType = response.headers.get("content-type") ?? "";
+  return contentType.includes("json") ? response.json() as Promise<T> : undefined as T;
 }

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { authCookiesSecure } from "@/lib/api/cookie-options";
 import {
   accessTokenCookie,
   backendBaseUrl,
@@ -24,7 +25,7 @@ function clearAuthCookies(response: NextResponse) {
   const options = {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: authCookiesSecure(),
     path: "/",
     maxAge: 0,
   };
@@ -86,7 +87,7 @@ export async function POST() {
     const options = {
       httpOnly: true,
       sameSite: "lax" as const,
-      secure: process.env.NODE_ENV === "production",
+      secure: authCookiesSecure(),
       path: "/",
     };
 

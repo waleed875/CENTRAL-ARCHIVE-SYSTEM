@@ -29,5 +29,8 @@ export const config = {
     "/migrations/:path*",
     "/audit-logs/:path*",
     "/settings/:path*",
+    "/operations/:path*",
+    "/records/:path*",
+    "/queries/:path*",
   ],
 };

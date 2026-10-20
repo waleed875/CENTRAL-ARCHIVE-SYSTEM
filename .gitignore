@@ -1,4 +1,8 @@
 .env
 .env.*
 !.env.example
+!.env.docker.example
+
+# Accidental terminal output; not part of the application or documentation.
+/documents/ersAbdullah*
 
