@@ -59,6 +59,7 @@ class IncompleteProjectReportServiceTest {
         assertEquals(List.of("year", "name"), service.buildReport().projects().getFirst().missingFields());
     }
     @Test void noClearanceIsPassedAsNullRatherThanElevatedToAdministratorClearance() {
+        when(confidentiality.currentMaxLevelOrder()).thenReturn(null);
         when(projects.findAccessibleIncompleteLatest(null)).thenReturn(List.of());
         service.buildReport(); verify(projects).findAccessibleIncompleteLatest(null);
     }
