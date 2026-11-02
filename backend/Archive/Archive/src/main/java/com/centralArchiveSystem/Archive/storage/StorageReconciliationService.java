@@ -10,148 +10,82 @@ import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
+/** Detection only: never delete an object merely because it is absent from a database snapshot. */
 @Service
 @Transactional(readOnly = true)
 public class StorageReconciliationService {
-
     private static final int SAMPLE_LIMIT = 100;
-    private static final List<String> MANAGED_PREFIXES = List.of(
-            "projects/",
-            "import/",
-            "legacy/migration/",
-            "packages/",
-            "exports/"
-    );
-
+    private static final List<String> MANAGED_PREFIXES = List.of("projects/", "import/", "legacy/migration/", "packages/", "exports/");
     private final FileRepository fileRepository;
     private final BranchPackageRepository branchPackageRepository;
     private final ProjectExportRepository projectExportRepository;
     private final MinioService minioService;
     private final MinioConfig minioConfig;
 
-    public StorageReconciliationService(FileRepository fileRepository,
-                                        BranchPackageRepository branchPackageRepository,
-                                        ProjectExportRepository projectExportRepository,
-                                        MinioService minioService,
-                                        MinioConfig minioConfig) {
-        this.fileRepository = fileRepository;
-        this.branchPackageRepository = branchPackageRepository;
-        this.projectExportRepository = projectExportRepository;
-        this.minioService = minioService;
-        this.minioConfig = minioConfig;
+    public StorageReconciliationService(FileRepository fileRepository, BranchPackageRepository branchPackageRepository,
+            ProjectExportRepository projectExportRepository, MinioService minioService, MinioConfig minioConfig) {
+        this.fileRepository = fileRepository; this.branchPackageRepository = branchPackageRepository;
+        this.projectExportRepository = projectExportRepository; this.minioService = minioService; this.minioConfig = minioConfig;
     }
 
     public StorageReconciliationReport reconcile() throws Exception {
-        String configuredBucket = minioConfig.getBucket();
-        if (!minioService.bucketExists(configuredBucket)) {
-            throw new IllegalStateException(
-                    "Required MinIO bucket is missing: " + configuredBucket);
-        }
-
+        String bucket = minioConfig.getBucket();
+        if (!minioService.bucketExists(bucket)) throw new IllegalStateException("Required MinIO bucket is missing: " + bucket);
         List<FileEntity> files = fileRepository.findAll();
         List<BranchPackage> packages = branchPackageRepository.findAll();
         List<ProjectExport> exports = projectExportRepository.findAll();
-
-        Set<ObjectRef> expectedFileObjects = new LinkedHashSet<>();
-        List<String> missingDbObjectSamples = new ArrayList<>();
-        int missingDbObjects = 0;
-
+        Set<String> expected = new HashSet<>();
+        List<String> missingDbSamples = new ArrayList<>();
+        int missingDb = 0;
         for (FileEntity file : files) {
             if (file.getBucketName() == null || file.getObjectKey() == null) {
-                missingDbObjects++;
-                addSample(missingDbObjectSamples, "file:" + file.getId() + ":missing-storage-reference");
-                continue;
+                missingDb++; addSample(missingDbSamples, "file:" + file.getId() + ":missing-storage-reference"); continue;
             }
-
-            ObjectRef ref = new ObjectRef(file.getBucketName(), file.getObjectKey());
-            expectedFileObjects.add(ref);
-
-            if (!minioService.objectExists(ref.bucket(), ref.key())) {
-                missingDbObjects++;
-                addSample(missingDbObjectSamples, "file:" + file.getId() + ":" + ref.key());
+            if (bucket.equals(file.getBucketName())) expected.add(file.getObjectKey());
+            if (!minioService.objectExists(file.getBucketName(), file.getObjectKey())) {
+                missingDb++; addSample(missingDbSamples, "file:" + file.getId() + ":" + file.getObjectKey());
             }
         }
-
-        Set<String> expectedConfiguredBucketKeys = new HashSet<>();
-        for (ObjectRef ref : expectedFileObjects) {
-            if (configuredBucket.equals(ref.bucket())) {
-                expectedConfiguredBucketKeys.add(ref.key());
-            }
-        }
-
-        List<String> missingOriginalSamples = new ArrayList<>();
-        int missingOriginal = 0;
+        List<String> missingPackageSamples = new ArrayList<>();
+        int missingPackages = 0;
         for (BranchPackage pkg : packages) {
-            String key = "packages/" + pkg.getPackageUuid() + "/original.pkg";
-            expectedConfiguredBucketKeys.add(key);
-            if (!minioService.objectExists(configuredBucket, key)) {
-                missingOriginal++;
-                addSample(missingOriginalSamples, pkg.getId() + ":" + key);
+            String prefix = "packages/" + pkg.getPackageUuid() + "/";
+            List<String> keys = Boolean.TRUE.equals(pkg.getEncrypted())
+                    ? List.of(prefix + "decrypted-payload.zip", prefix + "import-ready.pkg")
+                    : List.of(prefix + "original.pkg");
+            boolean missing = false;
+            for (String key : keys) {
+                expected.add(key);
+                if (!minioService.objectExists(bucket, key)) {
+                    missing = true; addSample(missingPackageSamples, pkg.getId() + ":" + key);
+                }
             }
+            if (missing) missingPackages++;
         }
-
-        List<ProjectExport> completedExports = exports.stream()
-                .filter(export -> "EXPORTED".equalsIgnoreCase(export.getStatus()))
-                .filter(export -> export.getPackageObjectKey() != null
-                        && !export.getPackageObjectKey().isBlank())
-                .toList();
-
+        List<ProjectExport> completed = exports.stream().filter(e -> "EXPORTED".equalsIgnoreCase(e.getStatus()))
+                .filter(e -> e.getPackageObjectKey() != null && !e.getPackageObjectKey().isBlank()).toList();
         List<String> missingExportSamples = new ArrayList<>();
         int missingExports = 0;
-        for (ProjectExport export : completedExports) {
-            String key = export.getPackageObjectKey();
-            expectedConfiguredBucketKeys.add(key);
-            if (!minioService.objectExists(configuredBucket, key)) {
-                missingExports++;
-                addSample(missingExportSamples, export.getId() + ":" + key);
+        for (ProjectExport export : completed) {
+            String key = export.getPackageObjectKey(); expected.add(key);
+            if (!minioService.objectExists(bucket, key)) {
+                missingExports++; addSample(missingExportSamples, export.getId() + ":" + key);
             }
         }
-
-        Set<String> actualManagedKeys = new LinkedHashSet<>();
-        for (String prefix : MANAGED_PREFIXES) {
-            actualManagedKeys.addAll(minioService.listObjectKeys(configuredBucket, prefix));
-        }
-
+        Set<String> actual = new LinkedHashSet<>();
+        for (String prefix : MANAGED_PREFIXES) actual.addAll(minioService.listObjectKeys(bucket, prefix));
         List<String> orphanSamples = new ArrayList<>();
-        int orphanObjects = 0;
-        for (String key : actualManagedKeys) {
-            if (!expectedConfiguredBucketKeys.contains(key)) {
-                orphanObjects++;
-                addSample(orphanSamples, key);
-            }
+        int orphans = 0;
+        for (String key : actual) {
+            if (!expected.contains(key)) { orphans++; addSample(orphanSamples, key); }
         }
-
-        return new StorageReconciliationReport(
-                LocalDateTime.now(),
-                configuredBucket,
-                files.size(),
-                packages.size(),
-                completedExports.size(),
-                actualManagedKeys.size(),
-                missingDbObjects,
-                orphanObjects,
-                missingOriginal,
-                missingExports,
-                List.copyOf(missingDbObjectSamples),
-                List.copyOf(orphanSamples),
-                List.copyOf(missingOriginalSamples),
-                List.copyOf(missingExportSamples)
-        );
+        return new StorageReconciliationReport(LocalDateTime.now(), bucket, files.size(), packages.size(), completed.size(),
+                actual.size(), missingDb, orphans, missingPackages, missingExports,
+                List.copyOf(missingDbSamples), List.copyOf(orphanSamples), List.copyOf(missingPackageSamples), List.copyOf(missingExportSamples));
     }
 
-    private void addSample(List<String> samples, String value) {
-        if (samples.size() < SAMPLE_LIMIT) {
-            samples.add(value);
-        }
-    }
-
-    private record ObjectRef(String bucket, String key) {}
+    private void addSample(List<String> samples, String value) { if (samples.size() < SAMPLE_LIMIT) samples.add(value); }
 }
