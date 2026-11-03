@@ -64,6 +64,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Spring MVC StreamingResponseBody completes on a second ASYNC dispatch. The
+     * original request's SecurityContext has already been cleared by then, so
+     * its JWT must be authenticated again before AuthorizationFilter runs.
+     * Do not globally permit ASYNC dispatch: the export download still requires
+     * its authenticated role and the SecurityContext for this dispatch.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     private String extractJwtFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
