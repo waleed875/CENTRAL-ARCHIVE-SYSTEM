@@ -2,6 +2,7 @@ package com.centralArchiveSystem.Archive.config;
 
 import com.centralArchiveSystem.Archive.auth.JwtAuthenticationFilter;
 import com.centralArchiveSystem.Archive.auth.SecurityErrorWriter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,6 +48,9 @@ public class SecurityConfig {
                 .accessDeniedHandler((request, response, exception) ->
                     SecurityErrorWriter.write(response, 403, "ACCESS_DENIED", "لا تملك صلاحية تنفيذ هذا الإجراء")))
             .authorizeHttpRequests(auth -> auth
+                // Permit only container ERROR redispatch so the real failure can be rendered;
+                // initial REQUEST and ASYNC redispatches still require their normal authorization.
+                .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
