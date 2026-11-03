@@ -77,6 +77,7 @@ public class RoleService {
 
     @Transactional
     public RoleResponse create(RoleRequest request) {
+        userRepository.lockAdministration();
         if (!MVP_ROLE_CODES.contains(request.code())) {
             throw new BusinessRuleException(
                     "رمز الدور غير مدعوم: " + request.code());
@@ -97,6 +98,7 @@ public class RoleService {
 
     @Transactional
     public RoleResponse update(UUID id, RoleUpdateRequest request) {
+        userRepository.lockAdministration();
         Role role = findRoleOrThrow(id);
 
         if (request.name() != null && !request.name().isBlank()) {
@@ -118,6 +120,7 @@ public class RoleService {
 
     @Transactional
     public void delete(UUID id) {
+        userRepository.lockAdministration();
         Role role = findRoleOrThrow(id);
         ensureNoActiveUsers(id);
         role.setIsActive(false);

@@ -16,6 +16,26 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByUsername(String username);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> findForUpdate(@Param("id") UUID id);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.username = :username")
+    Optional<User> findForUpdateByUsername(@Param("username") String username);
+
+    /** One transaction-scoped guard shared by user and role administration, across app instances. */
+    @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(932486010)", nativeQuery = true)
+    Integer lockAdministration();
+
+    @Query("SELECT o FROM Organization o WHERE o.id = :id")
+    Optional<com.centralArchiveSystem.Archive.core.organization.Organization> findOrganization(@Param("id") UUID id);
+
+    @Query("SELECT c FROM ConfidentialityLevel c WHERE c.id = :id")
+    Optional<com.centralArchiveSystem.Archive.core.confidentiality.ConfidentialityLevel> findClearance(@Param("id") UUID id);
+
+    long countByStatus(User.UserStatus status);
+
     boolean existsByUsername(String username);
 
     boolean existsByUsernameAndIdNot(String username, UUID id);

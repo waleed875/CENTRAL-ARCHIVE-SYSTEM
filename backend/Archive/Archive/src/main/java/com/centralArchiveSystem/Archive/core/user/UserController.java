@@ -103,4 +103,13 @@ public class UserController {
         userService.removeRole(id, roleId);
         return ApiResponse.success();
     }
+    @PatchMapping("/{id}/reset-password")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Reset an account password and revoke existing tokens")
+    public ApiResponse<Void> resetPassword(@PathVariable UUID id,
+            @Valid @RequestBody com.centralArchiveSystem.Archive.core.user.dto.ResetPasswordRequest request) {
+        userService.resetPassword(id, request);
+        return ApiResponse.success(null, "Password changed successfully");
+    }
+
 }

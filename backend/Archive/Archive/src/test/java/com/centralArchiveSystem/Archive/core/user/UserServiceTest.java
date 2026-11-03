@@ -34,7 +34,7 @@ class UserServiceTest {
         user.setUsername("importer");
         user.setStatus(User.UserStatus.ACTIVE);
 
-        when(users.findById(id)).thenReturn(Optional.of(user));
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
         when(imports.countByImportedByAndStatus(id, ImportOperation.Status.STARTED)).thenReturn(1L);
 
         UserService service = new UserService(users, roles, imports, encoder);
@@ -85,7 +85,7 @@ class UserServiceTest {
         user.setFullName("User One");
         user.setStatus(User.UserStatus.ACTIVE);
 
-        when(users.findById(id)).thenReturn(Optional.of(user));
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
         when(users.existsByEmailAndIdNot("duplicate@example.com", id)).thenReturn(true);
 
         UserService service = new UserService(users, roles, imports, encoder);
@@ -118,7 +118,7 @@ class UserServiceTest {
         role.setCode("auditor");
         role.setIsActive(false);
 
-        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(users.findForUpdate(userId)).thenReturn(Optional.of(user));
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
 
         UserService service = new UserService(users, roles, imports, encoder);
@@ -149,7 +149,7 @@ class UserServiceTest {
         user.setStatus(User.UserStatus.ACTIVE);
         user.setRoles(new java.util.HashSet<>(Set.of(role)));
 
-        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(users.findForUpdate(userId)).thenReturn(Optional.of(user));
         when(roles.findById(roleId)).thenReturn(Optional.of(role));
 
         UserService service = new UserService(users, roles, imports, encoder);
@@ -171,7 +171,7 @@ class UserServiceTest {
         user.setUsername("user1");
         user.setStatus(User.UserStatus.ACTIVE);
 
-        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(users.findForUpdate(userId)).thenReturn(Optional.of(user));
         when(users.save(user)).thenReturn(user);
 
         UserService service = new UserService(users, roles, imports, encoder);

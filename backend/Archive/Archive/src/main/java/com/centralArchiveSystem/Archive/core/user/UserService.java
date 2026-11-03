@@ -20,7 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import com.centralArchiveSystem.Archive.auth.TokenRevocation;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -73,6 +73,8 @@ public class UserService {
 
     @Transactional
     public UserResponse create(UserRequest request) {
+        userRepository.lockAdministration();
+        validateReferences(request.organizationId(), request.maxConfidentialityLevelId());
         if (userRepository.existsByUsername(request.username())) {
             throw new ConflictException("User", "username", request.username());
         }
@@ -85,7 +87,7 @@ public class UserService {
         user.setUsername(request.username());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setFullName(request.fullName());
-        user.setEmail(request.email());
+        user.setEmail(request.email() == null || request.email().isBlank() ? null : request.email());
         user.setOrganizationId(request.organizationId());
         user.setMaxConfidentialityLevelId(request.maxConfidentialityLevelId());
         user.setStatus(User.UserStatus.ACTIVE);
@@ -100,8 +102,10 @@ public class UserService {
 
     @Transactional
     public UserResponse update(UUID id, UserUpdateRequest request) {
-        User user = findUserOrThrow(id);
+        userRepository.lockAdministration();
+        User user = findForUpdate(id);
 
+        validateReferences(request.organizationId(), request.maxConfidentialityLevelId());
         if (request.fullName() != null && !request.fullName().isBlank()) {
             user.setFullName(request.fullName());
         }
@@ -123,7 +127,9 @@ public class UserService {
 
         if (request.status() != null) {
             if (request.status() != User.UserStatus.ACTIVE) {
-                user.setTokenValidAfter(Instant.now());
+                requireAnotherAdministrator(user, null);
+                requireNoActiveImports(id);
+                TokenRevocation.advance(user);
             }
             user.setStatus(request.status());
         }
@@ -134,17 +140,12 @@ public class UserService {
 
     @Transactional
     public void delete(UUID id) {
-        User user = findUserOrThrow(id);
-        long activeImports = importOperationRepository.countByImportedByAndStatus(
-                id,
-                ImportOperation.Status.STARTED
-        );
-        if (activeImports > 0) {
-            throw new BusinessRuleException(
-                    "لا يمكن تعطيل المستخدم أثناء وجود عمليات استيراد قيد التنفيذ");
-        }
+        userRepository.lockAdministration();
+        User user = findForUpdate(id);
+        requireAnotherAdministrator(user, null);
+        requireNoActiveImports(id);
         user.setStatus(User.UserStatus.DISABLED);
-        user.setTokenValidAfter(Instant.now());
+        TokenRevocation.advance(user);
         userRepository.save(user);
     }
 
@@ -162,7 +163,8 @@ public class UserService {
 
     @Transactional
     public void addRole(UUID userId, UUID roleId) {
-        User user = findUserOrThrow(userId);
+        userRepository.lockAdministration();
+        User user = findForUpdate(userId);
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
         if (!Boolean.TRUE.equals(role.getIsActive())) {
@@ -172,28 +174,78 @@ public class UserService {
             throw new ConflictException("UserRole", "role_id", roleId);
         }
         user.getRoles().add(role);
+        TokenRevocation.advance(user);
         userRepository.save(user);
     }
 
     @Transactional
     public void removeRole(UUID userId, UUID roleId) {
-        User user = findUserOrThrow(userId);
+        userRepository.lockAdministration();
+        User user = findForUpdate(userId);
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
+        requireAnotherAdministrator(user, roleId);
         user.getRoles().remove(role);
+        TokenRevocation.advance(user);
         userRepository.save(user);
     }
 
     @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request) {
-        User user = findUserOrThrow(userId);
+        userRepository.lockAdministration();
+        User user = findForUpdate(userId);
 
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new BusinessRuleException("كلمة المرور الحالية غير صحيحة");
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        TokenRevocation.advance(user);
         userRepository.save(user);
+    }
+
+    @Transactional
+    public void resetPassword(UUID userId, com.centralArchiveSystem.Archive.core.user.dto.ResetPasswordRequest request) {
+        userRepository.lockAdministration();
+        User user = findForUpdate(userId);
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        TokenRevocation.advance(user);
+        userRepository.save(user);
+    }
+
+    private User findForUpdate(UUID id) {
+        return userRepository.findForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", id));
+    }
+
+    private void requireNoActiveImports(UUID id) {
+        if (importOperationRepository.countByImportedByAndStatus(id, ImportOperation.Status.STARTED) > 0) {
+            throw new BusinessRuleException("لا يمكن تعطيل المستخدم أثناء وجود عمليات استيراد قيد التنفيذ");
+        }
+    }
+
+    private void requireAnotherAdministrator(User user, UUID removedRoleId) {
+        if (user.getStatus() != User.UserStatus.ACTIVE) return;
+        for (Role role : user.getRoles()) {
+            if (!"system_admin".equals(role.getCode()) || !Boolean.TRUE.equals(role.getIsActive())) continue;
+            if (removedRoleId != null && !removedRoleId.equals(role.getId())) continue;
+            if (userRepository.countActiveUsersByRoleId(role.getId()) <= 1) {
+                throw new BusinessRuleException("لا يمكن تعطيل آخر مدير نشط أو سحب دوره. عين مديرا آخر أولا");
+            }
+        }
+    }
+
+    private void validateReferences(UUID organizationId, UUID clearanceId) {
+        if (organizationId != null) {
+            var organization = userRepository.findOrganization(organizationId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Organization", "id", organizationId));
+            if (!Boolean.TRUE.equals(organization.getIsActive())) {
+                throw new BusinessRuleException("المؤسسة المحددة معطلة");
+            }
+        }
+        if (clearanceId != null && userRepository.findClearance(clearanceId).isEmpty()) {
+            throw new ResourceNotFoundException("ConfidentialityLevel", "id", clearanceId);
+        }
     }
 
     private Set<Role> resolveRoles(Set<UUID> roleIds) {
@@ -213,14 +265,14 @@ public class UserService {
     }
 
     private UserResponse toResponse(User user) {
-        UserResponse.OrganizationSummary orgSummary = null;
-        if (user.getOrganization() != null) {
-            orgSummary = new UserResponse.OrganizationSummary(
-                user.getOrganization().getId(),
-                user.getOrganization().getName(),
-                user.getOrganization().getCode()
-            );
-        }
+        UserResponse.OrganizationSummary orgSummary = user.getOrganizationId() == null ? null
+                : userRepository.findOrganization(user.getOrganizationId())
+                        .map(org -> new UserResponse.OrganizationSummary(org.getId(), org.getName(), org.getCode()))
+                        .orElse(null);
+        UserResponse.ConfidentialityLevelSummary clearance = user.getMaxConfidentialityLevelId() == null ? null
+                : userRepository.findClearance(user.getMaxConfidentialityLevelId())
+                        .map(level -> new UserResponse.ConfidentialityLevelSummary(level.getId(), level.getName(), level.getLevelOrder()))
+                        .orElse(null);
 
         Set<UserResponse.RoleSummary> roleSummaries = user.getRoles().stream()
             .map(role -> new UserResponse.RoleSummary(
@@ -243,7 +295,7 @@ public class UserService {
             user.getUpdatedAt(),
             orgSummary,
             roleSummaries,
-            null
+            clearance
         );
     }
 }

@@ -39,7 +39,11 @@ public class JwtTokenProvider {
     }
 
     public String generateToken(UserDetails userDetails) {
-        Date now = new Date();
+        return generateToken(userDetails, null);
+    }
+
+    public String generateToken(UserDetails userDetails, Instant notBefore) {
+        Date now = new Date(Math.max(System.currentTimeMillis(), notBefore == null ? 0L : notBefore.toEpochMilli()));
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
         String roles = userDetails.getAuthorities().stream()
@@ -58,7 +62,11 @@ public class JwtTokenProvider {
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        Date now = new Date();
+        return generateRefreshToken(userDetails, null);
+    }
+
+    public String generateRefreshToken(UserDetails userDetails, Instant notBefore) {
+        Date now = new Date(Math.max(System.currentTimeMillis(), notBefore == null ? 0L : notBefore.toEpochMilli()));
         Date expiryDate = new Date(now.getTime() + jwtRefreshExpirationMs);
 
         return Jwts.builder()
