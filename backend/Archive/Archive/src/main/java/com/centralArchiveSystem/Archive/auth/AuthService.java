@@ -17,7 +17,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
@@ -53,6 +52,8 @@ public class AuthService implements UserDetailsService {
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
+        // Serialize credential verification with resets so an old password cannot race a reset.
+        userRepository.findForUpdateByUsername(request.username());
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.username(), request.password()));
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -65,8 +66,8 @@ public class AuthService implements UserDetailsService {
     public void logout() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
-            userRepository.findByUsername(authentication.getName()).ifPresent(user -> {
-                user.setTokenValidAfter(Instant.now());
+            userRepository.findForUpdateByUsername(authentication.getName()).ifPresent(user -> {
+                TokenRevocation.advance(user);
                 user.setUpdatedAt(LocalDateTime.now());
                 userRepository.save(user);
             });
@@ -80,7 +81,7 @@ public class AuthService implements UserDetailsService {
             throw new IllegalArgumentException("رمز التحديث غير صالح");
         }
         String username = tokenProvider.getUsernameFromToken(refreshToken);
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findForUpdateByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new IllegalArgumentException("حساب المستخدم غير مُفعّل");
@@ -88,7 +89,7 @@ public class AuthService implements UserDetailsService {
         if (!tokenProvider.isIssuedOnOrAfter(refreshToken, user.getTokenValidAfter())) {
             throw new IllegalArgumentException("تم إلغاء رمز التحديث");
         }
-        user.setTokenValidAfter(Instant.now());
+        TokenRevocation.advance(user);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
         return buildLoginResponse(user, loadUserByUsername(username));
@@ -104,20 +105,20 @@ public class AuthService implements UserDetailsService {
     @Transactional
     public void changePassword(ChangePasswordRequest request) {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findForUpdateByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("كلمة المرور الحالية غير صحيحة");
         }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        user.setTokenValidAfter(Instant.now());
+        TokenRevocation.advance(user);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
     }
 
     private LoginResponse buildLoginResponse(User user, UserDetails userDetails) {
-        return new LoginResponse(tokenProvider.generateToken(userDetails),
-                tokenProvider.generateRefreshToken(userDetails), tokenProvider.getExpirationMs() / 1000,
+        return new LoginResponse(tokenProvider.generateToken(userDetails, user.getTokenValidAfter()),
+                tokenProvider.generateRefreshToken(userDetails, user.getTokenValidAfter()), tokenProvider.getExpirationMs() / 1000,
                 tokenProvider.getRefreshExpirationMs() / 1000, toUserInfo(user));
     }
 

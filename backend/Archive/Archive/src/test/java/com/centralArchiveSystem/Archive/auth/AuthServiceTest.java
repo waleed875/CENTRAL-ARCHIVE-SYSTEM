@@ -35,7 +35,7 @@ class AuthServiceTest {
 
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getName()).thenReturn("auditor");
-        when(userRepository.findByUsername("auditor")).thenReturn(Optional.of(user));
+        when(userRepository.findForUpdateByUsername("auditor")).thenReturn(Optional.of(user));
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         AuthService service = new AuthService(
@@ -67,7 +67,7 @@ class AuthServiceTest {
         when(tokenProvider.validateRefreshToken("refresh-token")).thenReturn(true);
         when(tokenProvider.getUsernameFromToken("refresh-token")).thenReturn("auditor");
         when(tokenProvider.isIssuedOnOrAfter("refresh-token", user.getTokenValidAfter())).thenReturn(false);
-        when(userRepository.findByUsername("auditor")).thenReturn(Optional.of(user));
+        when(userRepository.findForUpdateByUsername("auditor")).thenReturn(Optional.of(user));
 
         AuthService service = new AuthService(
                 authenticationManager,
