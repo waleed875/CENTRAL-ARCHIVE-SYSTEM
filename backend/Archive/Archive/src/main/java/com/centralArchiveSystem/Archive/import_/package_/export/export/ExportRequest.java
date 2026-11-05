@@ -30,7 +30,7 @@ public record ExportRequest(
     }
 
     public void validateOptions() {
-        if (projectIds == null || projectIds.isEmpty() || projectIds.contains(null)) {
+        if (projectIds == null || projectIds.isEmpty() || projectIds.stream().anyMatch(java.util.Objects::isNull)) {
             throw new IllegalArgumentException("يجب تحديد مشروع واحد على الأقل بدون عناصر فارغة");
         }
         if (projectIds.size() > 200) {
