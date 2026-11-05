@@ -91,7 +91,7 @@ public class ExportController {
         };
 
         return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(ExportFormatPolicy.mediaType(export.getPackageName()))
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment()

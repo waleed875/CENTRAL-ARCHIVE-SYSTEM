@@ -62,6 +62,11 @@ public class ExportService {
     private final PackageArchiveService packageArchiveService;
     private final ConfidentialityAccessService confidentialityAccessService;
     private final UUID archiveInstanceUuid;
+    // Optional field injection preserves the legacy constructor used in isolated unit tests.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ExportAlternativeWriter alternativeWriter;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ExportEncryptedPackageWriter encryptedWriter;
 
     public ExportService(ProjectRepository projectRepository,
                          ProjectMemberRepository projectMemberRepository,
@@ -119,7 +124,7 @@ public class ExportService {
         }
         return new ExportPreviewResponse(new LinkedHashSet<>(request.projectIds()).size(),
                 families.size(), selected.size(), totalFiles, totalBytes,
-                "PKG", request.allVersions() ? "ALL" : "EXACT", true, summary);
+                request.selectedFormat(), request.allVersions() ? "ALL" : "EXACT", true, summary);
     }
 
     /**
@@ -169,7 +174,9 @@ public class ExportService {
         String schemaVersion = withVersions ? VERSIONED_SCHEMA_VERSION : SCHEMA_VERSION;
         UUID packageUuid = UUID.randomUUID();
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        String packageName = "export_" + timestamp + "_" + packageUuid + ".pkg";
+        String format = request.selectedFormat();
+        String extension = ExportFormatPolicy.extension(format, request.encrypted());
+        String packageName = "export_" + timestamp + "_" + packageUuid + "." + extension;
         String packageObjectKey = "exports/" + packageUuid + "/" + packageName;
 
         ObjectNode manifest = objectMapper.createObjectNode();
@@ -296,8 +303,22 @@ public class ExportService {
         Path tempPackage = null;
 
         try {
-            tempPackage = Files.createTempFile("central-archive-export-", ".pkg");
-            writePackage(tempPackage, manifestBytes, projectsNode);
+            tempPackage = Files.createTempFile("central-archive-export-", "." + extension);
+            if (request.encrypted()) {
+                if (encryptedWriter == null) throw new IllegalStateException("Encrypted export writer is not configured");
+                Path plain = Files.createTempFile("central-archive-inner-", ".pkg");
+                try {
+                    writePackage(plain, manifestBytes, projectsNode);
+                    encryptedWriter.seal(plain, tempPackage, manifest, request.exportPassphrase());
+                } finally {
+                    Files.deleteIfExists(plain);
+                }
+            } else if ("PKG".equals(format)) {
+                writePackage(tempPackage, manifestBytes, projectsNode);
+            } else {
+                if (alternativeWriter == null) throw new IllegalStateException("Export report writer is not configured");
+                alternativeWriter.write(format, tempPackage, manifest);
+            }
 
             String packageHash;
             try (InputStream input = Files.newInputStream(tempPackage)) {
@@ -309,7 +330,7 @@ public class ExportService {
                         input,
                         minioConfig.getBucket(),
                         packageObjectKey,
-                        "application/octet-stream",
+                        ExportFormatPolicy.mediaType(packageName).toString(),
                         Files.size(tempPackage)
                 );
             }
