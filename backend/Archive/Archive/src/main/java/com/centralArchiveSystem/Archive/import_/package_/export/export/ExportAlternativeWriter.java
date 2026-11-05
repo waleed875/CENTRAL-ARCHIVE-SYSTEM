@@ -122,9 +122,10 @@ public class ExportAlternativeWriter {
     }
 
     private static String safeName(String value) {
-        return value.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
-                .replaceAll("^\\.+", "_")
-                .substring(0, Math.min(value.length(), 120));
+        String sanitized = value.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
+                .replaceAll("^\\.+", "_");
+        if (sanitized.isEmpty()) sanitized = "document";
+        return sanitized.substring(0, Math.min(sanitized.length(), 120));
     }
 
     /** Arabic RTL sheet with the original name, number, version and file inventory. */
