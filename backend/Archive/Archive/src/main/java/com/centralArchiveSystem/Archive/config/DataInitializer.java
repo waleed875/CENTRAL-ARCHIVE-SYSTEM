@@ -160,8 +160,8 @@ public class DataInitializer implements CommandLineRunner {
      * the report never states where its sub-types sit relative to this list. That is
      * why the sub-types below are attached only where the category name is either
      * identical or a one-word synonym, and why "صوت" is left out: none of the eight
-     * categories is about audio, and file_types.category_id is NOT NULL, so there is
-     * nowhere honest to put it.
+     * categories was originally missing audio, so the new AUDIO category groups
+     * sound recordings without changing the meaning of the existing categories.
      *
      * <p>The legacy migration creates its own LEGACY category and LEGACY-FILE type on
      * demand, so they are deliberately absent here.
@@ -171,6 +171,7 @@ public class DataInitializer implements CommandLineRunner {
         seedFileCategory("EXPERIMENTS", "تجارب");
         seedFileCategory("IMAGES", "صور");
         seedFileCategory("VIDEOS", "فيديوهات");
+        seedFileCategory("AUDIO", "تسجيلات صوتية");
         seedFileCategory("TESTS", "اختبارات");
         seedFileCategory("SOURCE_CODE", "أكواد برمجية");
         seedFileCategory("REPORTS", "تقارير");
@@ -220,10 +221,26 @@ public class DataInitializer implements CommandLineRunner {
                         {"SOURCE-CONFIG", "ملفات إعدادات"},
                         {"SOURCE-BINARY", "ملفات تنفيذية"},
                         {"SOURCE-TECHNICAL-DOC", "توثيق تقني"}});
-        // §9.2 "الوسائط" -> §9.1 "صور" and "فيديوهات". Its third entry, "صوت", has no
-        // home among the eight categories and is not seeded.
-        seedFileTypesUnder("IMAGES", "صور", new String[][]{{"MEDIA-IMAGE", "صور"}});
-        seedFileTypesUnder("VIDEOS", "فيديوهات", new String[][]{{"MEDIA-VIDEO", "فيديو"}});
+        // Preserve the legacy generic media types. Add explicit extension-bound types
+        // for supported safe media and archives; executable binaries remain blocked.
+        seedFileTypesUnder("IMAGES", "صور", new String[][]{
+                {"MEDIA-IMAGE", "صور"},
+                {"MEDIA-HEIC", "صور HEIC", "heic"},
+                {"MEDIA-AVIF", "صور AVIF", "avif"}});
+        seedFileTypesUnder("VIDEOS", "فيديوهات", new String[][]{
+                {"MEDIA-VIDEO", "فيديو"},
+                {"MEDIA-WEBM", "فيديو WebM", "webm"},
+                {"MEDIA-MKV", "فيديو Matroska", "mkv"},
+                {"MEDIA-AVI", "فيديو AVI", "avi"}});
+        seedFileTypesUnder("AUDIO", "تسجيلات صوتية", new String[][]{
+                {"AUDIO-MP3", "صوت MP3", "mp3"},
+                {"AUDIO-WAV", "صوت WAV", "wav"},
+                {"AUDIO-FLAC", "صوت FLAC", "flac"},
+                {"AUDIO-M4A", "صوت M4A", "m4a"}});
+        seedFileTypesUnder("SUPPORTING_ATTACHMENTS", "مرفقات داعمة", new String[][]{
+                {"ARCHIVE-7Z", "أرشيف 7Z", "7z"},
+                {"ARCHIVE-TAR", "أرشيف TAR", "tar"},
+                {"ARCHIVE-GZ", "ملف GZip", "gz"}});
     }
 
     private void seedFileTypesUnder(String categoryCode, String categoryName, String[][] types) {
@@ -236,6 +253,9 @@ public class DataInitializer implements CommandLineRunner {
             fileType.setCategoryId(category.getId());
             fileType.setCode(type[0]);
             fileType.setName(type[1]);
+            if (type.length > 2) {
+                fileType.setDefaultExtension(type[2]);
+            }
             fileType.setIsActive(true);
             fileTypeRepository.save(fileType);
         }
