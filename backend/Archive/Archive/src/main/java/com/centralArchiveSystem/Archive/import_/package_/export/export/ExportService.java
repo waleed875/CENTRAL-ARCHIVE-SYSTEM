@@ -185,7 +185,8 @@ public class ExportService {
 
         for (Project project : selectedProjects) {
             UUID projectId = project.getId();
-            confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+            // resolveProjects already verified clearance for every version, without
+            // silently filtering high-confidentiality historical records.
             sourceOrganizationIds.add(project.getOrganizationId());
 
             ObjectNode projectNode = projectsNode.addObject();
