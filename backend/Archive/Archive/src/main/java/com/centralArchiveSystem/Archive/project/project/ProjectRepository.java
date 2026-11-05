@@ -16,6 +16,9 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     Optional<Project> findByProjectUid(UUID projectUid);
 
+    /** All versions, including confidential ones; callers MUST enforce clearance on every row. */
+    List<Project> findByProjectUidOrderByVersionNoAsc(UUID projectUid);
+
     /**
      * Matches the projects_organization_id_project_number_year_version_no_key constraint. The legacy
      * migration checks it before inserting so a duplicate is reported instead of aborting the

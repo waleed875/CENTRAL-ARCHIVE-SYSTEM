@@ -862,6 +862,10 @@ public class BranchPackageService {
                 throw new IllegalStateException("Stored manifest has no projects array");
             }
             importOperationService.initializeProjectStatistics(operationId, projects.size());
+            if ("2.0".equals(pkg.getSchemaVersion())) {
+                importVersionedFamilies(id, operation, pkg, request, importedBy, projects);
+                return;
+            }
 
             for (JsonNode projectNode : projects) {
                 importOperationService.heartbeat(operationId);
@@ -954,6 +958,138 @@ public class BranchPackageService {
             branchPackageRepository.save(pkg);
             importOperationService.updateStatus(operation.getId(), ImportOperation.Status.FAILED, e.getMessage());
         }
+    }
+
+
+    /**
+     * In versioned PKG v2 a project family must import atomically: no isolated
+     * "version 2" project is acceptable if version 1 or its files failed.
+     * We retain the historical v1 project-by-project import behavior.
+     */
+    private void importVersionedFamilies(UUID packageId,
+                                         ImportOperation operation,
+                                         BranchPackage pkg,
+                                         PackageImportRequest request,
+                                         UUID importedBy,
+                                         JsonNode projects) {
+        Map<UUID, List<JsonNode>> families = new LinkedHashMap<>();
+        for (JsonNode project : projects) {
+            families.computeIfAbsent(requiredUuid(project, "project_uid"),
+                    ignored -> new ArrayList<>()).add(project);
+        }
+
+        int importedVersions = 0;
+        int failedVersions = 0;
+        int skippedVersions = 0;
+        for (List<JsonNode> versions : families.values()) {
+            versions.sort(java.util.Comparator.comparingInt(node -> node.path("version_no").asInt()));
+            List<StoredObject> objects = new ArrayList<>();
+            try {
+                boolean skipped = Boolean.TRUE.equals(projectImportTransaction.execute(status -> {
+                    try {
+                        return importVersionedFamily(versions, pkg, request, importedBy, objects);
+                    } catch (Exception exception) {
+                        throw new ProjectImportException(exception);
+                    }
+                }));
+                for (int i = 0; i < versions.size(); i++) {
+                    importOperationService.recordProjectOutcome(operation.getId(),
+                            skipped ? ImportOperationService.ProjectOutcome.SKIPPED
+                                    : ImportOperationService.ProjectOutcome.IMPORTED);
+                }
+                if (skipped) skippedVersions += versions.size();
+                else importedVersions += versions.size();
+            } catch (Exception exception) {
+                cleanupImportedObjects(objects);
+                failedVersions += versions.size();
+                for (int i = 0; i < versions.size(); i++) {
+                    importOperationService.recordProjectOutcome(operation.getId(),
+                            ImportOperationService.ProjectOutcome.FAILED);
+                }
+                log.error("Failed to import versioned project family in package {}", packageId, exception);
+            } finally {
+                importOperationService.heartbeat(operation.getId());
+            }
+        }
+        if (failedVersions == 0) {
+            pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
+            pkg.setImportedAt(LocalDateTime.now());
+            pkg.setErrorMessage(null);
+            importOperationService.updateStatus(operation.getId(),
+                    ImportOperation.Status.SUCCESS, null);
+        } else if (importedVersions > 0 || skippedVersions > 0) {
+            pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
+            pkg.setImportedAt(LocalDateTime.now());
+            pkg.setErrorMessage(failedVersions + " version(s) failed in atomic family imports");
+            importOperationService.updateStatus(operation.getId(),
+                    ImportOperation.Status.PARTIAL, pkg.getErrorMessage());
+        } else {
+            pkg.setStatus(BranchPackage.PackageStatus.FAILED);
+            pkg.setErrorMessage("All versioned project families failed to import");
+            importOperationService.updateStatus(operation.getId(),
+                    ImportOperation.Status.FAILED, pkg.getErrorMessage());
+        }
+        branchPackageRepository.save(pkg);
+    }
+
+    /** Returns true when the entire source family was already imported by this same package. */
+    private boolean importVersionedFamily(List<JsonNode> versions,
+                                           BranchPackage pkg,
+                                           PackageImportRequest request,
+                                           UUID importedBy,
+                                           List<StoredObject> objects) throws Exception {
+        int alreadyLinked = 0;
+        for (JsonNode node : versions) {
+            if (packageProjectRepository.findByPackageIdAndLocalProjectUuid(
+                    pkg.getId(), requiredUuid(node, "project_id")).isPresent()) alreadyLinked++;
+        }
+        if (alreadyLinked == versions.size()) return true;
+        if (alreadyLinked > 0) {
+            throw new IllegalStateException("Version family was only partly linked to this package");
+        }
+
+        // Never attach a version chain to a previously existing unrelated project.
+        for (JsonNode node : versions) {
+            UUID orgId = resolveOrganization(node, pkg, request);
+            if (projectRepository.existsByOrganizationIdAndProjectNumberAndYearAndVersionNo(
+                    orgId, requiredText(node, "project_number"), node.path("year").asInt(),
+                    node.path("version_no").asInt())) {
+                throw new IllegalStateException("Project version already exists in the destination");
+            }
+        }
+
+        UUID newFamilyUid = UUID.randomUUID();
+        Project previous = null;
+        for (JsonNode node : versions) {
+            UUID orgId = resolveOrganization(node, pkg, request);
+            Project project = buildProject(node, orgId, pkg, request, importedBy);
+            project.setProjectUid(newFamilyUid);
+            project.setVersionNo(node.path("version_no").asInt());
+            project.setPreviousProjectId(previous == null ? null : previous.getId());
+            project.setIsLatestVersion(node.path("is_latest_version").asBoolean());
+            Project saved = projectRepository.saveAndFlush(project);
+            createProjectMembers(node, saved.getId());
+
+            int fileCount = 0;
+            JsonNode fileNodes = node.path("files");
+            if (fileNodes.isArray()) {
+                for (JsonNode fileNode : fileNodes) {
+                    // Any missing blob/mapping aborts this entire family, not merely one version.
+                    objects.add(importFile(fileNode, saved.getId(),
+                            saved.getConfidentialityLevelId(), pkg, request, importedBy));
+                    fileCount++;
+                }
+            }
+
+            PackageProject link = createPackageProjectLink(pkg, saved,
+                    requiredUuid(node, "project_id"), node, PackageProject.ImportStatus.IMPORTED);
+            link.setFilesCount(fileCount);
+            link.setFilesImported(fileCount);
+            link.setFilesFailed(0);
+            packageProjectRepository.save(link);
+            previous = saved;
+        }
+        return false;
     }
 
     private JsonNode revalidateStoredPackageForImport(BranchPackage pkg) throws Exception {
