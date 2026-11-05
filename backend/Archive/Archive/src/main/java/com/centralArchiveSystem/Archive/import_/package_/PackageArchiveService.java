@@ -412,6 +412,10 @@ public class PackageArchiveService {
             return;
         }
 
+        if ("2.0".equals(manifest.path("schema_version").asText())) {
+            validateVersionFamilies(projects, errors);
+        }
+
         int index = 0;
         for (JsonNode project : projects) {
             String location = "projects[" + index + "]";
@@ -438,6 +442,43 @@ public class PackageArchiveService {
                 errors.add("members must be an array in " + location);
             }
             index++;
+        }
+    }
+
+
+    /** Strict v2 history validation prevents broken chains and forged latest flags. */
+    private void validateVersionFamilies(JsonNode projects, List<String> errors) {
+        Map<String, List<JsonNode>> families = new LinkedHashMap<>();
+        Set<String> seenProjectIds = new HashSet<>();
+        for (JsonNode project : projects) {
+            String projectId = textOrNull(project, "project_id");
+            String uid = textOrNull(project, "project_uid");
+            validateRequiredUuid(project, "project_uid", "versioned project", errors);
+            validateOptionalUuid(project, "previous_project_id", "versioned project", errors);
+            if (projectId == null || !seenProjectIds.add(projectId)) {
+                errors.add("Duplicate or missing project_id in versioned package");
+            }
+            if (!project.path("version_no").canConvertToInt()
+                    || project.path("version_no").asInt() < 1
+                    || !project.path("is_latest_version").isBoolean()) {
+                errors.add("Missing or invalid version_no/is_latest_version in versioned package");
+            }
+            if (uid != null) families.computeIfAbsent(uid, ignored -> new ArrayList<>()).add(project);
+        }
+        for (Map.Entry<String, List<JsonNode>> family : families.entrySet()) {
+            List<JsonNode> versions = family.getValue();
+            versions.sort(java.util.Comparator.comparingInt(n -> n.path("version_no").asInt()));
+            for (int i = 0; i < versions.size(); i++) {
+                JsonNode version = versions.get(i);
+                String expectedParent = i == 0 ? null : textOrNull(versions.get(i - 1), "project_id");
+                String actualParent = textOrNull(version, "previous_project_id");
+                if (version.path("version_no").asInt() != i + 1
+                        || !java.util.Objects.equals(expectedParent, actualParent)
+                        || version.path("is_latest_version").asBoolean() != (i == versions.size() - 1)) {
+                    errors.add("Incomplete or inconsistent version history: " + family.getKey());
+                    break;
+                }
+            }
         }
     }
 
