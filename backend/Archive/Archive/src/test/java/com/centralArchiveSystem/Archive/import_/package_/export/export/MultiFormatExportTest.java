@@ -2,6 +2,8 @@ package com.centralArchiveSystem.Archive.import_.package_.export.export;
 
 import com.centralArchiveSystem.Archive.import_.package_.SealedPackageDecryptor;
 import com.centralArchiveSystem.Archive.import_.package_.SealedPackageInspector;
+import com.centralArchiveSystem.Archive.import_.package_.SealedPayloadCanonicalizer;
+import com.centralArchiveSystem.Archive.import_.package_.PackageArchiveService;
 import com.centralArchiveSystem.Archive.project.file.FileEntity;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
@@ -24,6 +26,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
+import java.util.zip.ZipEntry;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -129,11 +133,20 @@ class MultiFormatExportTest {
 
     @Test
     void encryptedPkgCanBeInspectedAndDecryptedByExistingImporter() throws Exception {
-        JsonNode manifest = manifest(UUID.randomUUID(), UUID.randomUUID(),
-                "not added to this fixture".getBytes(StandardCharsets.UTF_8));
-        // This test deliberately exercises envelope authenticity and passphrase compatibility;
-        // the plain inner bytes can be replaced by a fully verified PKG archive.
-        byte[] payload = "inner archive test payload".getBytes(StandardCharsets.UTF_8);
+        byte[] fileBytes = "verified inner archive file contents".getBytes(StandardCharsets.UTF_8);
+        JsonNode manifest = manifest(UUID.randomUUID(), UUID.randomUUID(), fileBytes);
+        byte[] payload;
+        try (var bytes = new java.io.ByteArrayOutputStream();
+             ZipOutputStream zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(new ZipEntry("manifest.json"));
+            zip.write(mapper.writeValueAsBytes(manifest));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("files/sample.txt"));
+            zip.write(fileBytes);
+            zip.closeEntry();
+            zip.finish();
+            payload = bytes.toByteArray();
+        }
         Path source = Files.createTempFile("inner-test-", ".pkg");
         Path encrypted = Files.createTempFile("sealed-test-", ".nxpkg");
         try {
@@ -150,6 +163,16 @@ class MultiFormatExportTest {
             var decryptor = new SealedPackageDecryptor();
             try (var decrypted = decryptor.decrypt(upload, inspected, "TestSecretStrongPassphrase2026!")) {
                 assertArrayEquals(payload, Files.readAllBytes(decrypted.path()));
+                var canonicalizer = new SealedPayloadCanonicalizer(mapper);
+                try (var canonical = canonicalizer.canonicalize(decrypted.path(), inspected.header());
+                     InputStream pkg = Files.newInputStream(canonical.path())) {
+                    var verification = new PackageArchiveService(mapper, "1.0,2.0")
+                            .verifyContents(pkg, canonical.manifestHash(), "2.0");
+                    assertTrue(verification.errors().isEmpty(), verification.errors().toString());
+                    assertTrue(verification.filesValid());
+                    assertTrue(verification.manifestHashValid());
+                    assertTrue(verification.schemaVersionValid());
+                }
             }
             assertThrows(IllegalArgumentException.class, () -> {
                 try (var ignored = decryptor.decrypt(upload, inspected, "WrongPasswordThatIsLongEnough")) {}
