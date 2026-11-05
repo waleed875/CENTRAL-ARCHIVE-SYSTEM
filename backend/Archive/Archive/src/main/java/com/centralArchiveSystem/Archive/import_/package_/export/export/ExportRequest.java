@@ -8,11 +8,11 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Without versionScope, retain the legacy v1 behavior: export only the exact
- * row IDs supplied. New clients explicitly request ALL for a versioned v2 .pkg.
- * File content and integrity checks are mandatory, not client-disableable.
+ * The server always enforces classification clearance and SHA-256 integrity.
+ * PKG is importable; ZIP delivers original files; XLSX/PDF are metadata-only reports.
+ * Absent format/versionScope retains the old exact-row v1 PKG behavior.
  */
-@Schema(description = "Selected projects and optional version-aware PKG export settings")
+@Schema(description = "Selected projects and export format, versions and protection")
 public record ExportRequest(
         @NotEmpty(message = "يجب تحديد مشروع واحد على الأقل")
         List<@NotNull(message = "لا تُقبل عناصر فارغة داخل القائمة") UUID> projectIds,
@@ -25,12 +25,23 @@ public record ExportRequest(
         this(projectIds, null, null, null, null);
     }
 
-    public boolean allVersions() {
-        return "ALL".equals(versionScope);
+    public boolean allVersions() { return "ALL".equals(versionScope); }
+
+    public String selectedFormat() {
+        return format == null ? "PKG" : format;
+    }
+
+    public boolean encrypted() {
+        return protection != null && "PASSPHRASE".equals(protection.encryptionMode());
+    }
+
+    public String exportPassphrase() {
+        return protection == null ? null : protection.passphrase();
     }
 
     public void validateOptions() {
-        if (projectIds == null || projectIds.isEmpty() || projectIds.stream().anyMatch(java.util.Objects::isNull)) {
+        if (projectIds == null || projectIds.isEmpty()
+                || projectIds.stream().anyMatch(java.util.Objects::isNull)) {
             throw new IllegalArgumentException("يجب تحديد مشروع واحد على الأقل بدون عناصر فارغة");
         }
         if (projectIds.size() > 200) {
@@ -39,18 +50,56 @@ public record ExportRequest(
         if (versionScope != null && !versionScope.equals("ALL") && !versionScope.equals("EXACT")) {
             throw new IllegalArgumentException("versionScope must be ALL or EXACT");
         }
-        if (format != null && !"PKG".equals(format)) {
-            throw new IllegalArgumentException("Only PKG export is supported");
+        String selected = selectedFormat();
+        if (!List.of("PKG", "ZIP", "XLSX", "PDF").contains(selected)) {
+            throw new IllegalArgumentException("نوع التصدير غير مدعوم");
         }
-        if (contents != null && (!Boolean.TRUE.equals(contents.data()) || !Boolean.TRUE.equals(contents.files()))) {
-            throw new IllegalArgumentException("PKG export must include both data and files");
+        if (contents != null) {
+            boolean data = Boolean.TRUE.equals(contents.data());
+            boolean files = Boolean.TRUE.equals(contents.files());
+            if (!data || (List.of("PKG", "ZIP").contains(selected) != files)) {
+                throw new IllegalArgumentException("حزم PKG/ZIP تتطلب البيانات والملفات؛ تقارير Excel/PDF تحتوي البيانات فقط");
+            }
         }
-        if (protection != null && (!Boolean.TRUE.equals(protection.enabled())
-                || !"SHA256".equals(protection.integrity()))) {
-            throw new IllegalArgumentException("PKG export requires enabled SHA256 integrity protection");
+        if (protection != null) {
+            if (!Boolean.TRUE.equals(protection.enabled())
+                    || !"SHA256".equals(protection.integrity())) {
+                throw new IllegalArgumentException("التحقق من صلاحيات التصدير وسلامة SHA-256 إلزامي");
+            }
+            String mode = protection.encryptionMode();
+            if (mode != null && !List.of("NONE", "PASSPHRASE").contains(mode)) {
+                throw new IllegalArgumentException("وضع تشفير الحزمة غير مدعوم");
+            }
+            if (encrypted()) {
+                if (!"PKG".equals(selected)) {
+                    throw new IllegalArgumentException("التشفير متاح لحزمة PKG القابلة للاستيراد فقط");
+                }
+                String passphrase = exportPassphrase();
+                if (passphrase == null || passphrase.length() < 12 || passphrase.length() > 256
+                        || passphrase.isBlank()) {
+                    throw new IllegalArgumentException("كلمة مرور التشفير يجب أن تتكون من 12 إلى 256 حرفًا");
+                }
+            } else if (protection.passphrase() != null && !protection.passphrase().isEmpty()) {
+                throw new IllegalArgumentException("كلمة المرور مسموحة في وضع التشفير فقط");
+            }
         }
     }
 
     public record ExportContents(Boolean data, Boolean files) {}
-    public record ExportProtection(Boolean enabled, String integrity) {}
+
+    public record ExportProtection(Boolean enabled, String integrity,
+                                   String encryptionMode, String passphrase) {
+        public ExportProtection(Boolean enabled, String integrity) {
+            this(enabled, integrity, null, null);
+        }
+        @Override public String toString() {
+            return "ExportProtection[enabled=" + enabled + ", integrity=" + integrity
+                    + ", encryptionMode=" + encryptionMode + ", passphrase=[REDACTED]]";
+        }
+    }
+
+    @Override public String toString() {
+        return "ExportRequest[projectIds=" + projectIds + ", versionScope=" + versionScope
+                + ", format=" + format + ", protection=[REDACTED]]";
+    }
 }
