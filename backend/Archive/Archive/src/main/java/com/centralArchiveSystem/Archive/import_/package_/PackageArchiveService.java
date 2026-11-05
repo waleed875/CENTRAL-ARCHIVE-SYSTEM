@@ -49,7 +49,7 @@ public class PackageArchiveService {
 
     public PackageArchiveService(
             ObjectMapper objectMapper,
-            @Value("${archive.packages.supported-schema-versions:1.0}") String supportedSchemaVersions) {
+            @Value("${archive.packages.supported-schema-versions:1.0,2.0}") String supportedSchemaVersions) {
         this.objectMapper = objectMapper;
         this.supportedSchemaVersions = new HashSet<>();
         for (String version : supportedSchemaVersions.split(",")) {

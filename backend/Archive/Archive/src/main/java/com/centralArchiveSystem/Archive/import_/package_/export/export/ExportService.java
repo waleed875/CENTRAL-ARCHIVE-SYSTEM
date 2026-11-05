@@ -32,6 +32,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Objects;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -45,6 +49,7 @@ public class ExportService {
 
     private static final Logger log = LoggerFactory.getLogger(ExportService.class);
     private static final String SCHEMA_VERSION = "1.0";
+    private static final String VERSIONED_SCHEMA_VERSION = "2.0";
     private static final int BUFFER_SIZE = 8192;
 
     private final ProjectRepository projectRepository;
@@ -80,9 +85,88 @@ public class ExportService {
         this.archiveInstanceUuid = archiveInstanceUuid;
     }
 
-    public ProjectExport createExport(List<UUID> projectIds,
+    /** Retains legacy exact-row export for older callers and existing 1.0 packages. */
+    public ProjectExport createExport(List<UUID> projectIds, UUID exportedBy, String sourceUsername) {
+        return createExport(new ExportRequest(projectIds), exportedBy, sourceUsername);
+    }
+
+    @Transactional(readOnly = true)
+    public ExportPreviewResponse preview(ExportRequest request) {
+        List<Project> selected = resolveProjects(request);
+        Map<UUID, List<Project>> families = new LinkedHashMap<>();
+        for (Project project : selected) {
+            UUID key = project.getProjectUid() != null ? project.getProjectUid() : project.getId();
+            families.computeIfAbsent(key, ignored -> new ArrayList<>()).add(project);
+        }
+        int totalFiles = 0;
+        long totalBytes = 0;
+        List<ExportPreviewResponse.Family> summary = new ArrayList<>();
+        for (Map.Entry<UUID, List<Project>> entry : families.entrySet()) {
+            int filesCount = 0;
+            long bytes = 0;
+            for (Project project : entry.getValue()) {
+                for (FileEntity file : fileRepository.findByProjectIdAndDeletedAtIsNull(project.getId())) {
+                    confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
+                    filesCount++;
+                    bytes += file.getSizeBytes() == null ? 0 : file.getSizeBytes();
+                }
+            }
+            Project newest = entry.getValue().get(entry.getValue().size() - 1);
+            summary.add(new ExportPreviewResponse.Family(entry.getKey(), newest.getName(),
+                    entry.getValue().size(), filesCount, bytes));
+            totalFiles += filesCount;
+            totalBytes += bytes;
+        }
+        return new ExportPreviewResponse(new LinkedHashSet<>(request.projectIds()).size(),
+                families.size(), selected.size(), totalFiles, totalBytes,
+                "PKG", request.allVersions() ? "ALL" : "EXACT", true, summary);
+    }
+
+    /**
+     * Fetches the COMPLETE version family, not findAccessibleVersions(), which silently
+     * omits confidential rows. A single hidden version must fail the entire export.
+     */
+    private List<Project> resolveProjects(ExportRequest request) {
+        if (request == null) throw new IllegalArgumentException("Export request is required");
+        request.validateOptions();
+        List<Project> resolved = new ArrayList<>();
+        Set<UUID> familiesSeen = new LinkedHashSet<>();
+        for (UUID requestedId : new LinkedHashSet<>(request.projectIds())) {
+            Project requested = projectRepository.findById(requestedId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Project", "id", requestedId));
+            confidentialityAccessService.requireReadAccess(requested.getConfidentialityLevelId());
+            if (!request.allVersions()) {
+                resolved.add(requested);
+                continue;
+            }
+            UUID familyId = requested.getProjectUid();
+            if (familyId == null) {
+                throw new IllegalArgumentException("Selected project has no version family: " + requestedId);
+            }
+            if (!familiesSeen.add(familyId)) continue;
+            List<Project> versions = projectRepository.findByProjectUidOrderByVersionNoAsc(familyId);
+            if (versions.isEmpty()) throw new IllegalStateException("Project version family is empty");
+            for (int i = 0; i < versions.size(); i++) {
+                Project current = versions.get(i);
+                confidentialityAccessService.requireReadAccess(current.getConfidentialityLevelId());
+                if (!Objects.equals(current.getProjectUid(), familyId)
+                        || !Objects.equals(current.getVersionNo(), i + 1)
+                        || !Objects.equals(current.getPreviousProjectId(), i == 0 ? null : versions.get(i-1).getId())
+                        || Boolean.TRUE.equals(current.getIsLatestVersion()) != (i == versions.size() - 1)) {
+                    throw new IllegalStateException("Project version history is incomplete or inconsistent: " + familyId);
+                }
+            }
+            resolved.addAll(versions);
+        }
+        return resolved;
+    }
+
+    public ProjectExport createExport(ExportRequest request,
                                       UUID exportedBy,
                                       String sourceUsername) {
+        List<Project> selectedProjects = resolveProjects(request);
+        boolean withVersions = request.allVersions();
+        String schemaVersion = withVersions ? VERSIONED_SCHEMA_VERSION : SCHEMA_VERSION;
         UUID packageUuid = UUID.randomUUID();
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         String packageName = "export_" + timestamp + "_" + packageUuid + ".pkg";
@@ -91,7 +175,7 @@ public class ExportService {
         ObjectNode manifest = objectMapper.createObjectNode();
         manifest.put("package_uuid", packageUuid.toString());
         manifest.put("package_name", packageName);
-        manifest.put("schema_version", SCHEMA_VERSION);
+        manifest.put("schema_version", schemaVersion);
         manifest.put("source_terminal_uuid", archiveInstanceUuid.toString());
         manifest.put("source_username", sourceUsername != null ? sourceUsername : "system");
 
@@ -99,15 +183,21 @@ public class ExportService {
         int totalFiles = 0;
         Set<UUID> sourceOrganizationIds = new LinkedHashSet<>();
 
-        for (UUID projectId : projectIds) {
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
-
+        for (Project project : selectedProjects) {
+            UUID projectId = project.getId();
             confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
             sourceOrganizationIds.add(project.getOrganizationId());
 
             ObjectNode projectNode = projectsNode.addObject();
             projectNode.put("project_id", project.getId().toString());
+            if (withVersions) {
+                projectNode.put("project_uid", project.getProjectUid().toString());
+                projectNode.put("version_no", project.getVersionNo());
+                projectNode.put("is_latest_version", Boolean.TRUE.equals(project.getIsLatestVersion()));
+                putNullable(projectNode, "previous_project_id",
+                        project.getPreviousProjectId() == null ? null : project.getPreviousProjectId().toString());
+                projectNode.put("source_status", project.getStatus().name());
+            }
             projectNode.put("organization_id", project.getOrganizationId().toString());
             projectNode.put("project_number", project.getProjectNumber());
             putNullable(projectNode, "project_code", project.getProjectCode());
@@ -189,10 +279,10 @@ public class ExportService {
         ProjectExport export = new ProjectExport();
         export.setPackageUuid(packageUuid);
         export.setPackageName(packageName);
-        export.setSchemaVersion(SCHEMA_VERSION);
+        export.setSchemaVersion(schemaVersion);
         export.setSourceOrganizationId(sourceOrganizationId);
         export.setSourceUsername(sourceUsername);
-        export.setProjectsCount(projectIds.size());
+        export.setProjectsCount(selectedProjects.size());
         export.setFilesCount(totalFiles);
         export.setManifestData(new String(manifestBytes, java.nio.charset.StandardCharsets.UTF_8));
         export.setManifestHash(sha256(manifestBytes));
@@ -229,7 +319,7 @@ public class ExportService {
             saved = exportRepository.save(saved);
 
             log.info("Package exported: id={}, packageUuid={}, projects={}, files={}, objectKey={}",
-                    saved.getId(), packageUuid, projectIds.size(), totalFiles, packageObjectKey);
+                    saved.getId(), packageUuid, selectedProjects.size(), totalFiles, packageObjectKey);
             return saved;
         } catch (Exception e) {
             log.error("Failed to create export package {}", packageUuid, e);

@@ -33,12 +33,19 @@ public class ExportController {
         this.currentUserService = currentUserService;
     }
 
+    @PostMapping("/preview")
+    @PreAuthorize("hasAnyRole('system_admin', 'export_officer')")
+    @Operation(summary = "Preview selected projects, all their versions and file totals before exporting")
+    public ResponseEntity<ApiResponse<ExportPreviewResponse>> preview(@Valid @RequestBody ExportRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(exportService.preview(request)));
+    }
+
     @PostMapping
     @PreAuthorize("hasAnyRole('system_admin', 'export_officer')")
     @Operation(summary = "Create a .pkg export archive from selected projects")
     public ResponseEntity<ApiResponse<ProjectExport>> create(@Valid @RequestBody ExportRequest request) {
         ProjectExport export = exportService.createExport(
-                request.projectIds(),
+                request,
                 currentUserService.userId(),
                 currentUserService.username()
         );
