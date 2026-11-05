@@ -82,7 +82,19 @@ public final class FileContentInspector {
             Map.entry("rtf", "application/rtf"),
             Map.entry("dwg", "application/acad"),
             Map.entry("mp4", "video/mp4"),
-            Map.entry("mov", "video/quicktime")
+            Map.entry("mov", "video/quicktime"),
+            Map.entry("mp3", "audio/mpeg"),
+            Map.entry("wav", "audio/wav"),
+            Map.entry("flac", "audio/flac"),
+            Map.entry("m4a", "audio/mp4"),
+            Map.entry("mkv", "video/x-matroska"),
+            Map.entry("webm", "video/webm"),
+            Map.entry("avi", "video/x-msvideo"),
+            Map.entry("heic", "image/heic"),
+            Map.entry("avif", "image/avif"),
+            Map.entry("7z", "application/x-7z-compressed"),
+            Map.entry("tar", "application/x-tar"),
+            Map.entry("gz", "application/gzip")
     );
 
     private FileContentInspector() {
@@ -157,6 +169,25 @@ public final class FileContentInspector {
             case "rar" -> startsWith(prefix, RAR4_SIGNATURE) || startsWith(prefix, RAR5_SIGNATURE);
             case "mp4", "mov" -> prefix.length >= 12
                     && matchesAt(prefix, 4, "ftyp".getBytes(StandardCharsets.US_ASCII));
+            // Additional media and archive types are inspected by file signature rather than
+            // trusting filename or browser Content-Type. Executable headers remain forbidden.
+            case "mp3" -> isMp3(prefix);
+            case "wav" -> startsWith(prefix, "RIFF".getBytes(StandardCharsets.US_ASCII))
+                    && matchesAt(prefix, 8, "WAVE".getBytes(StandardCharsets.US_ASCII));
+            case "flac" -> startsWith(prefix, "fLaC".getBytes(StandardCharsets.US_ASCII));
+            case "m4a" -> hasFtypBrand(prefix, "M4A ", "M4B ");
+            case "mkv" -> hasEbmlDocType(prefix, "matroska");
+            case "webm" -> hasEbmlDocType(prefix, "webm");
+            case "avi" -> startsWith(prefix, "RIFF".getBytes(StandardCharsets.US_ASCII))
+                    && matchesAt(prefix, 8, "AVI ".getBytes(StandardCharsets.US_ASCII));
+            case "heic" -> hasFtypBrand(prefix, "heic", "heix", "hevc", "hevx");
+            case "avif" -> hasFtypBrand(prefix, "avif", "avis");
+            case "7z" -> startsWith(prefix, new byte[]{
+                    0x37, 0x7A, (byte) 0xBC, (byte) 0xAF, 0x27, 0x1C});
+            case "tar" -> matchesAt(prefix, 257, "ustar".getBytes(StandardCharsets.US_ASCII));
+            case "gz" -> prefix.length >= 10
+                    && matchesAt(prefix, 0, new byte[]{0x1F, (byte) 0x8B, 0x08})
+                    && (prefix[3] & (byte) 0xE0) == 0;
             default -> {
                 if (ZIP_EXTENSIONS.contains(expected)) {
                     yield isZip(prefix);
@@ -329,6 +360,60 @@ public final class FileContentInspector {
         if (windowsExecutable || elfExecutable) {
             throw new IllegalArgumentException("Executable file content is not allowed");
         }
+    }
+
+    private static boolean isMp3(byte[] prefix) {
+        if (startsWith(prefix, "ID3".getBytes(StandardCharsets.US_ASCII))) {
+            return prefix.length >= 10
+                    && (prefix[3] & 0xFF) != 0xFF
+                    && (prefix[4] & 0xFF) != 0xFF;
+        }
+        // MPEG layer III frame sync; rule out reserved MPEG version/layer/bitrate.
+        return prefix.length >= 4
+                && (prefix[0] & 0xFF) == 0xFF
+                && (prefix[1] & 0xE0) == 0xE0
+                && (prefix[1] & 0x18) != 0x08
+                && (prefix[1] & 0x06) == 0x02
+                && (prefix[2] & 0xF0) != 0xF0;
+    }
+
+    private static boolean hasFtypBrand(byte[] prefix, String... expectedBrands) {
+        if (prefix.length < 16 || !matchesAt(prefix, 4, "ftyp".getBytes(StandardCharsets.US_ASCII))) {
+            return false;
+        }
+        long length = ((prefix[0] & 0xFFL) << 24)
+                | ((prefix[1] & 0xFFL) << 16)
+                | ((prefix[2] & 0xFFL) << 8)
+                | (prefix[3] & 0xFFL);
+        if (length < 16) return false;
+        int limit = (int) Math.min(length, prefix.length);
+        // ftyp major brand at +8, compatible brands start at +16; +12 is minor version.
+        for (int offset = 8; offset + 4 <= limit; offset += 4) {
+            if (offset == 12) continue;
+            for (String brand : expectedBrands) {
+                if (matchesAt(prefix, offset, brand.getBytes(StandardCharsets.US_ASCII))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasEbmlDocType(byte[] prefix, String expectedType) {
+        if (!startsWith(prefix, new byte[]{0x1A, 0x45, (byte) 0xDF, (byte) 0xA3})) return false;
+        // EBML DocType element id 0x4282 followed by a one-byte VINT length.
+        int limit = Math.min(prefix.length - 3, 1024);
+        for (int offset = 4; offset < limit; offset++) {
+            if ((prefix[offset] & 0xFF) != 0x42 || (prefix[offset + 1] & 0xFF) != 0x82) continue;
+            int vint = prefix[offset + 2] & 0xFF;
+            if ((vint & 0x80) == 0) continue;
+            int length = vint & 0x7F;
+            if (length == expectedType.length()
+                    && matchesAt(prefix, offset + 3, expectedType.getBytes(StandardCharsets.US_ASCII))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isZip(byte[] prefix) {

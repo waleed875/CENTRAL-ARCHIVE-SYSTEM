@@ -216,6 +216,87 @@ class FileContentInspectorTest {
                 () -> FileContentInspector.validateMultipart(file, "rar"));
     }
 
+
+    @Test
+    void acceptsAdditionalMediaAndArchiveSignatures() {
+        byte[] tar = new byte[512];
+        byte[] ustar = "ustar".getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(ustar, 0, tar, 257, ustar.length);
+        byte[] m4a = ftyp("M4A ");
+        byte[] heic = ftyp("heic");
+        byte[] avif = ftyp("avif");
+        byte[] webm = ebml("webm");
+        byte[] mkv = ebml("matroska");
+
+        Object[][] samples = {
+                {"mp3", new byte[]{'I','D','3',4,0,0,0,0,0,0}, "audio/mpeg"},
+                {"wav", riff("WAVE"), "audio/wav"},
+                {"flac", new byte[]{'f','L','a','C'}, "audio/flac"},
+                {"m4a", m4a, "audio/mp4"},
+                {"avi", riff("AVI "), "video/x-msvideo"},
+                {"webm", webm, "video/webm"},
+                {"mkv", mkv, "video/x-matroska"},
+                {"heic", heic, "image/heic"},
+                {"avif", avif, "image/avif"},
+                {"7z", new byte[]{0x37,0x7A,(byte)0xBC,(byte)0xAF,0x27,0x1C}, "application/x-7z-compressed"},
+                {"tar", tar, "application/x-tar"},
+                {"gz", new byte[]{0x1F,(byte)0x8B,8,0,0,0,0,0,0,0}, "application/gzip"}
+        };
+        for (Object[] sample : samples) {
+            String extension = (String) sample[0];
+            byte[] bytes = (byte[]) sample[1];
+            String mimeType = (String) sample[2];
+            var input = new MockMultipartFile("file", "archive." + extension, "application/octet-stream", bytes);
+            assertEquals(mimeType, FileContentInspector.validateMultipart(input, extension),
+                    "Failed to recognize valid ." + extension);
+        }
+    }
+
+    @Test
+    void rejectsCrossFormatSpoofingAndExecutablesInNewMediaTypes() {
+        byte[] windowsExecutable = {0x4D,0x5A,0,0,0,0};
+        byte[] linuxExecutable = {0x7F,'E','L','F',0,0};
+        for (String type : new String[]{"mp3", "wav", "mkv", "webm", "7z", "heic", "tar", "gz"}) {
+            for (byte[] executable : new byte[][]{windowsExecutable, linuxExecutable}) {
+                var input = new MockMultipartFile("file", "malware." + type, "application/octet-stream", executable);
+                assertThrows(IllegalArgumentException.class,
+                        () -> FileContentInspector.validateMultipart(input, type), type);
+            }
+        }
+        assertThrows(IllegalArgumentException.class, () ->
+                FileContentInspector.validateMultipart(new MockMultipartFile("file", "app.exe",
+                        "application/octet-stream", windowsExecutable), "exe"));
+        assertThrows(IllegalArgumentException.class, () ->
+                FileContentInspector.validateMultipart(new MockMultipartFile("file", "image.avif",
+                        "image/avif", ftyp("heic")), "avif"));
+        assertThrows(IllegalArgumentException.class, () ->
+                FileContentInspector.validateMultipart(new MockMultipartFile("file", "recording.webm",
+                        "video/webm", ebml("matroska")), "webm"));
+    }
+
+    private static byte[] riff(String format) {
+        byte[] bytes = new byte[16];
+        System.arraycopy("RIFF".getBytes(StandardCharsets.US_ASCII), 0, bytes, 0, 4);
+        System.arraycopy(format.getBytes(StandardCharsets.US_ASCII), 0, bytes, 8, 4);
+        return bytes;
+    }
+
+    private static byte[] ftyp(String brand) {
+        byte[] bytes = new byte[24];
+        bytes[3] = 24;
+        System.arraycopy("ftyp".getBytes(StandardCharsets.US_ASCII), 0, bytes, 4, 4);
+        System.arraycopy(brand.getBytes(StandardCharsets.US_ASCII), 0, bytes, 8, 4);
+        return bytes;
+    }
+
+    private static byte[] ebml(String docType) {
+        byte[] bytes = new byte[32];
+        bytes[0] = 0x1A; bytes[1] = 0x45; bytes[2] = (byte)0xDF; bytes[3] = (byte)0xA3;
+        bytes[4] = 0x42; bytes[5] = (byte)0x82; bytes[6] = (byte)(0x80 | docType.length());
+        System.arraycopy(docType.getBytes(StandardCharsets.US_ASCII), 0, bytes, 7, docType.length());
+        return bytes;
+    }
+
     private byte[] zip(String... entries) throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
