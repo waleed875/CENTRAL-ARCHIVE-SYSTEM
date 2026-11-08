@@ -8,7 +8,8 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# Next standalone output expects a public directory at runtime.
+RUN mkdir -p public && npm run build
 
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app

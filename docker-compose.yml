@@ -79,8 +79,8 @@ services:
       backend:
         condition: service_healthy
     environment:
-      CENTRAL_ARCHIVE_API_URL: http://backend:8080
-      AUTH_COOKIE_SECURE: "false"
+      BACKEND_URL: http://backend:8080
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-false}"
     ports:
       - "127.0.0.1:${DOCKER_FRONTEND_PORT:-3100}:3000"
     healthcheck:
