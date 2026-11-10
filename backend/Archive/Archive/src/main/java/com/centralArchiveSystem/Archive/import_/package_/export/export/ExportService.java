@@ -140,6 +140,12 @@ public class ExportService {
             Project requested = projectRepository.findById(requestedId)
                     .orElseThrow(() -> new ResourceNotFoundException("Project", "id", requestedId));
             confidentialityAccessService.requireReadAccess(requested.getConfidentialityLevelId());
+            // A rejected selected version is never exportable. In the ALL scope the UI selects
+            // the latest version, so an older rejected decision can remain historical context
+            // when the current latest version is otherwise eligible for export.
+            if (requested.getStatus() == Project.ProjectStatus.REJECTED) {
+                throw new IllegalArgumentException("لا يمكن تصدير مشروع مرفوض: " + requested.getName());
+            }
             if (!request.allVersions()) {
                 resolved.add(requested);
                 continue;
