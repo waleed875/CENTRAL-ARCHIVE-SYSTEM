@@ -22,6 +22,9 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
 
 import java.util.Set;
 import java.util.UUID;
@@ -416,8 +419,7 @@ class ProjectWorkflowHttpE2ETest {
         category.setIsActive(true);
         UUID categoryId = fileCategoryRepository.saveAndFlush(category).getId();
 
-        byte[] pdf = ("%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n")
-                .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        byte[] pdf = validPdf();
         byte[] zip = zip("folder/مرفق.txt", "archive-content-" + suffix);
         assertFileRoundTrip(entryToken, projectId, categoryId, "تقرير-تجريبي.pdf",
                 "application/pdf", pdf);
@@ -454,6 +456,11 @@ class ProjectWorkflowHttpE2ETest {
         byte[] returned = downloaded.getResponse().getContentAsByteArray();
         assertArrayEquals(original, returned, "Downloaded bytes must exactly match the uploaded " + filename);
         assertEquals(hash(original), hash(returned), "SHA-256 must survive upload, MinIO storage and HTTP download");
+        if ("application/pdf".equals(mimeType)) {
+            try (PDDocument parsed = Loader.loadPDF(returned)) {
+                assertEquals(1, parsed.getNumberOfPages(), "The downloaded PDF must remain parseable");
+            }
+        }
         String disposition = downloaded.getResponse().getHeader("Content-Disposition");
         assertNotNull(disposition);
         assertTrue(disposition.toLowerCase().contains("filename"),
@@ -470,6 +477,15 @@ class ProjectWorkflowHttpE2ETest {
                         .file(file).file(metadata)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest());
+    }
+
+    private static byte[] validPdf() throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            document.save(bytes);
+        }
+        return bytes.toByteArray();
     }
 
     private static byte[] zip(String entryName, String contents) throws Exception {
