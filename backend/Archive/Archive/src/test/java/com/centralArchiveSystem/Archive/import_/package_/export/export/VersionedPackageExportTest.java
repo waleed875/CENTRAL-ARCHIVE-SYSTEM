@@ -110,6 +110,27 @@ class VersionedPackageExportTest {
     }
 
     @Test
+    void rejectedSelectedProjectCannotBePreviewedForExport() {
+        ProjectRepository projects = mock(ProjectRepository.class);
+        Project rejected = project(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, null, true);
+        rejected.setStatus(Project.ProjectStatus.REJECTED);
+        when(projects.findById(rejected.getId())).thenReturn(Optional.of(rejected));
+        ConfidentialityAccessService clearance = mock(ConfidentialityAccessService.class);
+
+        ExportService service = new ExportService(projects, mock(ProjectMemberRepository.class),
+                mock(FileRepository.class), mock(MinioService.class), new MinioConfig(),
+                mock(ProjectExportRepository.class), new ObjectMapper(),
+                new PackageArchiveService(new ObjectMapper(), "1.0,2.0"), clearance, UUID.randomUUID());
+
+        assertThrows(IllegalArgumentException.class, () -> service.preview(new ExportRequest(List.of(rejected.getId()))));
+        assertThrows(IllegalArgumentException.class, () -> service.preview(new ExportRequest(
+                List.of(rejected.getId()), "ALL",
+                new ExportRequest.ExportContents(true, true), "PKG",
+                new ExportRequest.ExportProtection(true, "SHA256"))));
+        verify(projects, never()).findByProjectUidOrderByVersionNoAsc(any());
+    }
+
+    @Test
     void refusesIncompleteVersionHistoryInsteadOfExportingSilentPartialPackage() {
         ProjectRepository projects = mock(ProjectRepository.class);
         ConfidentialityAccessService clearance = mock(ConfidentialityAccessService.class);
