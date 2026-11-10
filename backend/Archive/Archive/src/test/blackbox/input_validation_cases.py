@@ -148,7 +148,7 @@ def user_cases():
         created = app.request('optional user fullName '+label, 'POST', ROOT+'/users',
                               body, expected=(200,201))
         created_id = created['data']['id']
-        stored_name = app.sql(TARGET,
+        stored_name = app.sql(app.TARGET,
             'SELECT full_name FROM core.users WHERE id=' + app.q(created_id) + '::uuid')
         app.record('optional user fullName defaults to username '+label,
                    stored_name == body['username'], observed=stored_name)
