@@ -15,7 +15,7 @@ export function ProjectDetail({id}:{id:string}){
  const fileTypes=useRemote<FileType[]>(categoryId?"/api/v1/file-types/by-category/"+categoryId+"?isActive=true":null);
  const p=project.data;
  const roles=user.data?.roles??[],isEditor=canWrite(roles,"central_data_entry"),isReviewer=canWrite(roles,"auditor"),isArchiver=canWrite(roles,"archive_officer"),isAdmin=roles.includes("system_admin");
- const canEdit=p&&isEditor&&!["APPROVED","ARCHIVED","REJECTED"].includes(p.status);
+ const canEdit=p&&isEditor&&!["UNDER_REVIEW","APPROVED","ARCHIVED","REJECTED"].includes(p.status);
  const canUpload=p&&isEditor&&["DRAFT","IMPORTED","NEEDS_CORRECTION"].includes(p.status);
  async function addMember(e:FormEvent){
   e.preventDefault();setSaving(true);setError("");
@@ -50,7 +50,7 @@ export function ProjectDetail({id}:{id:string}){
  }catch(e){setError(e instanceof Error?e.message:"تعذر رفع الملف")}finally{setSaving(false)}}
  async function saveFileMeta(e:FormEvent){e.preventDefault();if(!selectedFile)return;setSaving(true);setError("");try{await api("/api/v1/files/"+selectedFile.id,{method:"PATCH",...jsonBody({categoryId,typeId:typeId||null,confidentialityLevelId:levelId||null})});setMode(null);files.reload();setSuccess("تم تحديث بيانات الملف")}catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الملف")}finally{setSaving(false)}}
  async function deleteFile(file:ArchiveFile){if(!window.confirm("هل تريد حذف الملف من المشروع؟ يمكن للمدير استعادته لاحقًا."))return;setError("");try{await api("/api/v1/files/"+file.id,{method:"DELETE"});files.reload();setSuccess("تم حذف الملف منطقيًا")}catch(e){setError(e instanceof Error?e.message:"تعذر حذف الملف")}}
- async function createVersion(){if(!window.confirm("إنشاء إصدار جديد من المشروع المعتمد؟"))return;setSaving(true);try{const result=await api<Project>("/api/v1/projects/"+id+"/new-version",{method:"POST",...jsonBody({})});router.push("/projects/"+result.id)}catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء الإصدار")}finally{setSaving(false)}}
+ async function createVersion(){if(!window.confirm("إنشاء إصدار جديد من المشروع؟ سيتم الاحتفاظ باسم المشروع نفسه."))return;setSaving(true);try{const result=await api<Project>("/api/v1/projects/"+id+"/new-version",{method:"POST",...jsonBody({})});router.push("/projects/"+result.id)}catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء الإصدار")}finally{setSaving(false)}}
  async function deleteProject(){if(!window.confirm("حذف هذه المسودة نهائيًا؟ لا يمكن التراجع عن ذلك."))return;setSaving(true);try{await api("/api/v1/projects/"+id,{method:"DELETE"});router.push("/projects")}catch(e){setError(e instanceof Error?e.message:"تعذر حذف المشروع")}finally{setSaving(false)}}
  if(project.loading)return <Loading/>;
  if(project.error)return <><Link className="btn btn-quiet" href="/projects"><ArrowRight size={16}/> العودة للمشاريع</Link><div className="section-gap"><Alert message={project.error}/></div></>;
