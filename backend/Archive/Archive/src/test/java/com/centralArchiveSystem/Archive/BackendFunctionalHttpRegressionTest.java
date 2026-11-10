@@ -183,12 +183,12 @@ class BackendFunctionalHttpRegressionTest {
     }
 
     @Test
-    void rejectedIsTerminalAndCannotBeAccidentallyResubmitted() throws Exception {
+    void rejectedProjectCannotBeResubmittedButCanStartANewVersion() throws Exception {
         Project rejected = project("rejected", Project.ProjectStatus.REJECTED, LocalDateTime.now());
         http.perform(patch("/api/v1/projects/{id}/submit-for-review", rejected.getId())
                 .header("Authorization", "Bearer " + token)).andExpect(status().isUnprocessableEntity());
         http.perform(post("/api/v1/projects/{id}/new-version", rejected.getId())
-                .header("Authorization", "Bearer " + token)).andExpect(status().isUnprocessableEntity());
+                .header("Authorization", "Bearer " + token)).andExpect(status().isCreated());
     }
 
     @Test

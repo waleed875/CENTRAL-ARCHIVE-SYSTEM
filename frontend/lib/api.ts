@@ -29,6 +29,8 @@ export function qs(params:Record<string,string|number|undefined|null>){const s=n
 export async function download(path:string,filename:string){
   const response=await fetch("/api/backend"+path,{credentials:"same-origin"});
   if(!response.ok)throw new ApiError(response.status,"تعذر تنزيل الملف");
-  const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+  // Keep the object URL alive long enough for large PDF/archive downloads to start reading it.
+  setTimeout(()=>URL.revokeObjectURL(url),60_000);
 }
 export type {PageData};

@@ -49,17 +49,76 @@ class ProjectVersionGuardTest {
         verify(members, never()).copyMembers(any(), any());
     }
     @Test
-    void deletingDraftSuccessorCannotLeaveItsChainWithoutLatestVersion() {
+    void deletingLatestDraftSuccessorRestoresPreviousAsLatest() {
         Project draft = project(Project.ProjectStatus.DRAFT);
-        draft.setPreviousProjectId(UUID.randomUUID());
-        assertThrows(BusinessRuleException.class, () -> service.deleteDraft(draft.getId()));
-        verify(repository, never()).delete(any());
+        draft.setVersionNo(2);
+        UUID previousId = UUID.randomUUID();
+        draft.setPreviousProjectId(previousId);
+
+        Project previous = new Project();
+        previous.setId(previousId);
+        previous.setProjectUid(draft.getProjectUid());
+        previous.setVersionNo(1);
+        previous.setIsLatestVersion(false);
+        previous.setStatus(Project.ProjectStatus.APPROVED);
+        when(repository.findById(previousId)).thenReturn(Optional.of(previous));
+
+        service.deleteDraft(draft.getId());
+
+        assertTrue(previous.getIsLatestVersion());
+        verify(members).deleteAllByProjectId(draft.getId());
+        verify(repository).delete(draft);
+        verify(repository).save(previous);
     }
     @Test
     void unusedStandaloneDraftStillCanBeDeleted() {
         Project draft = project(Project.ProjectStatus.DRAFT);
         service.deleteDraft(draft.getId());
         verify(repository).delete(draft);
+    }
+
+    @Test
+    void rejectedLatestVersionCanBeReopenedWithoutErasingRejectionReason() {
+        Project rejected = project(Project.ProjectStatus.REJECTED);
+        rejected.setRejectionReason("بيانات المشروع غير مكتملة");
+        when(repository.save(rejected)).thenReturn(rejected);
+
+        service.reopenRejected(rejected.getId());
+
+        assertEquals(Project.ProjectStatus.NEEDS_CORRECTION, rejected.getStatus());
+        assertEquals("بيانات المشروع غير مكتملة", rejected.getRejectionReason());
+        verify(repository).save(rejected);
+    }
+
+    @Test
+    void obsoleteRejectedVersionCannotBeReopened() {
+        Project rejected = project(Project.ProjectStatus.REJECTED);
+        rejected.setIsLatestVersion(false);
+
+        assertThrows(BusinessRuleException.class, () -> service.reopenRejected(rejected.getId()));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void rejectedLatestVersionCanStartANewDraftVersion() {
+        Project rejected = project(Project.ProjectStatus.REJECTED);
+        rejected.setRejectionReason("needs a separate revision");
+        when(repository.findMaxVersionNoByProjectUid(rejected.getProjectUid())).thenReturn(1);
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        org.mockito.ArgumentCaptor<Project> saved = org.mockito.ArgumentCaptor.forClass(Project.class);
+        service.newVersion(rejected.getId(), UUID.randomUUID(), null);
+
+        verify(repository, times(2)).save(saved.capture());
+        Project next = saved.getAllValues().get(1);
+        assertEquals(Project.ProjectStatus.REJECTED, rejected.getStatus());
+        assertFalse(rejected.getIsLatestVersion());
+        assertEquals(Project.ProjectStatus.DRAFT, next.getStatus());
+        assertEquals(rejected.getProjectUid(), next.getProjectUid());
+        assertEquals(2, next.getVersionNo());
+        assertEquals(rejected.getId(), next.getPreviousProjectId());
+        assertTrue(next.getIsLatestVersion());
+        verify(members).copyMembers(rejected.getId(), next.getId());
     }
     @Test
     void submittedTimestampIsAnAdvertisedSortField() {

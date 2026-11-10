@@ -32,7 +32,9 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -100,12 +102,16 @@ public class FileService {
         requireMutableProject(projectId);
         confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
 
-        FileCategory category = fileCategoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + request.categoryId()));
-        if (!Boolean.TRUE.equals(category.getIsActive())) {
-            throw new IllegalStateException("File category is inactive");
+        List<FileCategory> categories = resolveActiveCategories(request.categoryIds(), request.categoryId());
+        UUID primaryCategoryId = request.categoryId() != null
+                ? request.categoryId()
+                : categories.get(0).getId();
+        if (categories.stream().noneMatch(category -> category.getId().equals(primaryCategoryId))) {
+            throw new IllegalArgumentException("Primary category must be included in categoryIds");
         }
 
+        String originalName = multipartFile.getOriginalFilename();
+        String extension = extractExtension(originalName);
         FileType fileType = null;
         if (request.typeId() != null) {
             fileType = fileTypeRepository.findById(request.typeId())
@@ -114,14 +120,27 @@ public class FileService {
             if (!Boolean.TRUE.equals(fileType.getIsActive())) {
                 throw new IllegalStateException("File type is inactive");
             }
-            if (!request.categoryId().equals(fileType.getCategoryId())) {
+            UUID selectedTypeCategoryId = fileType.getCategoryId();
+            if (categories.stream().noneMatch(category -> category.getId().equals(selectedTypeCategoryId))) {
                 throw new IllegalArgumentException(
                         "Selected file type does not belong to selected category");
             }
+        } else if (extension != null) {
+            // If the operator did not choose a type, infer it from the configured extension
+            // inside the selected category. More than one match is ambiguous and must not be guessed.
+            List<FileType> matches = fileTypeRepository.findByCategoryIdAndIsActive(primaryCategoryId, true)
+                    .stream()
+                    .filter(candidate -> extensionsEquivalent(extension, candidate.getDefaultExtension()))
+                    .toList();
+            if (matches.size() > 1) {
+                throw new IllegalStateException(
+                        "أكثر من نوع ملف في التصنيف الحالي يستخدم الامتداد ." + extension
+                                + ". اختر النوع يدوياً قبل الرفع");
+            }
+            if (matches.size() == 1) {
+                fileType = matches.get(0);
+            }
         }
-
-        String originalName = multipartFile.getOriginalFilename();
-        String extension = extractExtension(originalName);
         String expectedExtension = fileType != null
                 && fileType.getDefaultExtension() != null
                 && !fileType.getDefaultExtension().isBlank()
@@ -154,14 +173,15 @@ public class FileService {
 
         boolean uploadedToObjectStorage = false;
         try {
-            minioService.uploadFile(multipartFile, bucketName, objectKey);
+            minioService.uploadFile(multipartFile, bucketName, objectKey, detectedMimeType);
             uploadedToObjectStorage = true;
             registerRollbackCleanup(bucketName, objectKey);
 
             FileEntity fileEntity = new FileEntity();
             fileEntity.setProjectId(projectId);
-            fileEntity.setCategoryId(request.categoryId());
-            fileEntity.setTypeId(request.typeId());
+            fileEntity.setCategoryId(primaryCategoryId);
+            fileEntity.setCategoryIds(categories.stream().map(FileCategory::getId).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+            fileEntity.setTypeId(fileType != null ? fileType.getId() : null);
             fileEntity.setConfidentialityLevelId(request.confidentialityLevelId());
             fileEntity.setOriginalName(originalName);
             fileEntity.setStoredName(storedName);
@@ -235,20 +255,19 @@ public class FileService {
             confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
         }
 
+        UUID targetTypeId = request.typeId() != null ? request.typeId() : file.getTypeId();
+        List<FileCategory> targetCategories = null;
+        if ((request.categoryIds() != null && !request.categoryIds().isEmpty()) || request.categoryId() != null) {
+            targetCategories = resolveActiveCategories(request.categoryIds(), request.categoryId());
+        }
+        Set<UUID> targetCategoryIds = targetCategories != null
+                ? targetCategories.stream().map(FileCategory::getId).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                : file.getCategoryIds();
         UUID targetCategoryId = request.categoryId() != null
                 ? request.categoryId()
-                : file.getCategoryId();
-        UUID targetTypeId = request.typeId() != null
-                ? request.typeId()
-                : file.getTypeId();
-
-        if (request.categoryId() != null) {
-            FileCategory targetCategory = fileCategoryRepository.findById(request.categoryId())
-                    .orElseThrow(() -> new EntityNotFoundException(
-                            "File category not found with id: " + request.categoryId()));
-            if (!Boolean.TRUE.equals(targetCategory.getIsActive())) {
-                throw new IllegalStateException("File category is inactive");
-            }
+                : targetCategories != null ? targetCategories.get(0).getId() : file.getCategoryId();
+        if (!targetCategoryIds.contains(targetCategoryId)) {
+            throw new IllegalArgumentException("Primary category must be included in categoryIds");
         }
 
         if (targetTypeId != null) {
@@ -258,14 +277,15 @@ public class FileService {
             if (!Boolean.TRUE.equals(targetType.getIsActive())) {
                 throw new IllegalStateException("File type is inactive");
             }
-            if (!targetCategoryId.equals(targetType.getCategoryId())) {
+            if (!targetCategoryIds.contains(targetType.getCategoryId())) {
                 throw new IllegalArgumentException(
                         "Selected file type does not belong to selected category");
             }
         }
 
-        if (request.categoryId() != null) {
-            file.setCategoryId(request.categoryId());
+        if (targetCategories != null) {
+            file.setCategoryId(targetCategoryId);
+            file.setCategoryIds(targetCategoryIds);
         }
         if (request.typeId() != null) {
             file.setTypeId(request.typeId());
@@ -335,6 +355,25 @@ public class FileService {
         return toResponse(saved);
     }
 
+    private List<FileCategory> resolveActiveCategories(List<UUID> requestedIds, UUID legacyCategoryId) {
+        LinkedHashSet<UUID> ids = new LinkedHashSet<>();
+        if (requestedIds != null) ids.addAll(requestedIds);
+        if (ids.isEmpty() && legacyCategoryId != null) ids.add(legacyCategoryId);
+        if (ids.isEmpty() || ids.contains(null)) {
+            throw new IllegalArgumentException("اختر تصنيفاً واحداً على الأقل للملف");
+        }
+        List<FileCategory> categories = new ArrayList<>();
+        for (UUID id : ids) {
+            FileCategory category = fileCategoryRepository.findById(id)
+                    .orElseThrow(() -> new EntityNotFoundException("File category not found with id: " + id));
+            if (!Boolean.TRUE.equals(category.getIsActive())) {
+                throw new IllegalStateException("File category is inactive: " + category.getName());
+            }
+            categories.add(category);
+        }
+        return categories;
+    }
+
     private void registerRollbackCleanup(String bucketName, String objectKey) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             return;
@@ -399,6 +438,17 @@ public class FileService {
         return fileName.substring(lastDotIndex + 1).toLowerCase();
     }
 
+    private static boolean extensionsEquivalent(String actual, String configured) {
+        if (actual == null || configured == null || actual.isBlank() || configured.isBlank()) return false;
+        String left = actual.startsWith(".") ? actual.substring(1) : actual;
+        String right = configured.startsWith(".") ? configured.substring(1) : configured;
+        left = left.toLowerCase(java.util.Locale.ROOT);
+        right = right.toLowerCase(java.util.Locale.ROOT);
+        if (left.equals(right)) return true;
+        return (left.equals("jpg") || left.equals("jpeg"))
+                && (right.equals("jpg") || right.equals("jpeg"));
+    }
+
     private String calculateChecksum(MultipartFile file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] buffer = new byte[8192];
@@ -449,7 +499,12 @@ public class FileService {
                 file.getDeletedBy(),
                 file.getDeleteReason(),
                 file.getCreatedAt(),
-                file.getUpdatedAt()
+                file.getUpdatedAt(),
+                file.getCategoryIds().stream().toList(),
+                file.getCategoryIds().stream()
+                        .map(id -> fileCategoryRepository.findById(id).map(FileCategory::getName).orElse(null))
+                        .filter(java.util.Objects::nonNull)
+                        .toList()
         );
     }
 }

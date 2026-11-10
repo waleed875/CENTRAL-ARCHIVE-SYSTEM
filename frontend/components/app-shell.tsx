@@ -1,13 +1,12 @@
 "use client";
 import {useEffect,useState,FormEvent} from "react";
 import Link from "next/link";import {usePathname,useRouter} from "next/navigation";
-import {LayoutDashboard,Building2,FolderKanban,Files,ClipboardCheck,PackageOpen,PackageCheck,DatabaseZap,UsersRound,ScrollText,Settings2,LibraryBig,Search,LogOut,Menu,X,Plus,ChevronLeft,ShieldCheck} from "lucide-react";
+import {LayoutDashboard,Building2,FolderKanban,ClipboardCheck,PackageOpen,PackageCheck,DatabaseZap,UsersRound,ScrollText,Settings2,LibraryBig,Search,LogOut,Menu,X,Plus,ShieldCheck} from "lucide-react";
 import {api} from "@/lib/api";import type{UserInfo}from "@/lib/types";
 const menu=[
 {href:"/",label:"الرئيسية",icon:LayoutDashboard},
 {href:"/organizations",label:"الجهات والمؤسسات",icon:Building2},
 {href:"/projects",label:"المشاريع",icon:FolderKanban},
-{href:"/files",label:"الملفات والوثائق",icon:Files},
 {href:"/reviews",label:"المراجعة والاعتماد",icon:ClipboardCheck},
 {href:"/imports",label:"استيراد الحزم",icon:PackageOpen},
 {href:"/exports",label:"تصدير المشاريع",icon:PackageCheck},
@@ -28,11 +27,10 @@ export function AppShell({children}:{children:React.ReactNode}){
  return <div className="shell"><div className={open?"mobile-scrim visible":"mobile-scrim"} onClick={()=>setOpen(false)}/>
  <aside className={"sidebar"+(open?" open":"")} aria-label="التنقل الرئيسي">
    <div className="brand"><div className="brand-mark"><LibraryBig size={26} strokeWidth={1.6}/></div><div><strong>النظام المركزي</strong><span>للأرشيف والتوثيق</span></div><button className="mobile-close" onClick={()=>setOpen(false)} aria-label="إغلاق القائمة"><X size={20}/></button></div>
-   <div className="sidebar-caption">مساحة العمل</div>
    <nav className="side-links">{menu.filter(({href})=>showSection(href)).map(({href,label,icon:Icon})=>{const active=pathname===href||(href!=="/"&&pathname.startsWith(href+"/"));return <Link className={"side-link"+(active?" active":"")} href={href} key={href}><Icon size={19} strokeWidth={1.8}/><span>{label}</span>{active&&<span className="active-indicator"/>}</Link>})}</nav>
    <div className="sidebar-bottom"><div className="sidebar-glyph">۞</div><div className="side-secure"><ShieldCheck size={17}/><span>مساحة أرشيف مؤمّنة</span></div><small>Central Archive System</small></div>
  </aside>
- <div className="main-column"><header className="topbar"><div className="topbar-start"><button className="icon-button menu-toggle" onClick={()=>setOpen(true)} aria-label="فتح القائمة"><Menu/></button><span className="breadcrumb">مساحة العمل</span><ChevronLeft size={15} className="muted-icon"/><strong>{menu.find(m=>pathname===m.href)?.label??(pathname.startsWith("/projects/")?"تفاصيل المشروع":"الأرشيف")}</strong></div>
+ <div className="main-column"><header className="topbar"><div className="topbar-start"><button className="icon-button menu-toggle" onClick={()=>setOpen(true)} aria-label="فتح القائمة"><Menu/></button><strong>{menu.find(m=>pathname===m.href)?.label??(pathname.startsWith("/projects/")?"تفاصيل المشروع":"الأرشيف")}</strong></div>
  <form className="top-search" onSubmit={submitSearch}><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="البحث عن مشروع أو وثيقة..." aria-label="البحث في المشاريع"/><kbd>↵</kbd></form>
  <div className="top-actions">{authorized("central_data_entry")&&<Link className="top-create" href="/projects?create=1"><Plus size={17}/> مشروع جديد</Link>}<div className="profile"><div className="avatar">{user?.fullName?.[0]??"م"}</div><div className="profile-copy"><strong>{user?.fullName??"المستخدم"}</strong><span>{user?.roles?.includes("system_admin")?"مدير النظام":user?.organization??"مستخدم الأرشيف"}</span></div></div><button className="icon-button logout" title="تسجيل الخروج" onClick={logout} disabled={signingOut} aria-label="تسجيل الخروج"><LogOut size={19}/></button></div>
  </header><main className="page-content">{children}</main><footer className="footer">النظام المركزي للأرشيف <span>•</span> بيئة عمل موحّدة للوثائق والمشاريع</footer></div></div>

@@ -86,7 +86,10 @@ public class UserService {
         User user = new User();
         user.setUsername(request.username());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setFullName(request.fullName());
+        // Keep the non-null display-name column compatible with existing consumers while
+        // allowing account creation to omit a separate full name.
+        user.setFullName(request.fullName() == null || request.fullName().isBlank()
+                ? request.username() : request.fullName().trim());
         user.setEmail(request.email() == null || request.email().isBlank() ? null : request.email());
         user.setOrganizationId(request.organizationId());
         user.setMaxConfidentialityLevelId(request.maxConfidentialityLevelId());

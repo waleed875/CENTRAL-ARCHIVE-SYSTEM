@@ -15,6 +15,10 @@ public class MigrationExecutionService {
         this.migrationRunner = migrationRunner;
     }
 
+    public String testConnection(UUID sourceId) {
+        return migrationRunner.testConnection(sourceId);
+    }
+
     @Async
     public void execute(UUID batchId) {
         migrationRunner.runBatch(batchId);

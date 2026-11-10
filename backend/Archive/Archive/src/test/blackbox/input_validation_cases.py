@@ -135,8 +135,26 @@ def user_cases():
         verify('invalid sort '+resource,'GET',ROOT+'/'+resource+'?sort=not_a_property',expected=400)
         verify('invalid sort order '+resource,'GET',ROOT+'/'+resource+'?order=SIDEWAYS',expected=400)
     uid=app.request('create validation user','POST',ROOT+'/users',good,expected=(200,201))['data']['id']
+    # Full name and email are optional account-creation fields. The administration UI
+    # intentionally asks only for username/password; the backend derives a display name
+    # from username when fullName is absent or blank. Verify this compatibility contract
+    # positively rather than treating those valid requests as malformed input.
+    for label, value in [('omitted', None), ('empty', ''), ('whitespace', '  ')]:
+        body = {**good, 'username': next_code().lower()}
+        if value is None:
+            body.pop('fullName', None)
+        else:
+            body['fullName'] = value
+        created = app.request('optional user fullName '+label, 'POST', ROOT+'/users',
+                              body, expected=(200,201))
+        created_id = created['data']['id']
+        stored_name = app.sql(app.TARGET,
+            'SELECT full_name FROM core.users WHERE id=' + app.q(created_id) + '::uuid')
+        app.record('optional user fullName defaults to username '+label,
+                   stored_name == body['username'], observed=stored_name)
+
     for field,bads in [('username',[None,'','  ','x'*51]),('password',[None,'','short','x'*101]),
-                       ('fullName',[None,'','  ','x'*201]),('email',['not-an-email','a@']),
+                       ('fullName',['x'*201]),('email',['not-an-email','a@']),
                        ('organizationId',[ABSENT]),('maxConfidentialityLevelId',[ABSENT]),('roleIds',[[ABSENT],[None]])]:
         for bad in bads:
             verify('user '+field+' '+repr(bad)[:20],'POST',ROOT+'/users',

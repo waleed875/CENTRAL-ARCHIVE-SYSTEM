@@ -140,6 +140,11 @@ public class ExportService {
             Project requested = projectRepository.findById(requestedId)
                     .orElseThrow(() -> new ResourceNotFoundException("Project", "id", requestedId));
             confidentialityAccessService.requireReadAccess(requested.getConfidentialityLevelId());
+            // Rejected versions are not exportable, including when they are part of an
+            // otherwise eligible logical project's complete version history.
+            if (requested.getStatus() == Project.ProjectStatus.REJECTED) {
+                throw new IllegalArgumentException("لا يمكن تصدير مشروع مرفوض: " + requested.getName());
+            }
             if (!request.allVersions()) {
                 resolved.add(requested);
                 continue;
@@ -154,6 +159,10 @@ public class ExportService {
             for (int i = 0; i < versions.size(); i++) {
                 Project current = versions.get(i);
                 confidentialityAccessService.requireReadAccess(current.getConfidentialityLevelId());
+                if (current.getStatus() == Project.ProjectStatus.REJECTED) {
+                    throw new IllegalArgumentException("لا يمكن تصدير سجل إصدارات يحتوي على إصدار مرفوض: "
+                            + current.getName() + " (v" + current.getVersionNo() + ")");
+                }
                 if (!Objects.equals(current.getProjectUid(), familyId)
                         || !Objects.equals(current.getVersionNo(), i + 1)
                         || !Objects.equals(current.getPreviousProjectId(), i == 0 ? null : versions.get(i-1).getId())

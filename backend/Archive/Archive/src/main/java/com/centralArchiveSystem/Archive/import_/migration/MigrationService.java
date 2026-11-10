@@ -168,28 +168,36 @@ public class MigrationService {
         return value != null && !value.isBlank();
     }
 
-    public void deleteSource(UUID id) {
-        if (!sourceRepository.existsById(id)) {
-            throw new NoSuchElementException("Migration source not found: " + id);
+    /**
+     * Remove a source from active use without deleting its batch history or migrated references.
+     * The historical row remains addressable so audit and batch records never lose their source.
+     */
+    public String testSourceConnection(UUID id) {
+        MigrationSource source = sourceRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("مصدر الترحيل غير نشط");
         }
+        return migrationExecutionService.testConnection(id);
+    }
+
+    public void deleteSource(UUID id) {
+        MigrationSource source = sourceRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
 
         long runningBatches = batchRepository.countByMigrationSourceIdAndStatus(
-                id,
-                MigrationBatch.Status.RUNNING
-        );
+                id, MigrationBatch.Status.RUNNING);
         if (runningBatches > 0) {
-            throw new IllegalStateException(
-                    "Cannot delete migration source with running batches");
+            throw new IllegalStateException("لا يمكن إزالة مصدر أثناء تشغيل دفعة ترحيل");
+        }
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("مصدر الترحيل غير نشط بالفعل");
         }
 
-        long totalBatches = batchRepository.countByMigrationSourceId(id);
-        if (totalBatches > 0) {
-            throw new IllegalStateException(
-                    "Cannot delete migration source while migration batch history exists");
-        }
-
-        sourceRepository.deleteById(id);
-        log.info("Deleted migration source: {}", id);
+        source.setIsActive(false);
+        sourceRepository.save(source);
+        log.info("Deactivated migration source {} while preserving {} batch records",
+                id, batchRepository.countByMigrationSourceId(id));
     }
 
     @Transactional(readOnly = true)
@@ -210,8 +218,10 @@ public class MigrationService {
     }
 
     public MigrationBatchResponse createBatch(UUID sourceId, MigrationBatchCreateRequest request) {
-        if (!sourceRepository.existsById(sourceId)) {
-            throw new NoSuchElementException("Migration source not found: " + sourceId);
+        MigrationSource source = sourceRepository.findById(sourceId)
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + sourceId));
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("لا يمكن إنشاء دفعة لمصدر ترحيل غير نشط");
         }
 
         String batchNumber = request.batchNumber().trim();
@@ -305,6 +315,9 @@ public class MigrationService {
         MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
                 .orElseThrow(() -> new NoSuchElementException(
                         "Migration source not found: " + batch.getMigrationSourceId()));
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("لا يمكن تشغيل دفعة من مصدر ترحيل غير نشط");
+        }
 
         MigrationRunRequest.MigrationConfig config = runRequest.migration_config();
 
@@ -391,6 +404,7 @@ public class MigrationService {
                 entity.getUsername(),
                 entity.hasStoredConnection(),
                 entity.getDescription(),
+                entity.getIsActive(),
                 batchRepository.countByMigrationSourceId(entity.getId()),
                 entity.getCreatedAt()
         );

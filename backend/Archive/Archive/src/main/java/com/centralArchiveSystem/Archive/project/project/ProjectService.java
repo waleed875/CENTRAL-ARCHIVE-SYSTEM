@@ -133,6 +133,9 @@ public class ProjectService {
         return ProjectResponse.fromEntity(projectRepository.save(project));
     }
     public ProjectResponse newVersion(UUID id, UUID createdBy, ProjectUpdateRequest overrides) {
+        if (overrides != null && overrides.name() != null) {
+            throw new BusinessRuleException("اسم المشروع يُورّث من الإصدار السابق ولا يمكن تغييره أثناء إنشاء إصدار جديد");
+        }
         Project original = requireAccessibleProject(id);
         if (overrides != null && overrides.confidentialityLevelId() != null) {
             confidentialityAccessService.requireReadAccess(overrides.confidentialityLevelId());
@@ -144,8 +147,9 @@ public class ProjectService {
         validateOrganizationReference(organizationId);
         validateProjectTypeReference(projectTypeId);
         if (original.getStatus() != Project.ProjectStatus.APPROVED
-                && original.getStatus() != Project.ProjectStatus.ARCHIVED) {
-            throw new BusinessRuleException("لا يمكن إنشاء إصدار جديد إلا من مشروع معتمد أو مؤرشف. "
+                && original.getStatus() != Project.ProjectStatus.ARCHIVED
+                && original.getStatus() != Project.ProjectStatus.REJECTED) {
+            throw new BusinessRuleException("لا يمكن إنشاء إصدار جديد إلا من مشروع معتمد أو مؤرشف أو مرفوض. "
                     + "حالة المشروع الحالية: " + original.getStatus().describe());
         }
         if (!Boolean.TRUE.equals(original.getIsLatestVersion())) {
@@ -238,27 +242,71 @@ public class ProjectService {
         project.setRejectionReason(rejectionReason);
         return ProjectResponse.fromEntity(projectRepository.save(project));
     }
+    /** Reopen a rejected latest version for correction without erasing its rejection reason. */
+    public ProjectResponse reopenRejected(UUID id) {
+        Project project = requireAccessibleProject(id);
+        if (project.getStatus() != Project.ProjectStatus.REJECTED) {
+            throw new BusinessRuleException("إعادة الفتح متاحة فقط للمشروع المرفوض. الحالة الحالية: "
+                    + project.getStatus().describe());
+        }
+        if (!Boolean.TRUE.equals(project.getIsLatestVersion())) {
+            throw new BusinessRuleException("لا يمكن إعادة فتح إصدار قديم؛ افتح أحدث إصدار من المشروع");
+        }
+        project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
+        // Keep rejectionReason as immutable review history; correction instructions use reviewNotes.
+        return ProjectResponse.fromEntity(projectRepository.save(project));
+    }
     public ProjectResponse archive(UUID id) {
         Project project = requireAccessibleProject(id);
         if (project.getStatus() != Project.ProjectStatus.APPROVED) throw new BusinessRuleException("لا يمكن أرشفة إلا المشاريع المعتمدة");
         project.setStatus(Project.ProjectStatus.ARCHIVED);
         return ProjectResponse.fromEntity(projectRepository.save(project));
     }
-    /** Only an unused standalone draft may be removed. Version and file history survive. */
+    /**
+     * Delete an unused latest draft. When it is a successor version, remove its copied member
+     * rows and restore the previous version as latest so the logical project never loses its head.
+     * Files and imported-package links are deliberately not cascade-deleted.
+     */
     @Transactional
     public void deleteDraft(UUID id) {
         Project project = requireAccessibleProject(id);
         if (project.getStatus() != Project.ProjectStatus.DRAFT) {
             throw new BusinessRuleException("لا يمكن حذف مشروع حالته " + project.getStatus().describe()
-                    + ". الحذف متاح فقط لمشروع ما زال مسودة لم يُرسل للمراجعة");
+                    + ". الحذف متاح فقط لمسودة لم تُرسل للمراجعة");
+        }
+        if (!Boolean.TRUE.equals(project.getIsLatestVersion())) {
+            throw new BusinessRuleException("لا يمكن حذف إصدار قديم من سلسلة الإصدارات");
+        }
+        if (projectRepository.existsByPreviousProjectId(id)) {
+            throw new BusinessRuleException("لا يمكن حذف المسودة لأنها أساس لإصدارات لاحقة منها");
         }
         long files = fileRepository.countByProjectId(id);
-        if (files > 0) throw new BusinessRuleException("لا يمكن حذف مشروع عليه ملفات (" + files + "). الملفات سجل محفوظ ولا تُحذف مع المشروع");
-        if (!projectMemberService.listByProjectId(id).isEmpty()) throw new BusinessRuleException("لا يمكن حذف مشروع له أعضاء. أزل الأعضاء أولاً");
-        if (projectRepository.existsByPreviousProjectId(id)) throw new BusinessRuleException("لا يمكن حذف المشروع لأنه أساس لإصدارات لاحقة منه");
-        if (project.getPreviousProjectId() != null) throw new BusinessRuleException("لا يمكن حذف مسودة مرتبطة بإصدار سابق حفاظاً على سلسلة الإصدارات");
-        if (packageProjectRepository.existsByProjectId(id)) throw new BusinessRuleException("لا يمكن حذف مشروع مرتبط بحزمة واردة من الترحيل");
+        if (files > 0) {
+            throw new BusinessRuleException("لا يمكن حذف مسودة عليها ملفات (" + files + "). احذف الملفات وفق سياسة الاحتفاظ أولاً");
+        }
+        if (packageProjectRepository.existsByProjectId(id)) {
+            throw new BusinessRuleException("لا يمكن حذف مشروع مرتبط بحزمة واردة من الترحيل");
+        }
+
+        Project previous = null;
+        if (project.getPreviousProjectId() != null) {
+            previous = requireAccessibleProject(project.getPreviousProjectId());
+            if (!project.getProjectUid().equals(previous.getProjectUid())
+                    || Boolean.TRUE.equals(previous.getIsLatestVersion())
+                    || previous.getVersionNo() >= project.getVersionNo()) {
+                throw new BusinessRuleException("تعذر التحقق من تسلسل الإصدار السابق؛ لم يتم حذف المسودة");
+            }
+            // Members are copied into a new version by design; they belong to the discarded draft.
+            projectMemberService.deleteAllByProjectId(id);
+        } else if (!projectMemberService.listByProjectId(id).isEmpty()) {
+            throw new BusinessRuleException("لا يمكن حذف مشروع له أعضاء. أزل الأعضاء أولاً");
+        }
+
         projectRepository.delete(project);
+        if (previous != null) {
+            previous.setIsLatestVersion(true);
+            projectRepository.save(previous);
+        }
     }
     public Page<ProjectResponse> search(ProjectSearchRequest request, int page, int size) {
         String sortField = request.sortBy() != null && ALLOWED_SORT_FIELDS.contains(request.sortBy()) ? request.sortBy() : "createdAt";

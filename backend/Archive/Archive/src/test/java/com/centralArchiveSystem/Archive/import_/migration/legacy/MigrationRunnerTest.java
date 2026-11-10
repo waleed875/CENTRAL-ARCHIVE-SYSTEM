@@ -7,6 +7,8 @@ import com.centralArchiveSystem.Archive.import_.migration.setting.MigrationSetti
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.zaxxer.hikari.HikariDataSource;
 
 import java.util.List;
 import java.util.UUID;
@@ -107,6 +109,39 @@ class MigrationRunnerTest {
     }
 
     // ------------------------------------------------------- the name on a created source
+
+    @Test
+    void testConnectionExecutesReadOnlyProbeAndClosesItsPool() {
+        MigrationSource source = source("ARC2");
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        when(sources.findById(source.getId())).thenReturn(java.util.Optional.of(source));
+        LegacyMigrationService legacy = mock(LegacyMigrationService.class);
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        HikariDataSource pool = mock(HikariDataSource.class);
+        when(pool.isClosed()).thenReturn(false);
+        when(jdbc.queryForObject("SELECT 1", Integer.class)).thenReturn(1);
+        when(legacy.openConnection(source)).thenReturn(
+                new LegacyMigrationService.LegacyConnection(source.getId(), "ARC2", "ARC2", jdbc, pool));
+        MigrationRunner runner = new MigrationRunner(legacy, mock(MigrationBatchRepository.class),
+                sources, mock(LegacyMigrationItemRepository.class), mock(MigrationSettingsService.class));
+
+        assertTrue(runner.testConnection(source.getId()).contains("ARC2"));
+        verify(jdbc).queryForObject("SELECT 1", Integer.class);
+        verify(pool).close();
+    }
+
+    @Test
+    void refusesToCreateDuplicateAutomaticSourceWhenOnlyMatchingSourceIsInactive() {
+        MigrationSource inactive = source("ARC2");
+        inactive.setIsActive(false);
+        MigrationSourceRepository sources = repositoryReturning(inactive);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> runner(sources, URL).ensureSourceId());
+
+        assertTrue(error.getMessage().contains("inactive"), error.getMessage());
+        verify(sources, never()).save(any());
+    }
 
     @Test
     void stampsTheCreatedSourceWithTheDatabaseTheRunWillActuallyRead() {

@@ -85,6 +85,29 @@ public class MigrationRunner {
         return runBatch(batch.getId());
     }
 
+    /**
+     * Opens the configured source and executes a harmless read-only probe. This lets operators
+     * distinguish bad credentials/network configuration from a disabled migration window before
+     * creating or running a batch.
+     */
+    public String testConnection(UUID sourceId) {
+        MigrationSource source = sourceRepository.findById(sourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Migration source not found: " + sourceId));
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("Migration source is inactive: " + sourceId);
+        }
+        try (LegacyMigrationService.LegacyConnection connection = legacyMigrationService.openConnection(source)) {
+            Integer result = connection.jdbc().queryForObject("SELECT 1", Integer.class);
+            if (result == null || result != 1) {
+                throw new IllegalStateException("The source database did not return the expected connection probe");
+            }
+            return "Connection successful for office " + connection.office();
+        } catch (Exception e) {
+            throw new IllegalStateException("تعذر الاتصال بمصدر الترحيل «" + source.getName()
+                    + "»: " + e.getMessage(), e);
+        }
+    }
+
     public boolean runBatch(UUID batchId) {
         ensureEnabled();
         if (!running.compareAndSet(false, true)) {
@@ -110,6 +133,9 @@ public class MigrationRunner {
             MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Migration source not found: " + batch.getMigrationSourceId()));
+            if (!source.getIsActive()) {
+                throw new IllegalStateException("Migration source is inactive: " + source.getId());
+            }
 
             try (LegacyMigrationService.LegacyConnection connection =
                          legacyMigrationService.openConnection(source)) {
@@ -186,7 +212,13 @@ public class MigrationRunner {
      * fail -- it reports a clean run of zero files.
      */
     public UUID ensureSourceId() {
-        List<MigrationSource> candidates = sourceRepository.findByNameContainingIgnoreCase(sourceName);
+        List<MigrationSource> allCandidates = sourceRepository.findByNameContainingIgnoreCase(sourceName);
+        List<MigrationSource> candidates = allCandidates.stream()
+                .filter(MigrationSource::getIsActive).toList();
+        if (candidates.isEmpty() && !allCandidates.isEmpty()) {
+            throw new IllegalStateException("All migration sources matching '" + sourceName
+                    + "' are inactive. Reactivate or configure an active source before running the scheduled migration.");
+        }
 
         List<MigrationSource> exact = candidates.stream()
                 .filter(s -> sourceName.equalsIgnoreCase(s.getName()))

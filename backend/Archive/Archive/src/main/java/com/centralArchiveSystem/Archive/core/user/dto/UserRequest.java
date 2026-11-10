@@ -15,8 +15,7 @@ public record UserRequest(
     @Size(min = 3, max = 50, message = "اسم المستخدم يجب أن يكون بين 3 و 50 حرفاً")
     String username,
     @NotBlank(message = "حقل كلمة المرور مطلوب") @PasswordPolicy String password,
-    @NotBlank(message = "حقل الاسم الكامل مطلوب")
-    @Size(min = 1, max = 200, message = "الاسم الكامل يجب ألا يتجاوز 200 حرف") String fullName,
+    @Size(max = 200, message = "الاسم الكامل يجب ألا يتجاوز 200 حرف") String fullName,
     @Schema(description = "User email address")
     @Email(message = "صيغة البريد الإلكتروني غير صالحة")
     @Size(max = 200, message = "تجاوز طول الحقل الحد المسموح") String email,

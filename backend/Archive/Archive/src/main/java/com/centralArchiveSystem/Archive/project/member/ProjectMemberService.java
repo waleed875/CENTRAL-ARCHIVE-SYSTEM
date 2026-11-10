@@ -103,6 +103,12 @@ public class ProjectMemberService {
     }
 
     @Transactional
+    public void deleteAllByProjectId(UUID projectId) {
+        requireMutableProject(projectId);
+        projectMemberRepository.deleteAll(projectMemberRepository.findByProjectId(projectId));
+    }
+
+    @Transactional
     public void delete(UUID projectId, UUID id) {
         requireMutableProject(projectId);
 

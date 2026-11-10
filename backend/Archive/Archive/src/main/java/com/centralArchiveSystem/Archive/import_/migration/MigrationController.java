@@ -48,6 +48,15 @@ public class MigrationController {
         return ResponseEntity.ok(ApiResponse.success(migrationService.getSourceById(id)));
     }
 
+    @PostMapping("/migration-sources/{id}/test-connection")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Test the configured legacy database connection without running a migration")
+    public ResponseEntity<ApiResponse<Map<String, String>>> testSourceConnection(
+            @Parameter(description = "Source UUID") @PathVariable UUID id) {
+        String message = migrationService.testSourceConnection(id);
+        return ResponseEntity.ok(ApiResponse.success(Map.of("message", message), "Migration source connection successful"));
+    }
+
     @PatchMapping("/migration-sources/{id}")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Update a migration source")

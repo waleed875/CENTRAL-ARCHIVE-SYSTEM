@@ -22,9 +22,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.text.Bidi;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -128,52 +132,86 @@ public class ExportAlternativeWriter {
         return sanitized.substring(0, Math.min(sanitized.length(), 120));
     }
 
-    /** Arabic RTL sheet with the original name, number, version and file inventory. */
+    /**
+     * The first sheet is one row per logical project (project_uid), so a project with several
+     * versions is not counted repeatedly. A second sheet retains the per-version audit detail.
+     * Package/file byte sizes are intentionally omitted from PDF/XLSX business reports.
+     */
     private void excel(Path target, JsonNode manifest) throws Exception {
         try (SXSSFWorkbook book = new SXSSFWorkbook(100)) {
             book.setCompressTempFiles(true);
-            Sheet sheet = book.createSheet("المشاريع");
-            sheet.setRightToLeft(true);
-            String[] headings = {"اسم المشروع", "رقم المشروع", "السنة", "الإصدار",
-                    "أحدث إصدار", "حالة المصدر", "عدد الملفات", "اسم الملف", "حجم الملف (بايت)", "SHA-256"};
-            Row top = sheet.createRow(0);
             CellStyle headStyle = book.createCellStyle();
             Font font = book.createFont();
             font.setBold(true);
             headStyle.setFont(font);
-            for (int i = 0; i < headings.length; i++) {
-                Cell cell = top.createCell(i);
-                cell.setCellValue(headings[i]);
-                cell.setCellStyle(headStyle);
-                sheet.setColumnWidth(i, i == 0 || i == 7 ? 9000 : 5200);
+
+            Sheet projects = book.createSheet("المشاريع");
+            projects.setRightToLeft(true);
+            String[] projectHeadings = {"اسم المشروع", "رقم المشروع", "السنة", "عدد الإصدارات",
+                    "أحدث إصدار", "الحالة الحالية", "إجمالي الملفات"};
+            writeHeadings(projects, projectHeadings, headStyle);
+            int projectRow = 1;
+            for (List<JsonNode> versions : groupByLogicalProject(manifest).values()) {
+                JsonNode latest = versions.get(versions.size() - 1);
+                Row row = projects.createRow(projectRow++);
+                textCell(row, 0, latest.path("name").asText());
+                textCell(row, 1, latest.path("project_number").asText());
+                row.createCell(2).setCellValue(latest.path("year").asInt());
+                row.createCell(3).setCellValue(versions.size());
+                row.createCell(4).setCellValue(latest.path("version_no").asInt(1));
+                textCell(row, 5, latest.path("source_status").asText(""));
+                row.createCell(6).setCellValue(totalFiles(versions));
             }
-            int index = 1;
-            for (JsonNode project : manifest.path("projects")) {
-                JsonNode projectFiles = project.path("files");
-                if (!projectFiles.isArray() || projectFiles.isEmpty()) {
-                    fillRow(sheet.createRow(index++), project, null);
-                    continue;
+            projects.createFreezePane(0, 1);
+
+            Sheet versionSheet = book.createSheet("تفاصيل الإصدارات");
+            versionSheet.setRightToLeft(true);
+            String[] versionHeadings = {"اسم المشروع", "رقم المشروع", "رقم الإصدار",
+                    "حالة الإصدار", "أحدث إصدار", "عدد الملفات"};
+            writeHeadings(versionSheet, versionHeadings, headStyle);
+            int versionRow = 1;
+            for (List<JsonNode> versions : groupByLogicalProject(manifest).values()) {
+                for (JsonNode version : versions) {
+                    Row row = versionSheet.createRow(versionRow++);
+                    textCell(row, 0, version.path("name").asText());
+                    textCell(row, 1, version.path("project_number").asText());
+                    row.createCell(2).setCellValue(version.path("version_no").asInt(1));
+                    textCell(row, 3, version.path("source_status").asText(""));
+                    textCell(row, 4, version.path("is_latest_version").asBoolean(true) ? "نعم" : "لا");
+                    row.createCell(5).setCellValue(version.path("files").size());
                 }
-                for (JsonNode file : projectFiles) fillRow(sheet.createRow(index++), project, file);
             }
-            sheet.createFreezePane(0, 1);
+            versionSheet.createFreezePane(0, 1);
             try (OutputStream out = Files.newOutputStream(target)) { book.write(out); }
         }
     }
 
-    private void fillRow(Row row, JsonNode project, JsonNode file) {
-        textCell(row, 0, project.path("name").asText());
-        textCell(row, 1, project.path("project_number").asText());
-        row.createCell(2).setCellValue(project.path("year").asInt());
-        row.createCell(3).setCellValue(project.path("version_no").asInt(1));
-        textCell(row, 4, project.path("is_latest_version").asBoolean(true) ? "نعم" : "لا");
-        textCell(row, 5, project.path("source_status").asText(""));
-        row.createCell(6).setCellValue(project.path("files").size());
-        if (file != null) {
-            textCell(row, 7, file.path("original_name").asText());
-            row.createCell(8).setCellValue(file.path("size_bytes").asDouble());
-            textCell(row, 9, file.path("checksum_sha256").asText());
+    private static void writeHeadings(Sheet sheet, String[] headings, CellStyle style) {
+        Row top = sheet.createRow(0);
+        for (int i = 0; i < headings.length; i++) {
+            Cell cell = top.createCell(i);
+            cell.setCellValue(headings[i]);
+            cell.setCellStyle(style);
+            sheet.setColumnWidth(i, i == 0 ? 10500 : 5200);
         }
+    }
+
+    private static Map<String, List<JsonNode>> groupByLogicalProject(JsonNode manifest) {
+        Map<String, List<JsonNode>> groups = new LinkedHashMap<>();
+        for (JsonNode project : manifest.path("projects")) {
+            String key = project.path("project_uid").asText();
+            if (key.isBlank()) key = project.path("project_id").asText();
+            if (key.isBlank()) key = "unidentified-" + groups.size();
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(project);
+        }
+        for (List<JsonNode> versions : groups.values()) {
+            versions.sort(Comparator.comparingInt(version -> version.path("version_no").asInt(1)));
+        }
+        return groups;
+    }
+
+    private static int totalFiles(List<JsonNode> versions) {
+        return versions.stream().mapToInt(version -> version.path("files").size()).sum();
     }
 
     private static void textCell(Row row, int column, String value) {
@@ -195,22 +233,31 @@ public class ExportAlternativeWriter {
             float y = 780;
             try {
                 y = line(stream, font, 16, "تقرير بيانات المشاريع", y);
-                y = line(stream, font, 10, "يتضمن بيانات جميع الإصدارات المحددة (دون الملفات الأصلية)", y - 10);
-                for (JsonNode project : manifest.path("projects")) {
-                    if (y < 90) {
+                y = line(stream, font, 10, "كل مشروع منطقي يظهر مرة واحدة مع ملخص إصداراته", y - 10);
+                for (List<JsonNode> versions : groupByLogicalProject(manifest).values()) {
+                    if (y < 105) {
                         stream.close();
                         page = new PDPage(PDRectangle.A4);
                         document.addPage(page);
                         stream = new PDPageContentStream(document, page);
                         y = 785;
                     }
-                    String heading = "المشروع: " + project.path("name").asText()
-                            + " | رقم: " + project.path("project_number").asText();
+                    JsonNode latest = versions.get(versions.size() - 1);
+                    String heading = "المشروع: " + latest.path("name").asText()
+                            + " | رقم: " + latest.path("project_number").asText();
                     y = line(stream, font, 11, heading, y - 12);
-                    y = line(stream, font, 10, "السنة: " + project.path("year").asText()
-                            + " | الإصدار: " + project.path("version_no").asText("1")
-                            + " | الحالة: " + project.path("source_status").asText(""), y);
-                    y = line(stream, font, 9, "عدد الملفات المسجلة: " + project.path("files").size(), y);
+                    y = line(stream, font, 10, "السنة: " + latest.path("year").asText()
+                            + " | عدد الإصدارات: " + versions.size()
+                            + " | الحالة الحالية: " + latest.path("source_status").asText(""), y);
+                    StringBuilder history = new StringBuilder("الإصدارات: ");
+                    for (int i = 0; i < versions.size(); i++) {
+                        if (i > 0) history.append("، ");
+                        JsonNode version = versions.get(i);
+                        history.append("v").append(version.path("version_no").asInt(i + 1))
+                                .append(" ").append(version.path("source_status").asText(""));
+                    }
+                    y = line(stream, font, 9, history.toString(), y);
+                    y = line(stream, font, 9, "إجمالي الملفات المسجلة: " + totalFiles(versions), y);
                 }
             } finally { stream.close(); }
             document.save(target.toFile());

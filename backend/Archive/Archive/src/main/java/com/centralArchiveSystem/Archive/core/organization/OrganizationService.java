@@ -150,6 +150,10 @@ public class OrganizationService {
         if (request.name() != null && !request.name().isBlank()) {
             organization.setName(request.name());
         }
+        if (request.parentId() != null && !request.parentId().equals(organization.getParentId())) {
+            validateHierarchy(organization.getType(), request.parentId(), id);
+            organization.setParentId(request.parentId());
+        }
         if (request.description() != null) {
             organization.setDescription(request.description());
         }

@@ -63,7 +63,7 @@ class OrganizationServiceTest {
         OrganizationService service = new OrganizationService(organizations, projects);
 
         assertThrows(IllegalStateException.class,
-                () -> service.update(id, new OrganizationUpdateRequest(null, null, false)));
+                () -> service.update(id, new OrganizationUpdateRequest(null, null, false, null)));
         verify(organizations, never()).save(org);
     }
 
@@ -84,6 +84,56 @@ class OrganizationServiceTest {
         assertThrows(IllegalStateException.class,
                 () -> service.delete(id));
         verify(organizations, never()).save(org);
+    }
+
+    @Test
+    void updateChangesParentWhenNewParentMatchesHierarchy() {
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+
+        UUID companyId = UUID.randomUUID();
+        UUID factoryId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+
+        Organization company = organization(companyId, Organization.OrganizationType.COMPANY, null, true);
+        Organization newFactory = organization(factoryId, Organization.OrganizationType.FACTORY, companyId, true);
+        Organization line = organization(lineId, Organization.OrganizationType.LINE, UUID.randomUUID(), true);
+
+        when(organizations.findById(lineId)).thenReturn(Optional.of(line));
+        when(organizations.findById(factoryId)).thenReturn(Optional.of(newFactory));
+        when(organizations.findById(companyId)).thenReturn(Optional.of(company));
+        when(organizations.save(line)).thenReturn(line);
+        when(organizations.countByParentId(lineId)).thenReturn(0L);
+        when(projects.countByOrganizationId(lineId)).thenReturn(0L);
+
+        OrganizationService service = new OrganizationService(organizations, projects);
+        var updated = service.update(lineId, new OrganizationUpdateRequest(null, null, null, factoryId));
+
+        assertEquals(factoryId, line.getParentId());
+        assertEquals(factoryId, updated.parentId());
+        verify(organizations).save(line);
+    }
+
+    @Test
+    void updateRejectsParentThatDoesNotMatchOrganizationHierarchy() {
+        OrganizationRepository organizations = mock(OrganizationRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+
+        UUID companyId = UUID.randomUUID();
+        UUID factoryId = UUID.randomUUID();
+        UUID lineId = UUID.randomUUID();
+        Organization company = organization(companyId, Organization.OrganizationType.COMPANY, null, true);
+        Organization line = organization(lineId, Organization.OrganizationType.LINE, factoryId, true);
+        Organization notACompany = organization(UUID.randomUUID(), Organization.OrganizationType.COMPANY, null, true);
+
+        when(organizations.findById(factoryId)).thenReturn(Optional.of(organization(factoryId, Organization.OrganizationType.FACTORY, companyId, true)));
+        when(organizations.findById(lineId)).thenReturn(Optional.of(line));
+        when(organizations.findById(notACompany.getId())).thenReturn(Optional.of(notACompany));
+
+        OrganizationService service = new OrganizationService(organizations, projects);
+        assertThrows(IllegalArgumentException.class,
+                () -> service.update(lineId, new OrganizationUpdateRequest(null, null, null, notACompany.getId())));
+        verify(organizations, never()).save(any());
     }
 
     @Test

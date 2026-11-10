@@ -5,6 +5,8 @@ import org.hibernate.annotations.UuidGenerator;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.Set;
+import java.util.LinkedHashSet;
 
 @Entity
 @Table(name = "files", schema = "project")
@@ -23,6 +25,13 @@ public class FileEntity {
 
     @Column(name = "type_id")
     private UUID typeId;
+
+    /** Additional categories; category_id remains the legacy/primary category. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "file_category_assignments", schema = "project",
+            joinColumns = @JoinColumn(name = "file_id"))
+    @Column(name = "category_id", nullable = false)
+    private Set<UUID> categoryIds = new LinkedHashSet<>();
 
     @Column(name = "confidentiality_level_id")
     private UUID confidentialityLevelId;
@@ -127,6 +136,16 @@ public class FileEntity {
 
     public UUID getTypeId() { return typeId; }
     public void setTypeId(UUID typeId) { this.typeId = typeId; }
+
+    public Set<UUID> getCategoryIds() {
+        Set<UUID> result = new LinkedHashSet<>(categoryIds == null ? Set.of() : categoryIds);
+        if (categoryId != null) result.add(categoryId);
+        return result;
+    }
+    public void setCategoryIds(Set<UUID> categoryIds) {
+        this.categoryIds = new LinkedHashSet<>(categoryIds == null ? Set.of() : categoryIds);
+        if (this.categoryIds.isEmpty() && categoryId != null) this.categoryIds.add(categoryId);
+    }
 
     public UUID getConfidentialityLevelId() { return confidentialityLevelId; }
     public void setConfidentialityLevelId(UUID confidentialityLevelId) { this.confidentialityLevelId = confidentialityLevelId; }

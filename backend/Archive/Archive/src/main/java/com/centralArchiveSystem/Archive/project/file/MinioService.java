@@ -26,18 +26,27 @@ public class MinioService {
     }
 
     public void uploadFile(MultipartFile file, String bucket, String objectKey) throws Exception {
+        uploadFile(file, bucket, objectKey, file.getContentType());
+    }
+
+    /** Upload using the MIME type detected from the file signature, not the browser-supplied header. */
+    public void uploadFile(MultipartFile file, String bucket, String objectKey, String detectedContentType)
+            throws Exception {
         ensureBucketExists(bucket);
 
+        String contentType = detectedContentType != null && !detectedContentType.isBlank()
+                ? detectedContentType : "application/octet-stream";
         minioClient.putObject(
                 PutObjectArgs.builder()
                         .bucket(bucket)
                         .object(objectKey)
                         .stream(file.getInputStream(), file.getSize(), -1)
-                        .contentType(file.getContentType())
+                        .contentType(contentType)
                         .build()
         );
 
-        log.info("File uploaded successfully: bucket={}, objectKey={}", bucket, objectKey);
+        log.info("File uploaded successfully: bucket={}, objectKey={}, contentType={}",
+                bucket, objectKey, contentType);
     }
 
     public void uploadRaw(InputStream inputStream, String bucket, String objectKey,

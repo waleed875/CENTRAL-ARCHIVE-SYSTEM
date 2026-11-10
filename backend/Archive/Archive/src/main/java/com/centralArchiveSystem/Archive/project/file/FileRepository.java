@@ -40,7 +40,7 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
         SELECT f FROM FileEntity f WHERE f.projectId=:projectId
           AND ((UPPER(:status)='DELETED' AND f.deletedAt IS NOT NULL)
                OR ((:status IS NULL OR UPPER(:status)<>'DELETED') AND f.deletedAt IS NULL))
-          AND (:categoryId IS NULL OR f.categoryId=:categoryId)
+          AND (:categoryId IS NULL OR f.categoryId=:categoryId OR :categoryId MEMBER OF f.categoryIds)
           AND (:typeId IS NULL OR f.typeId=:typeId)
           AND (:status IS NULL OR UPPER(f.status)=UPPER(:status))
           AND (:search IS NULL OR :search='' OR
