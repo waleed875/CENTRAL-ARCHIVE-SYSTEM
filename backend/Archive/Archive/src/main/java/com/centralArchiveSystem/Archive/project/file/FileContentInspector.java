@@ -119,7 +119,7 @@ public final class FileContentInspector {
         try (InputStream input = file.getInputStream();
              PushbackInputStream pushback = new PushbackInputStream(input, SNIFF_BYTES)) {
             String mimeType = validateAndPreserve(pushback, expected);
-            if (ZIP_EXTENSIONS.contains(expected) && !"zip".equals(expected)) {
+            if (ZIP_EXTENSIONS.contains(expected)) {
                 Path temp = Files.createTempFile("central-archive-content-", ".zip");
                 try (InputStream fullInput = file.getInputStream()) {
                     Files.copy(fullInput, temp, StandardCopyOption.REPLACE_EXISTING);
