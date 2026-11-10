@@ -110,6 +110,9 @@ public class MigrationRunner {
             MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Migration source not found: " + batch.getMigrationSourceId()));
+            if (!source.getIsActive()) {
+                throw new IllegalStateException("Migration source is inactive: " + source.getId());
+            }
 
             try (LegacyMigrationService.LegacyConnection connection =
                          legacyMigrationService.openConnection(source)) {
@@ -186,7 +189,8 @@ public class MigrationRunner {
      * fail -- it reports a clean run of zero files.
      */
     public UUID ensureSourceId() {
-        List<MigrationSource> candidates = sourceRepository.findByNameContainingIgnoreCase(sourceName);
+        List<MigrationSource> candidates = sourceRepository.findByNameContainingIgnoreCase(sourceName)
+                .stream().filter(MigrationSource::getIsActive).toList();
 
         List<MigrationSource> exact = candidates.stream()
                 .filter(s -> sourceName.equalsIgnoreCase(s.getName()))
