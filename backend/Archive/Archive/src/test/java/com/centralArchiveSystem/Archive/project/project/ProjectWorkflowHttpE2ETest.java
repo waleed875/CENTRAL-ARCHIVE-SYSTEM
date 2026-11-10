@@ -448,8 +448,15 @@ class ProjectWorkflowHttpE2ETest {
                 .andReturn().getResponse().getContentAsString();
         UUID fileId = UUID.fromString(objectMapper.readTree(uploaded).path("data").path("id").asText());
 
-        var downloaded = mockMvc.perform(get("/api/v1/files/{id}/download", fileId)
+        // StreamingResponseBody is completed asynchronously. Dispatch the async result before
+        // inspecting the response body; reading the initial MockMvc response can observe an
+        // empty body even though the download endpoint returned HTTP 200.
+        var pendingDownload = mockMvc.perform(get("/api/v1/files/{id}/download", fileId)
                         .header("Authorization", "Bearer " + token))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        var downloaded = mockMvc.perform(asyncDispatch(pendingDownload))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(mimeType))
                 .andReturn();
