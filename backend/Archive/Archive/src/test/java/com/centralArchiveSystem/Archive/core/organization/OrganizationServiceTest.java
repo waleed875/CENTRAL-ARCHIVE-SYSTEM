@@ -124,7 +124,7 @@ class OrganizationServiceTest {
         UUID lineId = UUID.randomUUID();
         Organization company = organization(companyId, Organization.OrganizationType.COMPANY, null, true);
         Organization line = organization(lineId, Organization.OrganizationType.LINE, factoryId, true);
-        Organization notACompany = organization(UUID.randomUUID(), Organization.OrganizationType.FACTORY, companyId, true);
+        Organization notACompany = organization(UUID.randomUUID(), Organization.OrganizationType.COMPANY, null, true);
 
         when(organizations.findById(factoryId)).thenReturn(Optional.of(organization(factoryId, Organization.OrganizationType.FACTORY, companyId, true)));
         when(organizations.findById(lineId)).thenReturn(Optional.of(line));
