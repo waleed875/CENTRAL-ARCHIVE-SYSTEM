@@ -412,6 +412,92 @@ class FileServiceTest {
     }
 
     @Test
+    void uploadInfersUniqueActiveTypeFromExtensionWithinSelectedCategory() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        MinioService minioService = mock(MinioService.class);
+        MinioConfig minioConfig = mock(MinioConfig.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ConfidentialityAccessService confidentiality = mock(ConfidentialityAccessService.class);
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        TransactionStatus transactionStatus = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
+
+        UUID projectId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        UUID typeId = UUID.randomUUID();
+        Project project = new Project();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        var category = new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setIsActive(true);
+        var pdf = new com.centralArchiveSystem.Archive.project.filetype.FileType();
+        pdf.setId(typeId);
+        pdf.setCategoryId(categoryId);
+        pdf.setName("PDF Document");
+        pdf.setDefaultExtension("pdf");
+        pdf.setIsActive(true);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(typeRepository.findByCategoryIdAndIsActive(categoryId, true)).thenReturn(java.util.List.of(pdf));
+        when(minioConfig.getBucket()).thenReturn("archive-files");
+        when(fileRepository.saveAndFlush(any(FileEntity.class))).thenAnswer(invocation -> {
+            FileEntity saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        MockMultipartFile multipart = new MockMultipartFile(
+                "file", "quarterly-report.PDF", "application/octet-stream",
+                "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII));
+        FileService service = new FileService(fileRepository, categoryRepository, typeRepository,
+                minioService, minioConfig, projectRepository, confidentiality, transactionManager);
+
+        var response = service.uploadFile(projectId, multipart,
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null),
+                UUID.randomUUID());
+
+        assertEquals(typeId, response.typeId());
+        var savedFile = org.mockito.ArgumentCaptor.forClass(FileEntity.class);
+        verify(fileRepository).saveAndFlush(savedFile.capture());
+        assertEquals(typeId, savedFile.getValue().getTypeId());
+    }
+
+    @Test
+    void ambiguousExtensionDoesNotGuessFileType() throws Exception {
+        FileRepository fileRepository = mock(FileRepository.class);
+        FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
+        FileTypeRepository typeRepository = mock(FileTypeRepository.class);
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        var project = new Project();
+        UUID projectId = UUID.randomUUID(), categoryId = UUID.randomUUID();
+        project.setId(projectId);
+        project.setStatus(Project.ProjectStatus.DRAFT);
+        var category = new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        category.setId(categoryId);
+        category.setIsActive(true);
+        var first = new com.centralArchiveSystem.Archive.project.filetype.FileType();
+        first.setDefaultExtension("pdf"); first.setCategoryId(categoryId); first.setIsActive(true);
+        var second = new com.centralArchiveSystem.Archive.project.filetype.FileType();
+        second.setDefaultExtension(".PDF"); second.setCategoryId(categoryId); second.setIsActive(true);
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(typeRepository.findByCategoryIdAndIsActive(categoryId, true)).thenReturn(java.util.List.of(first, second));
+        FileService service = new FileService(fileRepository, categoryRepository, typeRepository,
+                mock(MinioService.class), mock(MinioConfig.class), projectRepository,
+                mock(ConfidentialityAccessService.class), mock(PlatformTransactionManager.class));
+        MockMultipartFile multipart = new MockMultipartFile("file", "report.pdf", "application/pdf",
+                "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII));
+        assertThrows(IllegalStateException.class, () -> service.uploadFile(projectId, multipart,
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null),
+                UUID.randomUUID()));
+        verifyNoInteractions(fileRepository);
+    }
+
+    @Test
     void metadataUpdateRejectsCategoryTypeMismatch() {
         FileRepository fileRepository = mock(FileRepository.class);
         FileCategoryRepository categoryRepository = mock(FileCategoryRepository.class);
