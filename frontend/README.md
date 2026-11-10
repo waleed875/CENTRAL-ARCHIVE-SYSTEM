@@ -2,6 +2,10 @@
 
 واجهة Next.js + TypeScript + React بواجهة عربية RTL وهوية مؤسسية (أزرق ليلي، عاجي، ذهبي)، تعمل كعميل خادمي لواجهة Spring Boot في المستودع نفسه.
 
+## الخطوط المحلية والعمل دون إنترنت
+
+يُحمّل خط Tajawal من `public/fonts` مباشرةً عبر `@font-face`، ولا تعتمد الواجهة على Google Fonts أو أي خدمة خطوط خارجية. ملفات الخط مرفقة مع ترخيص SIL Open Font License في `public/fonts/OFL.txt`.
+
 ## البدء محليًا
 
 يتطلب Node.js 22 أو أحدث، وتشغيل Spring Boot وPostgreSQL وMinIO من المشروع الخلفي.
