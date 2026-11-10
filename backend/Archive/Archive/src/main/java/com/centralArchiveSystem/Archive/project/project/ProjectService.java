@@ -133,6 +133,9 @@ public class ProjectService {
         return ProjectResponse.fromEntity(projectRepository.save(project));
     }
     public ProjectResponse newVersion(UUID id, UUID createdBy, ProjectUpdateRequest overrides) {
+        if (overrides != null && overrides.name() != null) {
+            throw new BusinessRuleException("اسم المشروع يُورّث من الإصدار السابق ولا يمكن تغييره أثناء إنشاء إصدار جديد");
+        }
         Project original = requireAccessibleProject(id);
         if (overrides != null && overrides.confidentialityLevelId() != null) {
             confidentialityAccessService.requireReadAccess(overrides.confidentialityLevelId());
