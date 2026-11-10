@@ -401,7 +401,7 @@ class FileServiceTest {
 
         assertEquals(null, response.typeId());
         assertEquals("application/pdf", response.mimeType());
-        verifyNoInteractions(typeRepository);
+        verify(typeRepository).findByCategoryIdAndIsActive(categoryId, true);
     }
 
     @Test
