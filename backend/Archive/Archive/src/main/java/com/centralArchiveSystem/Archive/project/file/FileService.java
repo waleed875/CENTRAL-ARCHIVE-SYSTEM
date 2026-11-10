@@ -106,6 +106,8 @@ public class FileService {
             throw new IllegalStateException("File category is inactive");
         }
 
+        String originalName = multipartFile.getOriginalFilename();
+        String extension = extractExtension(originalName);
         FileType fileType = null;
         if (request.typeId() != null) {
             fileType = fileTypeRepository.findById(request.typeId())
@@ -118,10 +120,22 @@ public class FileService {
                 throw new IllegalArgumentException(
                         "Selected file type does not belong to selected category");
             }
+        } else if (extension != null) {
+            // If the operator did not choose a type, infer it from the configured extension
+            // inside the selected category. More than one match is ambiguous and must not be guessed.
+            List<FileType> matches = fileTypeRepository.findByCategoryIdAndIsActive(request.categoryId(), true)
+                    .stream()
+                    .filter(candidate -> extensionsEquivalent(extension, candidate.getDefaultExtension()))
+                    .toList();
+            if (matches.size() > 1) {
+                throw new IllegalStateException(
+                        "أكثر من نوع ملف في التصنيف الحالي يستخدم الامتداد ." + extension
+                                + ". اختر النوع يدوياً قبل الرفع");
+            }
+            if (matches.size() == 1) {
+                fileType = matches.get(0);
+            }
         }
-
-        String originalName = multipartFile.getOriginalFilename();
-        String extension = extractExtension(originalName);
         String expectedExtension = fileType != null
                 && fileType.getDefaultExtension() != null
                 && !fileType.getDefaultExtension().isBlank()
@@ -161,7 +175,7 @@ public class FileService {
             FileEntity fileEntity = new FileEntity();
             fileEntity.setProjectId(projectId);
             fileEntity.setCategoryId(request.categoryId());
-            fileEntity.setTypeId(request.typeId());
+            fileEntity.setTypeId(fileType != null ? fileType.getId() : null);
             fileEntity.setConfidentialityLevelId(request.confidentialityLevelId());
             fileEntity.setOriginalName(originalName);
             fileEntity.setStoredName(storedName);
@@ -397,6 +411,17 @@ public class FileService {
         int lastDotIndex = fileName.lastIndexOf('.');
         if (lastDotIndex == -1 || lastDotIndex == fileName.length() - 1) return null;
         return fileName.substring(lastDotIndex + 1).toLowerCase();
+    }
+
+    private static boolean extensionsEquivalent(String actual, String configured) {
+        if (actual == null || configured == null || actual.isBlank() || configured.isBlank()) return false;
+        String left = actual.startsWith(".") ? actual.substring(1) : actual;
+        String right = configured.startsWith(".") ? configured.substring(1) : configured;
+        left = left.toLowerCase(java.util.Locale.ROOT);
+        right = right.toLowerCase(java.util.Locale.ROOT);
+        if (left.equals(right)) return true;
+        return (left.equals("jpg") || left.equals("jpeg"))
+                && (right.equals("jpg") || right.equals("jpeg"));
     }
 
     private String calculateChecksum(MultipartFile file) throws Exception {
