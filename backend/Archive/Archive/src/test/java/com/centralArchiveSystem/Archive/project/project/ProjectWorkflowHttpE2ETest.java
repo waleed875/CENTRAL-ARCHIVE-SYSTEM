@@ -293,6 +293,94 @@ class ProjectWorkflowHttpE2ETest {
                 "a rejection must not leave its reason sitting in the correction-notes column");
     }
 
+    @Test
+    void rejectedVersionCanBeReopenedOrSupersededAndDraftSuccessorCanBeDeleted() throws Exception {
+        String entryToken = login(dataEntryUsername);
+        String auditorToken = login(auditorUsername);
+        String createResponse = mockMvc.perform(post("/api/v1/projects")
+                        .header("Authorization", "Bearer " + entryToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "organizationId":"%s",
+                                  "projectNumber":"WF-RECOVERY-%s",
+                                  "name":"Version Recovery Project",
+                                  "year":2026,
+                                  "description":"before rejection",
+                                  "dataCompletionStatus":"COMPLETE"
+                                }
+                                """.formatted(organizationId, UUID.randomUUID().toString().substring(0, 8))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID firstId = UUID.fromString(objectMapper.readTree(createResponse).path("data").path("id").asText());
+
+        mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", firstId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/projects/{id}/reject", firstId)
+                        .header("Authorization", "Bearer " + auditorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejection_reason\":\"first decision\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/projects/{id}/reopen", firstId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("NEEDS_CORRECTION"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("first decision"));
+
+        mockMvc.perform(patch("/api/v1/projects/{id}", firstId)
+                        .header("Authorization", "Bearer " + entryToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"corrected after reopening\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.description").value("corrected after reopening"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("first decision"));
+
+        mockMvc.perform(patch("/api/v1/projects/{id}/submit-for-review", firstId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/projects/{id}/reject", firstId)
+                        .header("Authorization", "Bearer " + auditorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejection_reason\":\"second decision\"}"))
+                .andExpect(status().isOk());
+
+        String nextResponse = mockMvc.perform(post("/api/v1/projects/{id}/new-version", firstId)
+                        .header("Authorization", "Bearer " + entryToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.versionNo").value(2))
+                .andExpect(jsonPath("$.data.name").value("Version Recovery Project"))
+                .andReturn().getResponse().getContentAsString();
+        UUID secondId = UUID.fromString(objectMapper.readTree(nextResponse).path("data").path("id").asText());
+
+        Project first = projectRepository.findById(firstId).orElseThrow();
+        Project second = projectRepository.findById(secondId).orElseThrow();
+        assertEquals(Project.ProjectStatus.REJECTED, first.getStatus());
+        assertEquals("second decision", first.getRejectionReason());
+        assertFalse(first.getIsLatestVersion());
+        assertTrue(second.getIsLatestVersion());
+        assertEquals(first.getId(), second.getPreviousProjectId());
+
+        // A rejected version is historical and cannot be deleted as if it were a draft.
+        mockMvc.perform(delete("/api/v1/projects/{id}", firstId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isUnprocessableEntity());
+
+        // Deleting the unsubmitted successor restores the rejected version as the latest record.
+        mockMvc.perform(delete("/api/v1/projects/{id}", secondId)
+                        .header("Authorization", "Bearer " + entryToken))
+                .andExpect(status().isOk());
+        Project restored = projectRepository.findById(firstId).orElseThrow();
+        assertTrue(restored.getIsLatestVersion());
+        assertEquals(Project.ProjectStatus.REJECTED, restored.getStatus());
+        assertEquals("second decision", restored.getRejectionReason());
+        assertTrue(projectRepository.findById(secondId).isEmpty());
+    }
+
     private String login(String username) throws Exception {
         String body = """
                 {"username":"%s","password":"%s"}
