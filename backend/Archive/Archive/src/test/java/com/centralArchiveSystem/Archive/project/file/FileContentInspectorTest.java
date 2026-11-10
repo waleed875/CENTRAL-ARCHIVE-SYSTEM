@@ -67,6 +67,16 @@ class FileContentInspectorTest {
     }
 
     @Test
+    void rejectsTruncatedZipThatOnlyCarriesTheLocalFileSignature() {
+        byte[] truncated = new byte[]{0x50, 0x4B, 0x03, 0x04, 0x01, 0x02, 0x03};
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "damaged.zip", "application/zip", truncated);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateMultipart(file, "zip"));
+    }
+
+    @Test
     void acceptsOfficeZipContainerForDocx() throws Exception {
         byte[] bytes = zip(
                 "[Content_Types].xml",
