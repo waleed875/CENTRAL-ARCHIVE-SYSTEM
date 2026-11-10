@@ -151,10 +151,13 @@ jobs:
           PY
       - name: Preserve test evidence and infrastructure logs
         if: always()
+        # Evidence is useful but auxiliary: a repository artifact-quota limit must not
+        # obscure the actual test result. Keep evidence for a shorter period to reduce usage.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-evidence-${{ github.run_id }}
-          retention-days: 14
+          retention-days: 3
           if-no-files-found: warn
           path: |
             backend/Archive/Archive/target/surefire-reports/
