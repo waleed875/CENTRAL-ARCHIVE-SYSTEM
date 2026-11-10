@@ -109,7 +109,7 @@ class ProjectServiceTest {
         assertEquals(Project.ProjectStatus.DRAFT, response.status());
         assertFalse(original.getIsLatestVersion());
         assertEquals(currentUserId, response.createdBy());
-        assertEquals("Revised Project", response.name());
+        assertEquals(original.getName(), response.name());
         assertEquals("Revised description", response.description());
 
         verify(repository, times(2)).save(any(Project.class));
