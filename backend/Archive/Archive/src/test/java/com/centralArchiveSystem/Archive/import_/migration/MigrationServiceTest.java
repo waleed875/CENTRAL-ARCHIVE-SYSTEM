@@ -411,6 +411,54 @@ class MigrationServiceTest {
     }
 
     @Test
+    void inactiveSourceCannotCreateOrRunNewBatches() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        UUID sourceId = UUID.randomUUID();
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setIsActive(false);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
+
+        assertThrows(IllegalStateException.class, () -> service.createBatch(sourceId,
+                new com.centralArchiveSystem.Archive.import_.migration.dto.MigrationBatchCreateRequest("B-INACTIVE", null)));
+        verify(batches, never()).save(any());
+
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(UUID.randomUUID());
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-INACTIVE");
+        batch.setStatus(MigrationBatch.Status.PLANNED);
+        when(batches.findById(batch.getId())).thenReturn(Optional.of(batch));
+        assertThrows(IllegalStateException.class, () -> service.runBatch(batch.getId(),
+                new MigrationRunRequest(new MigrationRunRequest.MigrationConfig(null, null, Map.of(), null))));
+        verify(execution, never()).execute(any());
+        verify(batches, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void sourceConnectionProbeDelegatesToReadOnlyMigrationRunner() {
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        UUID sourceId = UUID.randomUUID();
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setIsActive(true);
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+        when(execution.testConnection(sourceId)).thenReturn("Connection successful");
+
+        MigrationService service = new MigrationService(sources, mock(MigrationBatchRepository.class),
+                execution, migrationSettings(false), crypto(), mock(LegacyMigrationItemRepository.class));
+
+        assertEquals("Connection successful", service.testSourceConnection(sourceId));
+        verify(execution).testConnection(sourceId);
+    }
+
+    @Test
     void completeBatchAcceptsOnlyTerminalStatuses() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
