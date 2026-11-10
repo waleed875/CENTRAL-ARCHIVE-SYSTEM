@@ -22,7 +22,7 @@ export function ProjectDetail({id}:{id:string}){
   if(mode!=="upload"||!uploadFiles.length||!categoryId||!fileTypes.data)return;
   if(uploadExtensions.length!==1){setTypeId("");return}
   const matches=fileTypes.data.filter(t=>t.categoryId===categoryId&&t.defaultExtension
-   &&extensionMatches(uploadExtensions[0],t.defaultExtension.replace(/^\\./,"").toLowerCase()));
+   &&extensionMatches(uploadExtensions[0],t.defaultExtension.replace(/^\./,"").toLowerCase()));
   setTypeId(matches.length===1?matches[0].id:"");
  },[mode,uploadFiles,categoryId,fileTypes.data]);
  const p=project.data;
@@ -59,7 +59,7 @@ export function ProjectDetail({id}:{id:string}){
  function acceptUploadFiles(incoming:File[]){
   const selected=incoming.filter(Boolean);
   if(!selected.length)return;
-  const forbidden=selected.find(file=>/\\.(exe|dll|msi|bat|cmd|ps1|sh|com|scr|jar)$/i.test(file.name));
+  const forbidden=selected.find(file=>/\.(exe|dll|msi|bat|cmd|ps1|sh|com|scr|jar)$/i.test(file.name));
   if(forbidden){setUploadFiles([]);setTypeId("");setError("ملفات التشغيل غير مسموحة في الأرشيف العادي: "+forbidden.name);return}
   setError("");setUploadFiles(selected);setTypeId("");
  }
