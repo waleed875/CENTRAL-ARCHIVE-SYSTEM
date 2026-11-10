@@ -1,5 +1,5 @@
 "use client";
-import {useState,useEffect,FormEvent}from"react";import Link from"next/link";import {useRouter}from"next/navigation";import {ArrowRight,Edit3,UploadCloud,Download,Files,FolderKanban,Clock3,ClipboardCheck,CheckCheck,Archive,RotateCcw,Trash2,Plus,FileText,GitBranch,LockKeyhole}from"lucide-react";
+import {useState,useEffect,useRef,FormEvent}from"react";import Link from"next/link";import {useRouter}from"next/navigation";import {ArrowRight,Edit3,UploadCloud,Download,Files,FolderKanban,Clock3,ClipboardCheck,CheckCheck,Archive,RotateCcw,Trash2,Plus,FileText,GitBranch,LockKeyhole}from"lucide-react";
 import {api,jsonBody,download,ApiError}from"@/lib/api";import{useRemote}from"@/components/hooks";import{PageHeader,Panel,Status,Alert,Empty,Loading,Field,Modal}from"@/components/ui";
 import type{Project,ArchiveFile,PageData,FileCategory,FileType,UserInfo,Organization,Reference,ProjectMember}from"@/lib/types";
 import {canWrite,statusName,dateLabel,sizeLabel}from"@/lib/types";
@@ -9,6 +9,7 @@ function fileExtension(file:File){const index=file.name.lastIndexOf(".");return 
 function extensionMatches(a:string,b:string){return a===b||((a==="jpg"||a==="jpeg")&&(b==="jpg"||b==="jpeg"))}
 export function ProjectDetail({id}:{id:string}){
  const router=useRouter();
+ const uploadInputRef=useRef<HTMLInputElement|null>(null);
  const project=useRemote<Project>("/api/v1/projects/"+id),members=useRemote<ProjectMember[]>("/api/v1/projects/"+id+"/members"),files=useRemote<PageData<ArchiveFile>>("/api/v1/projects/"+id+"/files?page=1&size=100"),versions=useRemote<Project[]>("/api/v1/projects/"+id+"/versions");
  const user=useRemote<UserInfo>("/api/v1/auth/me"),orgs=useRemote<Organization[]>("/api/v1/organizations/all"),types=useRemote<Reference[]>("/api/v1/project-types/all"),levels=useRemote<Reference[]>("/api/v1/confidentiality-levels/all");
  const cats=useRemote<FileCategory[]>("/api/v1/file-categories/all?isActive=true");
@@ -148,17 +149,21 @@ export function ProjectDetail({id}:{id:string}){
  {error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">حفظ التعديلات</button><button type="button" className="btn btn-quiet" onClick={()=>setMode(null)}>إلغاء</button></div>
  </form></Modal>}
  {(mode==="upload"||mode==="file-edit")&&<Modal title={mode==="upload"?"رفع ملف للمشروع":"تعديل بيانات الملف"} subtitle="تتبع الوثائق مستويات السرية وفئات الملفات المعتمدة." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={mode==="upload"?sendFile:saveFileMeta}>
- {mode==="upload"&&<label className={"upload-box"+(dragActive?" is-dragging":"")}
-  onDragEnter={e=>{e.preventDefault();setDragActive(true)}}
-  onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";setDragActive(true)}}
-  onDragLeave={e=>{e.preventDefault();if(e.currentTarget===e.target||!e.currentTarget.contains(e.relatedTarget as Node|null))setDragActive(false)}}
+ {mode==="upload"&&<div role="button" tabIndex={0} aria-label="منطقة اختيار وإفلات الملفات"
+  className={"upload-box"+(dragActive?" is-dragging":"")}
+  onClick={e=>{if(e.target===e.currentTarget)uploadInputRef.current?.click()}}
+  onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();uploadInputRef.current?.click()}}}
+  onDragEnter={e=>{e.preventDefault();e.stopPropagation();setDragActive(true)}}
+  onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="copy";setDragActive(true)}}
+  onDragLeave={e=>{e.preventDefault();if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragActive(false)}}
   onDrop={e=>{e.preventDefault();e.stopPropagation();setDragActive(false);acceptUploadFiles(Array.from(e.dataTransfer.files))}}>
   <UploadCloud size={24}/><strong>{uploadFiles.length===0?"اسحب الملفات إلى هنا أو اخترها من جهازك":uploadFiles.length===1?uploadFiles[0].name:"تم اختيار "+uploadFiles.length+" ملفات"}</strong>
   <small>يمكنك سحب ملف واحد أو عدة ملفات إلى هذه المنطقة، أو النقر للاختيار.</small>
   <small>وثائق PDF/Office وصور HEIC/AVIF، وتسجيلات MP3/WAV/FLAC/M4A، وفيديو MKV/WebM/AVI، وأرشيفات ZIP/RAR/7Z/TAR/GZ.</small>
   <small>ملفات التشغيل EXE وDLL وMSI غير مسموحة؛ يتحقق الخادم أيضًا من المحتوى الفعلي.</small>
   {uploadFiles.length>0&&<small>{uploadFiles.map(f=>f.name).join(" • ")}</small>}
-  <input type="file" multiple required={uploadFiles.length===0} onChange={e=>acceptUploadFiles(Array.from(e.target.files??[]))}/></label>}
+  <input ref={uploadInputRef} type="file" multiple hidden onClick={e=>e.stopPropagation()} onChange={e=>{acceptUploadFiles(Array.from(e.target.files??[]));e.currentTarget.value=""}}/>
+ </div>}
  <Field label="تصنيف الملف *"><select required multiple value={categoryIds} size={Math.min(5,Math.max(3,cats.data?.length??3))} onChange={e=>{const values=Array.from(e.target.selectedOptions,option=>option.value);setCategoryIds(values);setCategoryId(values[0]??"");setTypeId("")}}>{cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><small className="hint">يمكن اختيار أكثر من تصنيف باستخدام Ctrl (أو Cmd على Mac).</small></Field>
  <Field label="نوع الملف"><select value={typeId} disabled={!canChooseOneType||categoryIds.length>1} onChange={e=>setTypeId(e.target.value)}><option value="">{categoryIds.length>1?"اختر تصنيفاً واحداً لاستنتاج نوع الملف":canChooseOneType?"استنتاج تلقائي من الامتداد":"يُستنتج نوع كل ملف من امتداده"}</option>{fileTypes.data?.map(t=><option key={t.id} value={t.id}>{t.name}{t.defaultExtension?" (."+t.defaultExtension+")":""}</option>)}</select></Field>
  <Field label="مستوى السرية"><select value={levelId} onChange={e=>setLevelId(e.target.value)}><option value="">مستوى المشروع / دون تحديد</option>{levels.data?.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></Field>
