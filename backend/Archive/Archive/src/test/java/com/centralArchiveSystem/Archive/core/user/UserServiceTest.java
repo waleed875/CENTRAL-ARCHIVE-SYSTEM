@@ -72,6 +72,38 @@ class UserServiceTest {
     }
 
     @Test
+    void createAllowsOmittingFullNameAndEmailAndUsesUsernameAsDisplayName() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+
+        when(users.existsByUsername("archivist")).thenReturn(false);
+        when(encoder.encode("StrongPassword123!")).thenReturn("encoded-password");
+        when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserService service = new UserService(users, roles, imports, encoder);
+        UserRequest request = new UserRequest(
+                "archivist",
+                "StrongPassword123!",
+                null,
+                null,
+                null,
+                null,
+                Set.of()
+        );
+
+        UserResponse created = service.create(request);
+
+        assertEquals("archivist", created.fullName());
+        assertNull(created.email());
+        org.mockito.ArgumentCaptor<User> saved = org.mockito.ArgumentCaptor.forClass(User.class);
+        verify(users).save(saved.capture());
+        assertEquals("archivist", saved.getValue().getFullName());
+        assertNull(saved.getValue().getEmail());
+    }
+
+    @Test
     void patchRejectsDuplicateEmail() {
         UserRepository users = mock(UserRepository.class);
         RoleRepository roles = mock(RoleRepository.class);
