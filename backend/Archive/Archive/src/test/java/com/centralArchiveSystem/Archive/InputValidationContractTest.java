@@ -24,12 +24,12 @@ class InputValidationContractTest {
 
     @Test void optionalPatchFieldsCanBeOmitted() {
         assertTrue(VALIDATOR.validate(new UserUpdateRequest(null, null, null, null, null)).isEmpty());
-        assertTrue(VALIDATOR.validate(new OrganizationUpdateRequest(null, null, null)).isEmpty());
+        assertTrue(VALIDATOR.validate(new OrganizationUpdateRequest(null, null, null, null)).isEmpty());
         assertTrue(VALIDATOR.validate(new RoleUpdateRequest(null, null, null)).isEmpty());
     }
     @Test void explicitBlankNamesAreRejected() {
         assertFalse(VALIDATOR.validate(new UserUpdateRequest(" ", null, null, null, null)).isEmpty());
-        assertFalse(VALIDATOR.validate(new OrganizationUpdateRequest("", null, null)).isEmpty());
+        assertFalse(VALIDATOR.validate(new OrganizationUpdateRequest("", null, null, null)).isEmpty());
         assertFalse(VALIDATOR.validate(new RoleUpdateRequest("\t", null, null)).isEmpty());
     }
     @Test void invalidEmailIsRejectedOnCreateAndUpdate() {
@@ -54,7 +54,7 @@ class InputValidationContractTest {
         assertTrue(VALIDATOR.validate(request).stream().anyMatch(v -> v.getPropertyPath().toString().startsWith("members")));
     }
     @Test void nameLengthBoundaryIsValidated() {
-        assertTrue(VALIDATOR.validate(new OrganizationUpdateRequest("x".repeat(200), null, null)).isEmpty());
-        assertFalse(VALIDATOR.validate(new OrganizationUpdateRequest("x".repeat(201), null, null)).isEmpty());
+        assertTrue(VALIDATOR.validate(new OrganizationUpdateRequest("x".repeat(200), null, null, null)).isEmpty());
+        assertFalse(VALIDATOR.validate(new OrganizationUpdateRequest("x".repeat(201), null, null, null)).isEmpty());
     }
 }
