@@ -109,6 +109,19 @@ class MigrationRunnerTest {
     // ------------------------------------------------------- the name on a created source
 
     @Test
+    void refusesToCreateDuplicateAutomaticSourceWhenOnlyMatchingSourceIsInactive() {
+        MigrationSource inactive = source("ARC2");
+        inactive.setIsActive(false);
+        MigrationSourceRepository sources = repositoryReturning(inactive);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> runner(sources, URL).ensureSourceId());
+
+        assertTrue(error.getMessage().contains("inactive"), error.getMessage());
+        verify(sources, never()).save(any());
+    }
+
+    @Test
     void stampsTheCreatedSourceWithTheDatabaseTheRunWillActuallyRead() {
         MigrationSourceRepository sources = repositoryReturning();
         when(sources.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
