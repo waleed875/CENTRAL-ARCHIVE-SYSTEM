@@ -369,7 +369,10 @@ class MigrationServiceTest {
         MigrationExecutionService execution = mock(MigrationExecutionService.class);
 
         UUID sourceId = UUID.randomUUID();
-        when(sources.existsById(sourceId)).thenReturn(true);
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setIsActive(true);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
         when(batches.countByMigrationSourceIdAndStatus(
                 sourceId,
                 MigrationBatch.Status.RUNNING
@@ -378,7 +381,7 @@ class MigrationServiceTest {
         MigrationService service = new MigrationService(sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
 
         assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
-        verify(sources, never()).deleteById(any());
+        verify(sources, never()).save(any());
     }
 
     @Test
@@ -388,16 +391,22 @@ class MigrationServiceTest {
         MigrationExecutionService execution = mock(MigrationExecutionService.class);
 
         UUID sourceId = UUID.randomUUID();
-        when(sources.existsById(sourceId)).thenReturn(true);
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setIsActive(true);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
         when(batches.countByMigrationSourceIdAndStatus(
                 sourceId,
                 MigrationBatch.Status.RUNNING
         )).thenReturn(0L);
         when(batches.countByMigrationSourceId(sourceId)).thenReturn(2L);
+        when(sources.save(any(MigrationSource.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MigrationService service = new MigrationService(sources, batches, execution, migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
 
-        assertThrows(IllegalStateException.class, () -> service.deleteSource(sourceId));
+        service.deleteSource(sourceId);
+        assertFalse(source.getIsActive(), "source should be removed from active use");
+        verify(sources).save(source);
         verify(sources, never()).deleteById(any());
     }
 
