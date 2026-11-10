@@ -377,6 +377,7 @@ class FileServiceTest {
                 "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII)
         );
 
+        when(typeRepository.findByCategoryIdAndIsActive(categoryId, true)).thenReturn(java.util.List.of());
         com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest request =
                 new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of());
 
