@@ -312,11 +312,7 @@ class FileServiceTest {
                 content
         );
 
-        var request = new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
-                categoryId,
-                null,
-                null
-        );
+        var request = new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of());
 
         FileService service = new FileService(
                 fileRepository,
@@ -382,11 +378,7 @@ class FileServiceTest {
         );
 
         com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest request =
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
-                        categoryId,
-                        null,
-                        null
-                );
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of());
 
         FileService service = new FileService(
                 fileRepository,
@@ -457,7 +449,7 @@ class FileServiceTest {
                 minioService, minioConfig, projectRepository, confidentiality, transactionManager);
 
         var response = service.uploadFile(projectId, multipart,
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null),
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of()),
                 UUID.randomUUID());
 
         assertEquals(typeId, response.typeId());
@@ -492,7 +484,7 @@ class FileServiceTest {
         MockMultipartFile multipart = new MockMultipartFile("file", "report.pdf", "application/pdf",
                 "%PDF-1.7\n".getBytes(StandardCharsets.US_ASCII));
         assertThrows(IllegalStateException.class, () -> service.uploadFile(projectId, multipart,
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null),
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of()),
                 UUID.randomUUID()));
         verifyNoInteractions(fileRepository);
     }
@@ -627,11 +619,7 @@ class FileServiceTest {
         );
 
         com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest request =
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
-                        categoryId,
-                        typeId,
-                        null
-                );
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, typeId, null, java.util.List.of());
 
         FileService service = new FileService(
                 fileRepository,
@@ -717,8 +705,7 @@ class FileServiceTest {
         var result = service.uploadBatch(
                 projectId,
                 java.util.List.of(good, bad),
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(
-                        categoryId, null, null),
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of()),
                 UUID.randomUUID()
         );
 
