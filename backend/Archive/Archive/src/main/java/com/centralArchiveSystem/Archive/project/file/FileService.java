@@ -173,7 +173,7 @@ public class FileService {
 
         boolean uploadedToObjectStorage = false;
         try {
-            minioService.uploadFile(multipartFile, bucketName, objectKey);
+            minioService.uploadFile(multipartFile, bucketName, objectKey, detectedMimeType);
             uploadedToObjectStorage = true;
             registerRollbackCleanup(bucketName, objectKey);
 
