@@ -81,6 +81,7 @@ class ProjectVersionGuardTest {
     void rejectedLatestVersionCanBeReopenedWithoutErasingRejectionReason() {
         Project rejected = project(Project.ProjectStatus.REJECTED);
         rejected.setRejectionReason("بيانات المشروع غير مكتملة");
+        when(repository.save(rejected)).thenReturn(rejected);
 
         service.reopenRejected(rejected.getId());
 
