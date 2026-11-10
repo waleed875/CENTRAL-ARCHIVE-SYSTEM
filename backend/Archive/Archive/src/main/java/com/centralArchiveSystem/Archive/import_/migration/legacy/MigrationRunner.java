@@ -212,8 +212,13 @@ public class MigrationRunner {
      * fail -- it reports a clean run of zero files.
      */
     public UUID ensureSourceId() {
-        List<MigrationSource> candidates = sourceRepository.findByNameContainingIgnoreCase(sourceName)
-                .stream().filter(MigrationSource::getIsActive).toList();
+        List<MigrationSource> allCandidates = sourceRepository.findByNameContainingIgnoreCase(sourceName);
+        List<MigrationSource> candidates = allCandidates.stream()
+                .filter(MigrationSource::getIsActive).toList();
+        if (candidates.isEmpty() && !allCandidates.isEmpty()) {
+            throw new IllegalStateException("All migration sources matching '" + sourceName
+                    + "' are inactive. Reactivate or configure an active source before running the scheduled migration.");
+        }
 
         List<MigrationSource> exact = candidates.stream()
                 .filter(s -> sourceName.equalsIgnoreCase(s.getName()))
