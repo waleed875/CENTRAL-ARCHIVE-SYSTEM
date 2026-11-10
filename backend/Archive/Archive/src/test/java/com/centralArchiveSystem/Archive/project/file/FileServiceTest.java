@@ -418,6 +418,7 @@ class FileServiceTest {
 
         UUID projectId = UUID.randomUUID();
         UUID categoryId = UUID.randomUUID();
+        UUID secondCategoryId = UUID.randomUUID();
         UUID typeId = UUID.randomUUID();
         Project project = new Project();
         project.setId(projectId);
@@ -425,6 +426,9 @@ class FileServiceTest {
         var category = new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
         category.setId(categoryId);
         category.setIsActive(true);
+        var secondCategory = new com.centralArchiveSystem.Archive.project.filecategory.FileCategory();
+        secondCategory.setId(secondCategoryId);
+        secondCategory.setIsActive(true);
         var pdf = new com.centralArchiveSystem.Archive.project.filetype.FileType();
         pdf.setId(typeId);
         pdf.setCategoryId(categoryId);
@@ -434,6 +438,7 @@ class FileServiceTest {
 
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(category));
+        when(categoryRepository.findById(secondCategoryId)).thenReturn(Optional.of(secondCategory));
         when(typeRepository.findByCategoryIdAndIsActive(categoryId, true)).thenReturn(java.util.List.of(pdf));
         when(minioConfig.getBucket()).thenReturn("archive-files");
         when(fileRepository.saveAndFlush(any(FileEntity.class))).thenAnswer(invocation -> {
@@ -449,13 +454,15 @@ class FileServiceTest {
                 minioService, minioConfig, projectRepository, confidentiality, transactionManager);
 
         var response = service.uploadFile(projectId, multipart,
-                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of()),
+                new com.centralArchiveSystem.Archive.project.file.dto.FileUploadRequest(categoryId, null, null, java.util.List.of(categoryId, secondCategoryId)),
                 UUID.randomUUID());
 
         assertEquals(typeId, response.typeId());
+        assertEquals(java.util.List.of(categoryId, secondCategoryId), response.categoryIds());
         var savedFile = org.mockito.ArgumentCaptor.forClass(FileEntity.class);
         verify(fileRepository).saveAndFlush(savedFile.capture());
         assertEquals(typeId, savedFile.getValue().getTypeId());
+        assertEquals(java.util.Set.of(categoryId, secondCategoryId), savedFile.getValue().getCategoryIds());
     }
 
     @Test
