@@ -1,9 +1,12 @@
 "use client";
-import {useState,FormEvent}from"react";import Link from"next/link";import {useRouter}from"next/navigation";import {ArrowRight,Edit3,UploadCloud,Download,Files,FolderKanban,Clock3,ClipboardCheck,CheckCheck,Archive,RotateCcw,Trash2,Plus,FileText,GitBranch,LockKeyhole}from"lucide-react";
+import {useState,useEffect,FormEvent}from"react";import Link from"next/link";import {useRouter}from"next/navigation";import {ArrowRight,Edit3,UploadCloud,Download,Files,FolderKanban,Clock3,ClipboardCheck,CheckCheck,Archive,RotateCcw,Trash2,Plus,FileText,GitBranch,LockKeyhole}from"lucide-react";
 import {api,jsonBody,download,ApiError}from"@/lib/api";import{useRemote}from"@/components/hooks";import{PageHeader,Panel,Status,Alert,Empty,Loading,Field,Modal}from"@/components/ui";
 import type{Project,ArchiveFile,PageData,FileCategory,FileType,UserInfo,Organization,Reference,ProjectMember}from"@/lib/types";
 import {canWrite,statusName,dateLabel,sizeLabel}from"@/lib/types";
 type Mode="edit"|"upload"|"correction"|"reject"|"file-edit"|"member"|null;
+type FileBatchResult={totalRequested:number;totalSucceeded:number;totalFailed:number;errors:Array<{fileName:string;error:string}>};
+function fileExtension(file:File){const index=file.name.lastIndexOf(".");return index<0?"":file.name.slice(index+1).toLowerCase()}
+function extensionMatches(a:string,b:string){return a===b||((a==="jpg"||a==="jpeg")&&(b==="jpg"||b==="jpeg"))}
 export function ProjectDetail({id}:{id:string}){
  const router=useRouter();
  const project=useRemote<Project>("/api/v1/projects/"+id),members=useRemote<ProjectMember[]>("/api/v1/projects/"+id+"/members"),files=useRemote<PageData<ArchiveFile>>("/api/v1/projects/"+id+"/files?page=1&size=100"),versions=useRemote<Project[]>("/api/v1/projects/"+id+"/versions");
@@ -11,8 +14,17 @@ export function ProjectDetail({id}:{id:string}){
  const cats=useRemote<FileCategory[]>("/api/v1/file-categories/all?isActive=true");
  const [mode,setMode]=useState<Mode>(null),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState(""),[reason,setReason]=useState("");
  const [newMember,setNewMember]=useState({personName:"",organizationName:"",roleName:"",notes:""});
- const [edit,setEdit]=useState<Record<string,string>>({}),[uploadFile,setUploadFile]=useState<File|null>(null),[categoryId,setCategoryId]=useState(""),[typeId,setTypeId]=useState(""),[levelId,setLevelId]=useState(""),[selectedFile,setSelectedFile]=useState<ArchiveFile|null>(null);
+ const [edit,setEdit]=useState<Record<string,string>>({}),[uploadFiles,setUploadFiles]=useState<File[]>([]),[dragActive,setDragActive]=useState(false),[categoryId,setCategoryId]=useState(""),[typeId,setTypeId]=useState(""),[levelId,setLevelId]=useState(""),[selectedFile,setSelectedFile]=useState<ArchiveFile|null>(null);
  const fileTypes=useRemote<FileType[]>(categoryId?"/api/v1/file-types/by-category/"+categoryId+"?isActive=true":null);
+ const uploadExtensions=[...new Set(uploadFiles.map(fileExtension).filter(Boolean))];
+ const canChooseOneType=uploadExtensions.length<=1;
+ useEffect(()=>{
+  if(mode!=="upload"||!uploadFiles.length||!categoryId||!fileTypes.data)return;
+  if(uploadExtensions.length!==1){setTypeId("");return}
+  const matches=fileTypes.data.filter(t=>t.categoryId===categoryId&&t.defaultExtension
+   &&extensionMatches(uploadExtensions[0],t.defaultExtension.replace(/^\\./,"").toLowerCase()));
+  setTypeId(matches.length===1?matches[0].id:"");
+ },[mode,uploadFiles,categoryId,fileTypes.data]);
  const p=project.data;
  const roles=user.data?.roles??[],isEditor=canWrite(roles,"central_data_entry"),isReviewer=canWrite(roles,"auditor"),isArchiver=canWrite(roles,"archive_officer"),isAdmin=roles.includes("system_admin");
  const canEdit=p&&isEditor&&!["UNDER_REVIEW","APPROVED","ARCHIVED","REJECTED"].includes(p.status);
@@ -44,9 +56,27 @@ export function ProjectDetail({id}:{id:string}){
  function openEdit(){if(!p)return;setEdit({name:p.name,projectNumber:p.projectNumber,projectCode:p.projectCode??"",year:String(p.year),organizationId:p.organizationId,projectTypeId:p.projectTypeId??"",confidentialityLevelId:p.confidentialityLevelId??"",executingEntity:p.executingEntity??"",supervisorName:p.supervisorName??"",description:p.description??"",notes:p.notes??"",keywords:p.keywords??"",dataCompletionStatus:p.dataCompletionStatus});setError("");setMode("edit")}
  async function perform(path:string,body?:unknown){setError("");setSaving(true);try{await api("/api/v1/projects/"+id+path,{method:"PATCH",...(body?jsonBody(body):{})});setSuccess("تم تنفيذ الإجراء بنجاح");setMode(null);project.reload();versions.reload()}catch(e){setError(e instanceof Error?e.message:"تعذر تنفيذ الإجراء")}finally{setSaving(false)}}
  async function saveEdit(e:FormEvent){e.preventDefault();const body={...edit,year:Number(edit.year),projectTypeId:edit.projectTypeId||null,confidentialityLevelId:edit.confidentialityLevelId||null};await perform("",body)}
- async function sendFile(e:FormEvent){e.preventDefault();if(!uploadFile){setError("اختر ملفًا للرفع");return}if(!categoryId){setError("اختر فئة الملف");return}setSaving(true);setError("");try{
-  const form=new FormData();form.append("file",uploadFile);form.append("metadata",new Blob([JSON.stringify({categoryId,typeId:typeId||null,confidentialityLevelId:levelId||null})],{type:"application/json"}));
-  await api("/api/v1/projects/"+id+"/files/upload",{method:"POST",body:form});setSuccess("تم رفع الملف وربطه بالمشروع");setMode(null);setUploadFile(null);files.reload();
+ function acceptUploadFiles(incoming:File[]){
+  const selected=incoming.filter(Boolean);
+  if(!selected.length)return;
+  const forbidden=selected.find(file=>/\\.(exe|dll|msi|bat|cmd|ps1|sh|com|scr|jar)$/i.test(file.name));
+  if(forbidden){setUploadFiles([]);setTypeId("");setError("ملفات التشغيل غير مسموحة في الأرشيف العادي: "+forbidden.name);return}
+  setError("");setUploadFiles(selected);setTypeId("");
+ }
+ async function sendFile(e:FormEvent){e.preventDefault();if(!uploadFiles.length){setError("اختر ملفًا واحدًا على الأقل");return}if(!categoryId){setError("اختر فئة الملف");return}setSaving(true);setError("");try{
+  const form=new FormData();
+  if(uploadFiles.length===1)form.append("file",uploadFiles[0]);
+  else uploadFiles.forEach(file=>form.append("files",file));
+  form.append("metadata",new Blob([JSON.stringify({categoryId,typeId:typeId||null,confidentialityLevelId:levelId||null})],{type:"application/json"}));
+  if(uploadFiles.length===1){
+   await api("/api/v1/projects/"+id+"/files/upload",{method:"POST",body:form});
+   setSuccess("تم رفع الملف وربطه بالمشروع");
+  }else{
+   const result=await api<FileBatchResult>("/api/v1/projects/"+id+"/files/upload-batch",{method:"POST",body:form});
+   setSuccess("اكتمل رفع "+result.totalSucceeded+" من "+result.totalRequested+" ملفات"+(result.totalFailed?"؛ فشل "+result.totalFailed:""));
+   if(result.errors?.length)setError(result.errors.map(item=>item.fileName+": "+item.error).join(" • "));
+  }
+  setMode(null);setUploadFiles([]);setTypeId("");files.reload();
  }catch(e){setError(e instanceof Error?e.message:"تعذر رفع الملف")}finally{setSaving(false)}}
  async function saveFileMeta(e:FormEvent){e.preventDefault();if(!selectedFile)return;setSaving(true);setError("");try{await api("/api/v1/files/"+selectedFile.id,{method:"PATCH",...jsonBody({categoryId,typeId:typeId||null,confidentialityLevelId:levelId||null})});setMode(null);files.reload();setSuccess("تم تحديث بيانات الملف")}catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الملف")}finally{setSaving(false)}}
  async function deleteFile(file:ArchiveFile){if(!window.confirm("هل تريد حذف الملف من المشروع؟ يمكن للمدير استعادته لاحقًا."))return;setError("");try{await api("/api/v1/files/"+file.id,{method:"DELETE"});files.reload();setSuccess("تم حذف الملف منطقيًا")}catch(e){setError(e instanceof Error?e.message:"تعذر حذف الملف")}}
@@ -118,19 +148,19 @@ export function ProjectDetail({id}:{id:string}){
  {error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">حفظ التعديلات</button><button type="button" className="btn btn-quiet" onClick={()=>setMode(null)}>إلغاء</button></div>
  </form></Modal>}
  {(mode==="upload"||mode==="file-edit")&&<Modal title={mode==="upload"?"رفع ملف للمشروع":"تعديل بيانات الملف"} subtitle="تتبع الوثائق مستويات السرية وفئات الملفات المعتمدة." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={mode==="upload"?sendFile:saveFileMeta}>
- {mode==="upload"&&<label className="upload-box"><UploadCloud size={24}/><strong>{uploadFile?.name??"اختر الملف من جهازك"}</strong>
+ {mode==="upload"&&<label className={"upload-box"+(dragActive?" is-dragging":"")}
+  onDragEnter={e=>{e.preventDefault();setDragActive(true)}}
+  onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";setDragActive(true)}}
+  onDragLeave={e=>{e.preventDefault();if(e.currentTarget===e.target||!e.currentTarget.contains(e.relatedTarget as Node|null))setDragActive(false)}}
+  onDrop={e=>{e.preventDefault();e.stopPropagation();setDragActive(false);acceptUploadFiles(Array.from(e.dataTransfer.files))}}>
+  <UploadCloud size={24}/><strong>{uploadFiles.length===0?"اسحب الملفات إلى هنا أو اخترها من جهازك":uploadFiles.length===1?uploadFiles[0].name:"تم اختيار "+uploadFiles.length+" ملفات"}</strong>
+  <small>يمكنك سحب ملف واحد أو عدة ملفات إلى هذه المنطقة، أو النقر للاختيار.</small>
   <small>وثائق PDF/Office وصور HEIC/AVIF، وتسجيلات MP3/WAV/FLAC/M4A، وفيديو MKV/WebM/AVI، وأرشيفات ZIP/RAR/7Z/TAR/GZ.</small>
   <small>ملفات التشغيل EXE وDLL وMSI غير مسموحة؛ يتحقق الخادم أيضًا من المحتوى الفعلي.</small>
-  <input type="file" required onChange={e=>{
-    const file=e.target.files?.[0]??null;
-    if(file&&/\.(exe|dll|msi|bat|cmd|ps1|sh|com|scr|jar)$/i.test(file.name)){
-      setUploadFile(null);setError("ملفات التشغيل غير مسموحة في الأرشيف العادي. اختر وثيقة أو ملف وسائط أو أرشيفًا معتمدًا.");
-      e.target.value="";return;
-    }
-    setError("");setUploadFile(file);
-  }}/></label>}
+  {uploadFiles.length>0&&<small>{uploadFiles.map(f=>f.name).join(" • ")}</small>}
+  <input type="file" multiple required={uploadFiles.length===0} onChange={e=>acceptUploadFiles(Array.from(e.target.files??[]))}/></label>}
  <Field label="فئة الملف *"><select required value={categoryId} onChange={e=>{setCategoryId(e.target.value);setTypeId("")}}><option value="">اختر الفئة</option>{cats.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
- <Field label="نوع الملف"><select value={typeId} onChange={e=>setTypeId(e.target.value)}><option value="">دون تحديد</option>{fileTypes.data?.map(t=><option key={t.id} value={t.id}>{t.name}{t.defaultExtension?" (."+t.defaultExtension+")":""}</option>)}</select></Field>
+ <Field label="نوع الملف"><select value={typeId} disabled={!canChooseOneType} onChange={e=>setTypeId(e.target.value)}><option value="">{canChooseOneType?"استنتاج تلقائي من الامتداد":"يُستنتج نوع كل ملف من امتداده"}</option>{fileTypes.data?.map(t=><option key={t.id} value={t.id}>{t.name}{t.defaultExtension?" (."+t.defaultExtension+")":""}</option>)}</select></Field>
  <Field label="مستوى السرية"><select value={levelId} onChange={e=>setLevelId(e.target.value)}><option value="">مستوى المشروع / دون تحديد</option>{levels.data?.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></Field>
  {error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">{saving?"جارٍ التنفيذ...":mode==="upload"?"رفع الملف":"حفظ البيانات"}</button><button className="btn btn-quiet" type="button" onClick={()=>setMode(null)}>إلغاء</button></div></form></Modal>}
  {(mode==="correction"||mode==="reject")&&<Modal title={mode==="correction"?"طلب تصحيح المشروع":"رفض المشروع"} subtitle="اكتب ملاحظات واضحة ليطّلع عليها مسؤول إدخال البيانات." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={e=>{e.preventDefault();perform(mode==="correction"?"/request-correction":"/reject",mode==="correction"?{review_notes:reason}:{rejection_reason:reason})}}><Field label={mode==="correction"?"ملاحظات التصحيح *":"سبب الرفض *"}><textarea required maxLength={5000} value={reason} onChange={e=>setReason(e.target.value)} placeholder="اكتب التفاصيل هنا..."/></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving||!reason.trim()} className="btn btn-gold">تأكيد الإجراء</button><button type="button" className="btn btn-quiet" onClick={()=>setMode(null)}>إلغاء</button></div></form></Modal>}
