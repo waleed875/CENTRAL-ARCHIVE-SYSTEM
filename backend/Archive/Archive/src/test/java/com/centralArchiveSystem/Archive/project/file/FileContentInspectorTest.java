@@ -58,6 +58,15 @@ class FileContentInspectorTest {
     }
 
     @Test
+    void acceptsOrdinaryZipArchiveByItsContainerSignature() throws Exception {
+        byte[] bytes = zip("documents/readme.txt");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "archive.zip", "application/octet-stream", bytes);
+
+        assertEquals("application/zip", FileContentInspector.validateMultipart(file, "zip"));
+    }
+
+    @Test
     void acceptsOfficeZipContainerForDocx() throws Exception {
         byte[] bytes = zip(
                 "[Content_Types].xml",
