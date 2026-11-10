@@ -18,6 +18,7 @@ public record MigrationSourceResponse(
     @Schema(description = "Legacy database user") String username,
     @Schema(description = "True when this source carries its own connection instead of the environment default") Boolean hasStoredConnection,
     @Schema(description = "Description") String description,
+    @Schema(description = "Whether this source is active for new migration batches") Boolean isActive,
     @Schema(description = "Number of migration batches") Long batchesCount,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt
 ) {}
