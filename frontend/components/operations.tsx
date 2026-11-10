@@ -1,5 +1,5 @@
 "use client";
-import {useState,FormEvent}from"react";
+import {useState,useEffect,FormEvent}from"react";
 import {VersionedExports}from"@/components/versioned-export";
 import {Plus,Download,UploadCloud,PackageOpen,PackageCheck,CheckCircle2,RefreshCw,DatabaseZap,Play,ShieldCheck,Trash2}from"lucide-react";
 import {api,jsonBody,download,qs}from"@/lib/api";
@@ -15,6 +15,12 @@ function Imports(){
  const current=useRemote<UserInfo>("/api/v1/auth/me");const canImport=!!current.data&&(current.data.roles.includes("system_admin")||current.data.roles.includes("import_officer"));
  const refs=useRemote<Record<string,string[]>>(selected?"/api/v1/packages/"+selected.id+"/references":null);
  const operations=useRemote<Record<string,unknown>>(selected?"/api/v1/packages/"+selected.id+"/operations":null);
+ const latestImportStatus=((operations.data?.importOperations as Array<{status?:string}>|undefined)?.[0]?.status)??"";
+ useEffect(()=>{
+  if(!selected||latestImportStatus!=="STARTED")return;
+  const timer=window.setInterval(()=>operations.reload(),2500);
+  return()=>window.clearInterval(timer);
+ },[selected?.id,latestImportStatus,operations.reload]);
  const organizations=useRemote<Organization[]>("/api/v1/organizations/all?isActive=true"),types=useRemote<Reference[]>("/api/v1/project-types/all"),levels=useRemote<Reference[]>("/api/v1/confidentiality-levels/all"),categories=useRemote<FileCategory[]>("/api/v1/file-categories/all?isActive=true"),fileTypes=useRemote<FileType[]>("/api/v1/file-types/all?isActive=true");
  const options:Record<string,Array<{id:string;name:string}>>={organizations:organizations.data??[],projectTypes:types.data??[],confidentialityLevels:levels.data??[],fileCategories:categories.data??[],fileTypes:fileTypes.data??[]};
  async function upload(e:FormEvent){e.preventDefault();if(!filename)return;setSaving(true);setError("");try{const form=new FormData();form.append("package_file",filename);if(passphrase)form.append("passphrase",passphrase);await api("/api/v1/packages/receive",{method:"POST",body:form});setModal(null);setFilename(null);setPassphrase("");setSuccess("تم استقبال الحزمة. تحقّق من سلامتها قبل الاستيراد.");result.reload()}catch(e){setError(e instanceof Error?e.message:"فشل استقبال الحزمة")}finally{setSaving(false)}}
