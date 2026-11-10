@@ -39,13 +39,18 @@ public interface FileCategoryRepository extends JpaRepository<FileCategory, UUID
            "LOWER(fc.code) LIKE LOWER(CONCAT('%', :query, '%'))")
     List<FileCategory> searchByNameOrCode(@Param("query") String query);
 
-    @Query("SELECT COUNT(f) FROM com.centralArchiveSystem.Archive.project.file.FileEntity f WHERE f.categoryId = :categoryId")
+    @Query(value = """
+           SELECT COUNT(DISTINCT f.id) FROM project.files f
+           LEFT JOIN project.file_category_assignments a ON a.file_id = f.id
+           WHERE f.category_id = :categoryId OR a.category_id = :categoryId
+           """, nativeQuery = true)
     long countFilesByCategoryId(@Param("categoryId") UUID categoryId);
 
-    @Query("""
-           SELECT COUNT(f) FROM com.centralArchiveSystem.Archive.project.file.FileEntity f
-           WHERE f.categoryId = :categoryId
+    @Query(value = """
+           SELECT COUNT(DISTINCT f.id) FROM project.files f
+           LEFT JOIN project.file_category_assignments a ON a.file_id = f.id
+           WHERE (f.category_id = :categoryId OR a.category_id = :categoryId)
              AND UPPER(f.status) = 'ACTIVE'
-           """)
+           """, nativeQuery = true)
     long countActiveFilesByCategoryId(@Param("categoryId") UUID categoryId);
 }
