@@ -148,7 +148,10 @@ export function ProjectDetail({id}:{id:string}){
  <Field label="حالة اكتمال البيانات"><select value={edit.dataCompletionStatus} onChange={e=>setEdit({...edit,dataCompletionStatus:e.target.value})}><option value="INCOMPLETE">غير مكتمل</option><option value="COMPLETE">مكتمل</option></select></Field>
  {error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">حفظ التعديلات</button><button type="button" className="btn btn-quiet" onClick={()=>setMode(null)}>إلغاء</button></div>
  </form></Modal>}
- {(mode==="upload"||mode==="file-edit")&&<Modal title={mode==="upload"?"رفع ملف للمشروع":"تعديل بيانات الملف"} subtitle="تتبع الوثائق مستويات السرية وفئات الملفات المعتمدة." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={mode==="upload"?sendFile:saveFileMeta}>
+ {(mode==="upload"||mode==="file-edit")&&<Modal title={mode==="upload"?"رفع ملف للمشروع":"تعديل بيانات الملف"} subtitle="تتبع الوثائق مستويات السرية وتصنيفات الملفات المعتمدة." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={mode==="upload"?sendFile:saveFileMeta}
+   onDragOver={e=>{if(mode==="upload"&&Array.from(e.dataTransfer.types).includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="copy";setDragActive(true)}}}
+   onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragActive(false)}}
+   onDrop={e=>{if(mode==="upload"&&Array.from(e.dataTransfer.types).includes("Files")){e.preventDefault();e.stopPropagation();setDragActive(false);acceptUploadFiles(Array.from(e.dataTransfer.files))}}}>
  {mode==="upload"&&<div role="button" tabIndex={0} aria-label="منطقة اختيار وإفلات الملفات"
   className={"upload-box"+(dragActive?" is-dragging":"")}
   onClick={e=>{if(e.target!==uploadInputRef.current)uploadInputRef.current?.click()}}
@@ -158,7 +161,7 @@ export function ProjectDetail({id}:{id:string}){
   onDragLeave={e=>{e.preventDefault();if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragActive(false)}}
   onDrop={e=>{e.preventDefault();e.stopPropagation();setDragActive(false);acceptUploadFiles(Array.from(e.dataTransfer.files))}}>
   <UploadCloud size={24}/><strong>{uploadFiles.length===0?"اسحب الملفات إلى هنا أو اخترها من جهازك":uploadFiles.length===1?uploadFiles[0].name:"تم اختيار "+uploadFiles.length+" ملفات"}</strong>
-  <small>يمكنك سحب ملف واحد أو عدة ملفات إلى هذه المنطقة، أو النقر للاختيار.</small>
+  <small>يمكنك إسقاط الملفات في هذه المنطقة أو في أي مكان داخل نافذة الرفع، أو النقر للاختيار.</small>
   <small>وثائق PDF/Office وصور HEIC/AVIF، وتسجيلات MP3/WAV/FLAC/M4A، وفيديو MKV/WebM/AVI، وأرشيفات ZIP/RAR/7Z/TAR/GZ.</small>
   <small>ملفات التشغيل EXE وDLL وMSI غير مسموحة؛ يتحقق الخادم أيضًا من المحتوى الفعلي.</small>
   {uploadFiles.length>0&&<small>{uploadFiles.map(f=>f.name).join(" • ")}</small>}
