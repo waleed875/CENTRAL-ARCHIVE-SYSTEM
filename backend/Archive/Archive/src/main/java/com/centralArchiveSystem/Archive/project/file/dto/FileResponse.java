@@ -2,6 +2,7 @@ package com.centralArchiveSystem.Archive.project.file.dto;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 public record FileResponse(
     UUID id,
@@ -31,5 +32,7 @@ public record FileResponse(
     UUID deletedBy,
     String deleteReason,
     LocalDateTime createdAt,
-    LocalDateTime updatedAt
+    LocalDateTime updatedAt,
+    List<UUID> categoryIds,
+    List<String> categoryNames
 ) {}
