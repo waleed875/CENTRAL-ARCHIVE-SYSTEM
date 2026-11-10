@@ -12,13 +12,15 @@ export function Organizations(){
  const all=useRemote<Organization[]>("/api/v1/organizations/all");
  const options=all.data??[];
  const current=useRemote<UserInfo>("/api/v1/auth/me");const isAdmin=!!current.data?.roles?.includes("system_admin");
- const parents=options.filter(o=>o.isActive&&(form.type==="FACTORY"?o.type==="COMPANY":form.type==="LINE"?o.type==="FACTORY":form.type==="DEPARTMENT"?o.type==="LINE":false));
+ const descendants=new Set<string>();
+ if(editing){for(const candidate of options){let ancestor=candidate.parentId??null;const visited=new Set<string>();while(ancestor&&!visited.has(ancestor)){if(ancestor===editing.id){descendants.add(candidate.id);break}visited.add(ancestor);ancestor=options.find(x=>x.id===ancestor)?.parentId??null}}}
+ const parents=options.filter(o=>o.isActive&&o.id!==editing?.id&&!descendants.has(o.id)&&(form.type==="FACTORY"?o.type==="COMPANY":form.type==="LINE"?o.type==="FACTORY":form.type==="DEPARTMENT"?o.type==="LINE":false));
  function startEdit(o?:Organization){setForm(o?{name:o.name,code:o.code,type:o.type,parentId:o.parentId??"",description:o.description??""}:initial);setEditing(o??null);setError("");setSuccess("")}
  async function deactivate(o:Organization){if(!window.confirm("سيتم تعطيل الجهة «"+o.name+"». لن تُحذف سجلاتها، وقد يُرفض الإجراء إذا كانت لها جهات فرعية أو مشاريع نشطة. هل تريد المتابعة؟"))return;setSaving(true);setError("");try{await api("/api/v1/organizations/"+o.id,{method:"DELETE"});setSuccess("تم تعطيل الجهة");result.reload();all.reload()}catch(e){setError(e instanceof Error?e.message:"تعذر تعطيل الجهة")}finally{setSaving(false)}}
  async function submit(e:FormEvent){e.preventDefault();setSaving(true);setError("");try{
  const body={name:form.name,code:form.code,type:form.type,parentId:form.type==="COMPANY"?null:form.parentId||null,description:form.description};
  if(!editing&&form.type!=="COMPANY"&&!form.parentId)throw new Error("اختر الجهة الأم");
- if(editing){await api("/api/v1/organizations/"+editing.id,{method:"PATCH",...jsonBody({name:form.name,code:form.code,description:form.description})})}
+ if(editing){await api("/api/v1/organizations/"+editing.id,{method:"PATCH",...jsonBody({name:form.name,description:form.description,parentId:form.type==="COMPANY"?null:form.parentId})})}
  else await api("/api/v1/organizations",{method:"POST",...jsonBody(body)});
  setEditing(undefined);setSuccess(editing?"تم تحديث بيانات الجهة بنجاح":"تم إنشاء الجهة بنجاح");result.reload();all.reload();
  }catch(err){setError(err instanceof Error?err.message:"تعذر حفظ الجهة")}finally{setSaving(false)}}
@@ -30,7 +32,7 @@ export function Organizations(){
  {editing!==undefined&&<Modal title={editing?"تعديل بيانات الجهة":"إنشاء جهة جديدة"} subtitle="أدخل البيانات الأساسية للجهة واحفظها في السجل المؤسسي." onClose={()=>setEditing(undefined)}><form onSubmit={submit} className="form-stack">
  <Field label="اسم الجهة *"><input required maxLength={200} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="مثال: الإدارة العامة للأرشيف"/></Field>
  <div className="form-grid"><Field label="رمز الجهة *"><input required maxLength={60} value={form.code} onChange={e=>setForm({...form,code:e.target.value})} placeholder="ORG-001"/></Field><Field label="نوع الجهة *"><select disabled={!!editing} value={form.type} onChange={e=>setForm({...form,type:e.target.value,parentId:""})}>{typeOptions.map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></Field></div>
- {form.type!=="COMPANY"&&!editing&&<Field label="الجهة الأم *" hint="تختلف الجهات المتاحة حسب نوع الجهة الجديدة."><select required value={form.parentId} onChange={e=>setForm({...form,parentId:e.target.value})}><option value="">اختر الجهة الأم</option>{parents.map(o=><option key={o.id} value={o.id}>{o.name} ({o.code})</option>)}</select></Field>}
+ {form.type!=="COMPANY"&&<Field label="الجهة الأم *" hint="تختلف الجهات المتاحة حسب نوع الجهة الجديدة."><select required value={form.parentId} onChange={e=>setForm({...form,parentId:e.target.value})}><option value="">اختر الجهة الأم</option>{parents.map(o=><option key={o.id} value={o.id}>{o.name} ({o.code})</option>)}</select></Field>}
  <Field label="وصف الجهة"><textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="وصف مختصر للجهة ومسؤولياتها"/></Field>
  {error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold" type="submit">{saving?"جارٍ الحفظ...":"حفظ البيانات"}</button><button className="btn btn-quiet" type="button" onClick={()=>setEditing(undefined)}>إلغاء</button></div></form></Modal>}
  </>;
