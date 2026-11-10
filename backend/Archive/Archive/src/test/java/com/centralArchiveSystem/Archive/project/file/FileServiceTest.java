@@ -563,7 +563,8 @@ class FileServiceTest {
                         new com.centralArchiveSystem.Archive.project.file.dto.FileMetadataUpdateRequest(
                                 newCategoryId,
                                 null,
-                                null
+                                null,
+                                java.util.List.of(newCategoryId)
                         )
                 )
         );
