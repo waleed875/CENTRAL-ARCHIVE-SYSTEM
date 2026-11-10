@@ -151,7 +151,7 @@ export function ProjectDetail({id}:{id:string}){
  {(mode==="upload"||mode==="file-edit")&&<Modal title={mode==="upload"?"رفع ملف للمشروع":"تعديل بيانات الملف"} subtitle="تتبع الوثائق مستويات السرية وفئات الملفات المعتمدة." onClose={()=>setMode(null)}><form className="form-stack" onSubmit={mode==="upload"?sendFile:saveFileMeta}>
  {mode==="upload"&&<div role="button" tabIndex={0} aria-label="منطقة اختيار وإفلات الملفات"
   className={"upload-box"+(dragActive?" is-dragging":"")}
-  onClick={e=>{if(e.target===e.currentTarget)uploadInputRef.current?.click()}}
+  onClick={e=>{if(e.target!==uploadInputRef.current)uploadInputRef.current?.click()}}
   onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();uploadInputRef.current?.click()}}}
   onDragEnter={e=>{e.preventDefault();e.stopPropagation();setDragActive(true)}}
   onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="copy";setDragActive(true)}}
