@@ -120,7 +120,8 @@ public class FileService {
             if (!Boolean.TRUE.equals(fileType.getIsActive())) {
                 throw new IllegalStateException("File type is inactive");
             }
-            if (categories.stream().noneMatch(category -> category.getId().equals(fileType.getCategoryId()))) {
+            UUID selectedTypeCategoryId = fileType.getCategoryId();
+            if (categories.stream().noneMatch(category -> category.getId().equals(selectedTypeCategoryId))) {
                 throw new IllegalArgumentException(
                         "Selected file type does not belong to selected category");
             }
