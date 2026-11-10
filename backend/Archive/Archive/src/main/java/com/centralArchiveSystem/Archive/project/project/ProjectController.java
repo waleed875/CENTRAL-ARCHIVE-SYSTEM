@@ -98,6 +98,12 @@ public class ProjectController {
             @Valid @RequestBody ProjectRejectionRequest request) {
         return ResponseEntity.ok(ApiResponse.success(projectService.reject(id, request.rejectionReason()), "Project rejected"));
     }
+    @PatchMapping("/{id}/reopen")
+    @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
+    @Operation(summary = "Reopen a rejected latest project for correction")
+    public ResponseEntity<ApiResponse<ProjectResponse>> reopenRejected(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(projectService.reopenRejected(id), "Project reopened for correction"));
+    }
     @PatchMapping("/{id}/archive")
     @PreAuthorize("hasAnyRole('system_admin', 'archive_officer')")
     @Operation(summary = "Archive an approved project")
