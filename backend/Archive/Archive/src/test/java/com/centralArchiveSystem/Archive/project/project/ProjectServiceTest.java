@@ -95,7 +95,7 @@ class ProjectServiceTest {
         ProjectService service = newService(repository, memberService, confidentiality);
 
         ProjectUpdateRequest overrides = new ProjectUpdateRequest(
-                null, null, null, null, null, "Revised Project", null,
+                null, null, null, null, null, null, null,
                 null, null, "Revised description", null,
                 null, null, null
         );
