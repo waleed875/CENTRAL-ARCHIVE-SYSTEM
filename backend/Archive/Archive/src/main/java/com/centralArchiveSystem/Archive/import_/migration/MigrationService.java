@@ -172,6 +172,15 @@ public class MigrationService {
      * Remove a source from active use without deleting its batch history or migrated references.
      * The historical row remains addressable so audit and batch records never lose their source.
      */
+    public String testSourceConnection(UUID id) {
+        MigrationSource source = sourceRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
+        if (!source.getIsActive()) {
+            throw new IllegalStateException("مصدر الترحيل غير نشط");
+        }
+        return migrationExecutionService.testConnection(id);
+    }
+
     public void deleteSource(UUID id) {
         MigrationSource source = sourceRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Migration source not found: " + id));
