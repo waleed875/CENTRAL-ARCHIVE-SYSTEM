@@ -111,6 +111,47 @@ class MultiFormatExportTest {
                 assertTrue(sheet.isRightToLeft());
                 assertEquals("اسم المشروع", sheet.getRow(0).getCell(0).getStringCellValue());
                 assertEquals("العنوان", sheet.getRow(1).getCell(0).getStringCellValue());
+                assertEquals(7, sheet.getRow(0).getLastCellNum());
+                for (var cell : sheet.getRow(0)) {
+                    assertFalse(cell.getStringCellValue().contains("حجم"),
+                            "Business XLSX reports must not expose package/file size columns");
+                }
+            }
+        } finally { Files.deleteIfExists(output); }
+    }
+
+    @Test
+    void xlsxGroupsMultipleVersionsIntoOneLogicalProjectRow() throws Exception {
+        UUID family = UUID.randomUUID();
+        String json = """
+                {"projects":[
+                  {"project_id":"%s","project_uid":"%s","version_no":1,"is_latest_version":false,
+                   "name":"Shared project","project_number":"A-100","year":2026,"source_status":"REJECTED",
+                   "files":[{"original_name":"old.pdf","size_bytes":100}]},
+                  {"project_id":"%s","project_uid":"%s","version_no":2,"is_latest_version":true,
+                   "name":"Shared project","project_number":"A-100","year":2026,"source_status":"APPROVED",
+                   "files":[{"original_name":"new.pdf","size_bytes":200},{"original_name":"report.pdf","size_bytes":300}]}
+                ]}
+                """.formatted(UUID.randomUUID(), family, UUID.randomUUID(), family);
+        JsonNode manifest = mapper.readTree(json);
+        var writer = new ExportAlternativeWriter(mock(FileRepository.class),
+                mock(MinioService.class), "");
+        Path output = Files.createTempFile("test-export-family-", ".xlsx");
+        try {
+            writer.write("XLSX", output, manifest);
+            try (InputStream source = Files.newInputStream(output); XSSFWorkbook book = new XSSFWorkbook(source)) {
+                var projects = book.getSheet("المشاريع");
+                var versions = book.getSheet("تفاصيل الإصدارات");
+                assertNotNull(projects);
+                assertNotNull(versions);
+                assertEquals(2, projects.getPhysicalNumberOfRows(),
+                        "One logical project must occupy one summary row regardless of version count");
+                assertEquals(3, versions.getPhysicalNumberOfRows(),
+                        "The separate version sheet must preserve the two historical version records");
+                assertEquals("Shared project", projects.getRow(1).getCell(0).getStringCellValue());
+                assertEquals(2, projects.getRow(1).getCell(3).getNumericCellValue());
+                assertEquals("APPROVED", projects.getRow(1).getCell(5).getStringCellValue());
+                assertEquals(3, projects.getRow(1).getCell(6).getNumericCellValue());
             }
         } finally { Files.deleteIfExists(output); }
     }
