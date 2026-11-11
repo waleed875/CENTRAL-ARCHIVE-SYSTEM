@@ -144,8 +144,8 @@ public class MigrationRunner {
                 LegacyMigrationService.LegacyFileSummary files =
                         legacyMigrationService.migrateFilesAsync(connection, 4).get();
 
-                long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatus(
-                        source.getId(), LegacyMigrationItem.Kind.PROJECT, LegacyMigrationItem.Status.DONE);
+                long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+                        source.getId(), LegacyMigrationItem.Kind.PROJECT, LegacyMigrationItem.Status.DONE, "PROJECT-");
                 long doneFiles = itemRepository.countByMigrationSourceIdAndKindAndStatus(
                         source.getId(), LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
                 long failedItems = itemRepository.countByMigrationSourceIdAndStatus(
