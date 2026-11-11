@@ -144,26 +144,33 @@ public class MigrationRunner {
                 LegacyMigrationService.LegacyFileSummary files =
                         legacyMigrationService.migrateFilesAsync(connection, 4).get();
 
-                long doneFiles = files.done();
-                long failedFiles = files.failed();
-
-                // A project that violates a unique constraint is tracked as FAILED rather than
-                // skipped, so the batch must not be reported as SUCCESS while rows are missing.
+                long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+                        source.getId(), LegacyMigrationItem.Kind.PROJECT, LegacyMigrationItem.Status.DONE, "PROJECT-");
+                long doneFiles = itemRepository.countByMigrationSourceIdAndKindAndStatus(
+                        source.getId(), LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
                 long failedItems = itemRepository.countByMigrationSourceIdAndStatus(
                         source.getId(), LegacyMigrationItem.Status.FAILED);
                 long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
                         source.getId(), LegacyMigrationItem.Status.SKIPPED);
+                long pendingItems = itemRepository.countByMigrationSourceIdAndStatus(
+                        source.getId(), LegacyMigrationItem.Status.PENDING);
+                long runningItems = itemRepository.countByMigrationSourceIdAndStatus(
+                        source.getId(), LegacyMigrationItem.Status.RUNNING);
 
-                batch.setProjectsCount(projects);
-                batch.setFilesCount((int) doneFiles);
-                batch.setStatus(failedFiles > 0 || failedItems > 0
+                // Batch totals come from durable tracking rows, not only the items newly processed
+                // during this invocation. A resumed batch therefore reports the complete result.
+                batch.setProjectsCount(Math.toIntExact(doneProjects));
+                batch.setFilesCount(Math.toIntExact(doneFiles));
+                batch.setStatus(files.failed() > 0 || failedItems > 0 || pendingItems > 0 || runningItems > 0
                         ? MigrationBatch.Status.PARTIAL
                         : MigrationBatch.Status.SUCCESS);
                 batch.setNotes("office=" + connection.office()
-                        + ", references=" + refs + ", projects=" + projects
-                        + ", files done=" + doneFiles + ", failed=" + failedFiles
-                        + ", skipped=" + files.skipped()
-                        + ", failed rows=" + failedItems + ", skipped rows=" + skippedItems);
+                        + ", references created=" + refs
+                        + ", projects done=" + doneProjects + " (this run created=" + projects + ")"
+                        + ", files done=" + doneFiles + " (this run done=" + files.done()
+                        + ", failed=" + files.failed() + ", skipped=" + files.skipped() + ")"
+                        + ", failed rows=" + failedItems + ", skipped rows=" + skippedItems
+                        + ", pending rows=" + pendingItems + ", running rows=" + runningItems);
             } catch (Exception e) {
                 log.error("Legacy migration failed, batch={}", batchId, e);
                 batch.setStatus(MigrationBatch.Status.FAILED);

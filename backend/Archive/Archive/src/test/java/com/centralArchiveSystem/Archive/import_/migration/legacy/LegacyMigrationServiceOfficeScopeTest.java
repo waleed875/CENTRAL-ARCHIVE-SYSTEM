@@ -175,10 +175,9 @@ class LegacyMigrationServiceOfficeScopeTest {
     }
 
     @Test
-    void aDuplicateNumberInsideOneOfficeIsRecordedAsFailedAndTheRestStillMigrate() throws Exception {
-        // The legacy database of one office can hold the same project number twice under the same
-        // side, which the central archive treats as one project. The other rows must still land:
-        // raising the constraint and letting it abort the transaction would lose the whole batch.
+    void duplicateProjectNumbersWithinOneOfficeArePreservedAsDistinctImportedProjects() throws Exception {
+        // Legacy databases may reuse a project number for different records. Import must preserve
+        // each source row rather than treating a collision as evidence that it is the same project.
         Map<String, Object> first = projectRow(1, 1, "6456", "4564");
         Map<String, Object> duplicate = projectRow(5, 1, "6456", "4564");
         Map<String, Object> other = projectRow(9, 2, "999", "2024");
@@ -189,19 +188,52 @@ class LegacyMigrationServiceOfficeScopeTest {
 
         var office = connection("ARC1");
         assertEquals(2, service.migrateReferences(office));
-        assertEquals(2, service.migrateProjects(office), "the unique rows must still be created");
+        assertEquals(3, service.migrateProjects(office), "all source projects must be imported");
 
-        LegacyMigrationItem failed = items.values().stream()
-                .filter(item -> "PROJECT-5".equals(item.getSourceKey()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("the duplicate row was not tracked at all"));
-        assertEquals(LegacyMigrationItem.Status.FAILED, failed.getStatus());
-        assertNull(failed.getTargetId());
-        assertTrue(failed.getError().contains("6456"), failed.getError());
+        assertEquals(3, savedProjects.size());
+        assertEquals(3, items.values().stream()
+                .filter(item -> item.getKind() == LegacyMigrationItem.Kind.PROJECT
+                        && item.getSourceKey().startsWith("PROJECT-")
+                        && item.getStatus() == LegacyMigrationItem.Status.DONE)
+                .count());
+        assertEquals(3, savedProjects.stream()
+                .map(Project::getProjectUid)
+                .distinct()
+                .count());
+        assertEquals(2, savedProjects.stream()
+                .filter(project -> "6456".equals(project.getProjectNumber()))
+                .count());
+        assertTrue(items.values().stream().noneMatch(item ->
+                item.getKind() == LegacyMigrationItem.Kind.PROJECT
+                        && item.getStatus() == LegacyMigrationItem.Status.FAILED));
+    }
 
-        assertEquals(List.of("ARC1:tbl_project:1", "ARC1:tbl_project:9"), savedProjects.stream()
-                .map(Project::getSourceReference)
-                .toList());
+    @Test
+    void aPreviouslyFailedProjectTrackingRowIsRetriedAndUpdatedInPlace() throws Exception {
+        Map<String, Object> project = projectRow(42, 1, "3", "2010");
+        when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(project));
+        stubTwoSides();
+
+        var office = connection("ARC1");
+        LegacyMigrationItem failed = new LegacyMigrationItem();
+        failed.setId(UUID.randomUUID());
+        failed.setMigrationSourceId(office.sourceId());
+        failed.setKind(LegacyMigrationItem.Kind.PROJECT);
+        failed.setSourceKey("PROJECT-42");
+        failed.setSourceId(42L);
+        failed.setStatus(LegacyMigrationItem.Status.FAILED);
+        failed.setAttempts(1);
+        failed.setError("previous duplicate-number conflict");
+        items.put(key(office.sourceId(), LegacyMigrationItem.Kind.PROJECT, "PROJECT-42"), failed);
+
+        assertEquals(1, service.migrateProjects(office));
+        LegacyMigrationItem recovered = items.get(
+                key(office.sourceId(), LegacyMigrationItem.Kind.PROJECT, "PROJECT-42"));
+        assertSame(failed, recovered);
+        assertEquals(LegacyMigrationItem.Status.DONE, recovered.getStatus());
+        assertNotNull(recovered.getTargetId());
+        assertNull(recovered.getError());
+        assertEquals(1, savedProjects.size());
     }
 
     private Map<String, Object> projectRow(int projectId, int sideId, String number, String year) {

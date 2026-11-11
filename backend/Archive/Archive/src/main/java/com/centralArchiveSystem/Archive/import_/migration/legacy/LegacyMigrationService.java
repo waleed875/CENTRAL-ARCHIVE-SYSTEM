@@ -88,6 +88,7 @@ public class LegacyMigrationService {
     public static final int UNKNOWN_YEAR = 1000;
 
     private static final int MIN_PLAUSIBLE_YEAR = 1900;
+    private static final int STALE_RUNNING_ITEM_MINUTES = 30;
 
     @Value("${legacy.migration.default-year:1000}")
     private int defaultYear;
@@ -239,8 +240,13 @@ public class LegacyMigrationService {
             // distinct organizations rather than one winning and the other being skipped.
             String code = orgCode(connection, oldId);
             String sourceKey = "SIDE-" + oldId;
-            if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
-                    connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
+            LegacyMigrationItem previousProjectItem = itemRepository
+                    .findByMigrationSourceIdAndKindAndSourceKey(
+                            connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)
+                    .orElse(null);
+            if (previousProjectItem != null
+                    && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
+                    && previousProjectItem.getTargetId() != null) {
                 continue;
             }
 
@@ -281,13 +287,26 @@ public class LegacyMigrationService {
                         + LEGACY_DB_SCHEMA + ".tbl_project ORDER BY idproject");
 
         int created = 0;
-        List<String> conflicts = new java.util.ArrayList<>();
         for (Map<String, Object> row : rows) {
             int oldId = ((Number) row.get("idproject")).intValue();
             String sourceKey = "PROJECT-" + oldId;
-            // Scoped by source: the same key legitimately exists in every organisation's database.
-            if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
-                    connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
+            // A DONE project already has a durable target mapping. FAILED/SKIPPED rows are
+            // intentionally retried so previously rejected duplicate-number projects can recover.
+            LegacyMigrationItem previousProjectItem = itemRepository
+                    .findByMigrationSourceIdAndKindAndSourceKey(
+                            connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)
+                    .orElse(null);
+            if (previousProjectItem != null
+                    && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
+                    && previousProjectItem.getTargetId() != null) {
+                continue;
+            }
+            if (previousProjectItem != null
+                    && previousProjectItem.getStatus() == LegacyMigrationItem.Status.RUNNING
+                    && previousProjectItem.getStartedAt() != null
+                    && previousProjectItem.getStartedAt().isAfter(
+                            java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
+                log.info("Skipping project {} because another migration attempt started recently", oldId);
                 continue;
             }
 
@@ -335,19 +354,10 @@ public class LegacyMigrationService {
             project.setSourceType(Project.SourceType.MIGRATION);
             project.setSourceReference(connection.projectReference(oldId));
 
-            // The conflict is detected before the insert. Letting the database raise it instead would
-            // abort the surrounding transaction and roll back every project that had already migrated
-            // cleanly in this batch, turning one bad row into a whole-batch loss.
-            if (projectRepository.existsByOrganizationIdAndProjectNumberAndYearAndVersionNo(
-                    organizationId, project.getProjectNumber(), year, project.getVersionNo())) {
-                recordConflict(connection, sourceKey, oldId, conflicts,
-                        "Another project in organization " + organizationId + " already uses number '"
-                                + project.getProjectNumber() + "' for year " + year
-                                + ". The legacy database holds more than one project with this number "
-                                + "under the same side, which the central archive treats as one project.");
-                continue;
-            }
-
+            // Legacy databases can legitimately contain repeated project numbers for the same
+            // organization/year. Migration rows are allowed to preserve those records; a partial
+            // unique index keeps the business uniqueness rule for non-migrated projects.
+            
             try {
                 // saveAndFlush, not save: JPA would otherwise report the constraint violation at
                 // transaction commit, long after this catch block.
@@ -364,12 +374,8 @@ public class LegacyMigrationService {
                                 + " first. The legacy row is: " + dke.getMostSpecificCause().getMessage(), dke);
             }
         }
-        if (!conflicts.isEmpty()) {
-            log.warn("Legacy projects for office {} had {} unique-constraint conflicts: {}",
-                    connection.office(), conflicts.size(), conflicts);
-        }
-        log.info("Legacy projects migrated for office {}: {} projects created, {} conflicts",
-                connection.office(), created, conflicts.size());
+        log.info("Legacy projects migrated for office {}: {} projects created or recovered",
+                connection.office(), created);
         return created;
     }
 
@@ -410,15 +416,18 @@ public class LegacyMigrationService {
                             defaultTypeId
                     ),
                     pool
-            );
+            ).exceptionally(error -> {
+                log.error("File migration task failed for legacy project {} in office {}",
+                        legacyProjectId, connection.office(), error);
+                summary.incrementFailed();
+                return null;
+            });
             futures.add(future);
         }
 
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        } catch (Exception e) {
-            log.error("Parallel file migration failed", e);
-        }
+        // Each project task handles its own exceptional completion above. Joining the aggregate
+        // now waits for every project and does not let one failed project hide the remaining work.
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info(
                 "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
                 connection.office(),
@@ -444,8 +453,33 @@ public class LegacyMigrationService {
                 .orElse(null);
 
         if (targetProjectId == null) {
-            log.warn("No target project for legacy project {} in office {}, skipping its files",
+            log.warn("No target project for legacy project {} in office {}; recording its files for retry",
                     legacyProjectId, connection.office());
+            List<Integer> sourceFileIds = connection.jdbc().queryForList(
+                    "SELECT idfile FROM " + LEGACY_DB_SCHEMA
+                            + ".tbl_files WHERE idproject = ? ORDER BY idfile",
+                    Integer.class, legacyProjectId);
+            for (Integer idfile : sourceFileIds) {
+                String sourceKey = "FILE-" + idfile;
+                LegacyMigrationItem existing = itemRepository
+                        .findByMigrationSourceIdAndKindAndSourceKey(
+                                connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
+                        .orElse(null);
+                if (existing != null
+                        && existing.getStatus() == LegacyMigrationItem.Status.DONE
+                        && existing.getTargetId() != null) {
+                    summary.incrementSkipped();
+                    continue;
+                }
+                LegacyMigrationItem item = trackingItem(
+                        connection, LegacyMigrationItem.Kind.FILE, sourceKey, idfile.longValue(), null);
+                item.setStatus(LegacyMigrationItem.Status.FAILED);
+                item.setError("No target project mapping exists for legacy project " + legacyProjectId
+                        + "; retry after the project is migrated.");
+                item.setFinishedAt(java.time.LocalDateTime.now());
+                itemRepository.save(item);
+                summary.incrementFailed();
+            }
             return;
         }
 
@@ -470,11 +504,22 @@ public class LegacyMigrationService {
                     int idfile = resultSet.getInt("idfile");
                     String sourceKey = "FILE-" + idfile;
 
-                    if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
-                            connection.sourceId(),
-                            LegacyMigrationItem.Kind.FILE,
-                            sourceKey
-                    )) {
+                    LegacyMigrationItem previousFileItem = itemRepository
+                            .findByMigrationSourceIdAndKindAndSourceKey(
+                                    connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
+                            .orElse(null);
+                    if (previousFileItem != null
+                            && previousFileItem.getStatus() == LegacyMigrationItem.Status.DONE
+                            && previousFileItem.getTargetId() != null) {
+                        summary.incrementSkipped();
+                        return;
+                    }
+                    if (previousFileItem != null
+                            && previousFileItem.getStatus() == LegacyMigrationItem.Status.RUNNING
+                            && previousFileItem.getStartedAt() != null
+                            && previousFileItem.getStartedAt().isAfter(
+                                    java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
+                        log.info("Skipping file {} because another migration attempt started recently", idfile);
                         summary.incrementSkipped();
                         return;
                     }
@@ -534,6 +579,9 @@ public class LegacyMigrationService {
         );
         item.setStatus(LegacyMigrationItem.Status.RUNNING);
         item.setStartedAt(java.time.LocalDateTime.now());
+        item.setFinishedAt(null);
+        item.setError(null);
+        item.setAttempts((item.getAttempts() == null ? 0 : item.getAttempts()) + 1);
         itemRepository.save(item);
 
         Path spool = null;
@@ -769,29 +817,21 @@ public class LegacyMigrationService {
                                              String sourceKey,
                                              Long sourceId,
                                              UUID targetId) {
-        LegacyMigrationItem item = new LegacyMigrationItem();
+        LegacyMigrationItem item = itemRepository
+                .findByMigrationSourceIdAndKindAndSourceKey(connection.sourceId(), kind, sourceKey)
+                .orElseGet(LegacyMigrationItem::new);
         item.setKind(kind);
         item.setSourceKey(sourceKey);
-        // Carries the scope of the unique (source, kind, source_key) index.
+        // Carries the scope of the unique (source, kind, source_key) index. Reuse an existing
+        // FAILED/SKIPPED/stale tracking row so retries update it instead of violating uniqueness.
         item.setMigrationSourceId(connection.sourceId());
         item.setSourceId(sourceId);
         item.setTargetId(targetId);
         item.setStatus(targetId != null ? LegacyMigrationItem.Status.DONE : LegacyMigrationItem.Status.PENDING);
+        item.setError(null);
+        item.setStartedAt(null);
+        item.setFinishedAt(targetId != null ? java.time.LocalDateTime.now() : null);
         return item;
-    }
-
-    private void recordConflict(LegacyConnection connection,
-                                String sourceKey,
-                                int oldId,
-                                List<String> conflicts,
-                                String error) {
-        log.warn("Legacy project {} of office {} cannot be migrated: {}", oldId, connection.office(), error);
-        LegacyMigrationItem failed = trackingItem(
-                connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, null);
-        failed.setStatus(LegacyMigrationItem.Status.FAILED);
-        failed.setError(error);
-        itemRepository.save(failed);
-        conflicts.add(sourceKey);
     }
 
     private UUID resolveOrganizationId(LegacyConnection connection, int sideId) {
