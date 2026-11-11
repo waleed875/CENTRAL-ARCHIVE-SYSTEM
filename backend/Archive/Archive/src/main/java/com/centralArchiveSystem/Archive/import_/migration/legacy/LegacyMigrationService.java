@@ -401,18 +401,18 @@ public class LegacyMigrationService {
                             defaultTypeId
                     ),
                     pool
-            );
+            ).exceptionally(error -> {
+                log.error("File migration task failed for legacy project {} in office {}",
+                        legacyProjectId, connection.office(), error);
+                summary.incrementFailed();
+                return null;
+            });
             futures.add(future);
         }
 
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        } catch (Exception e) {
-            // Individual file failures are recorded by migrateOneFile. Reaching this catch means
-            // a project-level task failed before/around its result-set callback; do not hide it.
-            log.error("Parallel file migration failed for office {}", connection.office(), e);
-            summary.incrementFailed();
-        }
+        // Each project task handles its own exceptional completion above. Joining the aggregate
+        // now waits for every project and does not let one failed project hide the remaining work.
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info(
                 "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
                 connection.office(),
@@ -446,6 +446,16 @@ public class LegacyMigrationService {
                     Integer.class, legacyProjectId);
             for (Integer idfile : sourceFileIds) {
                 String sourceKey = "FILE-" + idfile;
+                LegacyMigrationItem existing = itemRepository
+                        .findByMigrationSourceIdAndKindAndSourceKey(
+                                connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
+                        .orElse(null);
+                if (existing != null
+                        && existing.getStatus() == LegacyMigrationItem.Status.DONE
+                        && existing.getTargetId() != null) {
+                    summary.incrementSkipped();
+                    continue;
+                }
                 LegacyMigrationItem item = trackingItem(
                         connection, LegacyMigrationItem.Kind.FILE, sourceKey, idfile.longValue(), null);
                 item.setStatus(LegacyMigrationItem.Status.FAILED);
