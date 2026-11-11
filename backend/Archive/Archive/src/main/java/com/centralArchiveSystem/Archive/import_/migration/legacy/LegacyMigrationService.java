@@ -289,9 +289,15 @@ public class LegacyMigrationService {
         for (Map<String, Object> row : rows) {
             int oldId = ((Number) row.get("idproject")).intValue();
             String sourceKey = "PROJECT-" + oldId;
-            // Scoped by source: the same key legitimately exists in every organisation's database.
-            if (itemRepository.existsByMigrationSourceIdAndKindAndSourceKey(
-                    connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)) {
+            // A DONE project already has a durable target mapping. FAILED/SKIPPED rows are
+            // intentionally retried so previously rejected duplicate-number projects can recover.
+            LegacyMigrationItem previousProjectItem = itemRepository
+                    .findByMigrationSourceIdAndKindAndSourceKey(
+                            connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, sourceKey)
+                    .orElse(null);
+            if (previousProjectItem != null
+                    && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
+                    && previousProjectItem.getTargetId() != null) {
                 continue;
             }
 
