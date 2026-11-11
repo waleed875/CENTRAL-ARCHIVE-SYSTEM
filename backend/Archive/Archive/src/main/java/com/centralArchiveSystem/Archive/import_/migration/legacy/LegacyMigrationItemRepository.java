@@ -24,6 +24,10 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
     long countByMigrationSourceIdAndKindAndStatus(
             UUID migrationSourceId, LegacyMigrationItem.Kind kind, LegacyMigrationItem.Status status);
 
+    long countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+            UUID migrationSourceId, LegacyMigrationItem.Kind kind, LegacyMigrationItem.Status status,
+            String sourceKeyPrefix);
+
     long countByMigrationSourceIdAndStatus(UUID migrationSourceId, LegacyMigrationItem.Status status);
 
     long countByMigrationSourceId(UUID migrationSourceId);
