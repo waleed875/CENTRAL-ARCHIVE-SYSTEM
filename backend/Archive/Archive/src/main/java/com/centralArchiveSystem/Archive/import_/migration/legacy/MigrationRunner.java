@@ -161,7 +161,7 @@ public class MigrationRunner {
                 // during this invocation. A resumed batch therefore reports the complete result.
                 batch.setProjectsCount(Math.toIntExact(doneProjects));
                 batch.setFilesCount(Math.toIntExact(doneFiles));
-                batch.setStatus(failedItems > 0 || pendingItems > 0 || runningItems > 0
+                batch.setStatus(files.failed() > 0 || failedItems > 0 || pendingItems > 0 || runningItems > 0
                         ? MigrationBatch.Status.PARTIAL
                         : MigrationBatch.Status.SUCCESS);
                 batch.setNotes("office=" + connection.office()
