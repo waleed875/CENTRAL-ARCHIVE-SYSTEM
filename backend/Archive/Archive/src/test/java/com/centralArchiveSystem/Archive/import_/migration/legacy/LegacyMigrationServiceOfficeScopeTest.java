@@ -193,6 +193,7 @@ class LegacyMigrationServiceOfficeScopeTest {
         assertEquals(3, savedProjects.size());
         assertEquals(3, items.values().stream()
                 .filter(item -> item.getKind() == LegacyMigrationItem.Kind.PROJECT
+                        && item.getSourceKey().startsWith("PROJECT-")
                         && item.getStatus() == LegacyMigrationItem.Status.DONE)
                 .count());
         assertEquals(3, savedProjects.stream()
