@@ -88,6 +88,7 @@ public class LegacyMigrationService {
     public static final int UNKNOWN_YEAR = 1000;
 
     private static final int MIN_PLAUSIBLE_YEAR = 1900;
+    private static final int STALE_RUNNING_ITEM_MINUTES = 30;
 
     @Value("${legacy.migration.default-year:1000}")
     private int defaultYear;
@@ -300,6 +301,14 @@ public class LegacyMigrationService {
                     && previousProjectItem.getTargetId() != null) {
                 continue;
             }
+            if (previousProjectItem != null
+                    && previousProjectItem.getStatus() == LegacyMigrationItem.Status.RUNNING
+                    && previousProjectItem.getStartedAt() != null
+                    && previousProjectItem.getStartedAt().isAfter(
+                            java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
+                log.info("Skipping project {} because another migration attempt started recently", oldId);
+                continue;
+            }
 
             int sideId = row.get("idside") == null ? 0 : ((Number) row.get("idside")).intValue();
             UUID organizationId = resolveOrganizationId(connection, sideId);
@@ -509,7 +518,7 @@ public class LegacyMigrationService {
                             && previousFileItem.getStatus() == LegacyMigrationItem.Status.RUNNING
                             && previousFileItem.getStartedAt() != null
                             && previousFileItem.getStartedAt().isAfter(
-                                    java.time.LocalDateTime.now().minusMinutes(30))) {
+                                    java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
                         log.info("Skipping file {} because another migration attempt started recently", idfile);
                         summary.incrementSkipped();
                         return;
