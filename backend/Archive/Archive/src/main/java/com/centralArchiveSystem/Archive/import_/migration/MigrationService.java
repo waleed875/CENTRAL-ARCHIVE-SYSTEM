@@ -313,7 +313,7 @@ public class MigrationService {
      * deployment and can be finalized as CANCELLED while preserving all item tracking rows.
      */
     public MigrationBatchResponse stopBatch(UUID batchId) {
-        MigrationBatch batch = batchRepository.findById(batchId)
+        MigrationBatch batch = batchRepository.findByIdForUpdate(batchId)
                 .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
 
         if (batch.getStatus() == MigrationBatch.Status.CANCELLED) {
@@ -327,23 +327,33 @@ public class MigrationService {
         if (migrationExecutionService.requestCancellation(batchId)) {
             int updated = batchRepository.markCancellationRequested(batchId, MigrationBatch.Status.RUNNING);
             if (updated == 0) {
+                MigrationBatch latest = batchRepository.findById(batchId)
+                        .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
+                if (latest.getStatus() == MigrationBatch.Status.CANCELLED) {
+                    return toBatchResponse(latest);
+                }
                 throw new IllegalStateException(
                         "The migration finished before the stop request was accepted. Refresh the batch status.");
             }
-            // Bulk update deliberately avoids saving this potentially stale RUNNING entity over
-            // the worker's final CANCELLED/SUCCESS state.
+            // Bulk update avoids saving this stale entity over the worker's final status.
             return toBatchResponse(batch, true);
         }
 
-        // A RUNNING row with no registered executor is left over from an interrupted process.
-        // No file task is alive in this application instance, so finalize the batch and keep the
-        // item rows untouched; a later run can resume from those durable rows.
+        // The locked row is RUNNING but no local executor is registered. In this single-runner
+        // deployment this is an abandoned RUNNING record, typically left by an application restart.
+        // Preserve all item mappings and make any interrupted item retryable.
+        itemRepository.markAbandonedRunningItemsFailed(
+                batch.getMigrationSourceId(),
+                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.RUNNING,
+                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.FAILED,
+                LocalDateTime.now(),
+                "The migration process stopped before this item completed; retry it when resuming the batch.");
         refreshBatchCounts(batch);
         batch.setStatus(MigrationBatch.Status.CANCELLED);
         batch.setCancelRequested(false);
         batch.setCompletedAt(LocalDateTime.now());
         batch.setNotes(appendNote(batch.getNotes(),
-                "CANCELLED: no active migration executor was registered; remaining items were preserved for resume."));
+                "CANCELLED: no active executor was registered; interrupted item rows were marked FAILED for retry."));
         MigrationBatch saved = batchRepository.saveAndFlush(batch);
         return toBatchResponse(saved);
     }
