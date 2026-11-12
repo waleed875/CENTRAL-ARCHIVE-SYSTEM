@@ -498,15 +498,16 @@ public class MigrationService {
         MigrationBatch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
 
-        if (batch.getStatus() == MigrationBatch.Status.RUNNING) {
-            throw new IllegalStateException(
-                    "A running batch can only be completed by its migration worker or stopped safely.");
-        }
         if (request.status() != MigrationBatch.Status.SUCCESS
                 && request.status() != MigrationBatch.Status.PARTIAL
                 && request.status() != MigrationBatch.Status.FAILED) {
             throw new IllegalArgumentException(
                     "Completion status must be SUCCESS, PARTIAL or FAILED");
+        }
+
+        if (batch.getStatus() == MigrationBatch.Status.RUNNING) {
+            throw new IllegalStateException(
+                    "A running batch can only be completed by its migration worker or stopped safely.");
         }
 
         batch.setCompletedAt(LocalDateTime.now());
