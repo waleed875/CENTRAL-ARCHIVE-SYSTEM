@@ -123,6 +123,16 @@ public class MigrationController {
                     "Migration batch started"));
     }
 
+    @PostMapping("/migration-batches/{id}/stop")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Request a safe stop for a running migration batch")
+    public ResponseEntity<ApiResponse<MigrationBatchResponse>> stopBatch(
+            @Parameter(description = "Batch UUID") @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                migrationService.stopBatch(id),
+                "Migration batch stop requested"));
+    }
+
     @PostMapping("/migration-batches/{id}/complete")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Mark a migration batch as completed")
