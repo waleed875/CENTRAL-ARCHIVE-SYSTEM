@@ -132,9 +132,10 @@ public class MigrationRunner {
         MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
                 batchId, ignored -> new MigrationCancellationToken());
         boolean started = runBatch(batchId, token);
-        // A second scheduler tick for the already-active batch must not remove its token. A
-        // rejected trigger for a different batch has no worker and must not leave a token behind.
-        if (started || !batchId.equals(activeBatchId.get())) {
+        // A rejected duplicate trigger may be racing with the worker between its RUNNING CAS and
+        // publishing activeBatchId. Leave the shared token in place; the active worker removes it
+        // during finalization. A successful run removes its own token after the worker has ended.
+        if (started) {
             cancellationTokens.remove(batchId, token);
         }
         return started;
@@ -248,6 +249,7 @@ public class MigrationRunner {
                 }
             } finally {
                 activeBatchId.compareAndSet(batchId, null);
+                cancellationTokens.keySet().removeIf(id -> !id.equals(batchId));
                 running.set(false);
             }
         }
