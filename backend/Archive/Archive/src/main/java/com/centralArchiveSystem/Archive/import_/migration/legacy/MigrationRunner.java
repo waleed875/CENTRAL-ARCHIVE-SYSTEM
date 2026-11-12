@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -36,6 +38,8 @@ public class MigrationRunner {
     private final LegacyMigrationItemRepository itemRepository;
     private final MigrationSettingsService migrationSettingsService;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final ConcurrentMap<UUID, MigrationCancellationToken> cancellationTokens =
+            new ConcurrentHashMap<>();
 
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
@@ -82,6 +86,7 @@ public class MigrationRunner {
     public boolean runOnce() {
         ensureEnabled();
         MigrationBatch batch = findOrCreateRunningBatch();
+        prepareCancellation(batch.getId());
         return runBatch(batch.getId());
     }
 
@@ -108,8 +113,27 @@ public class MigrationRunner {
         }
     }
 
+    public void prepareCancellation(UUID batchId) {
+        cancellationTokens.computeIfAbsent(batchId, ignored -> new MigrationCancellationToken());
+    }
+
+    public boolean requestCancellation(UUID batchId) {
+        MigrationCancellationToken token = cancellationTokens.get(batchId);
+        if (token == null) {
+            return false;
+        }
+        token.requestCancellation();
+        return true;
+    }
+
     public boolean runBatch(UUID batchId) {
-        return runBatch(batchId, new MigrationCancellationToken());
+        MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
+                batchId, ignored -> new MigrationCancellationToken());
+        try {
+            return runBatch(batchId, token);
+        } finally {
+            cancellationTokens.remove(batchId, token);
+        }
     }
 
     public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
