@@ -185,6 +185,10 @@ public class MigrationRunner {
                             connection, "SELECT COUNT(*) FROM public.tbl_project")));
                     batch.setTotalFilesCount(Math.toIntExact(queryLegacyCount(
                             connection, "SELECT COUNT(*) FROM public.tbl_files")));
+                    // Persist the source totals before processing starts. If the process is
+                    // interrupted, a later stale-batch stop can still report meaningful remaining
+                    // counts rather than only the rows that happened to be tracked before the crash.
+                    batchRepository.saveAndFlush(batch);
 
                     refs = legacyMigrationService.migrateReferences(connection, cancellation);
                     if (!cancellation.isCancellationRequested()) {
