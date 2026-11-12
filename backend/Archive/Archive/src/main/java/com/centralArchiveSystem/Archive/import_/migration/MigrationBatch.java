@@ -51,6 +51,12 @@ public class MigrationBatch {
     @Column(name = "files_count")
     private Integer filesCount = 0;
 
+    @Column(name = "total_projects_count", nullable = false)
+    private Integer totalProjectsCount = 0;
+
+    @Column(name = "total_files_count", nullable = false)
+    private Integer totalFilesCount = 0;
+
     @Column(name = "remaining_projects_count", nullable = false)
     private Integer remainingProjectsCount = 0;
 
@@ -100,6 +106,12 @@ public class MigrationBatch {
 
     public Integer getFilesCount() { return filesCount; }
     public void setFilesCount(Integer filesCount) { this.filesCount = filesCount; }
+
+    public Integer getTotalProjectsCount() { return totalProjectsCount; }
+    public void setTotalProjectsCount(Integer totalProjectsCount) { this.totalProjectsCount = totalProjectsCount; }
+
+    public Integer getTotalFilesCount() { return totalFilesCount; }
+    public void setTotalFilesCount(Integer totalFilesCount) { this.totalFilesCount = totalFilesCount; }
 
     public Integer getRemainingProjectsCount() { return remainingProjectsCount; }
     public void setRemainingProjectsCount(Integer remainingProjectsCount) { this.remainingProjectsCount = remainingProjectsCount; }
