@@ -150,10 +150,10 @@ public class MigrationRunner {
                 try (LegacyMigrationService.LegacyConnection connection =
                              legacyMigrationService.openConnection(source)) {
                     office = connection.office();
-                    batch.setTotalProjectsCount(queryLegacyCount(
-                            connection, "SELECT COUNT(*) FROM public.tbl_project"));
-                    batch.setTotalFilesCount(queryLegacyCount(
-                            connection, "SELECT COUNT(*) FROM public.tbl_files"));
+                    batch.setTotalProjectsCount(Math.toIntExact(queryLegacyCount(
+                            connection, "SELECT COUNT(*) FROM public.tbl_project")));
+                    batch.setTotalFilesCount(Math.toIntExact(queryLegacyCount(
+                            connection, "SELECT COUNT(*) FROM public.tbl_files")));
 
                     refs = legacyMigrationService.migrateReferences(connection, cancellation);
                     if (!cancellation.isCancellationRequested()) {
