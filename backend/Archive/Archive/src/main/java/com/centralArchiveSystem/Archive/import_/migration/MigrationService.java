@@ -360,21 +360,23 @@ public class MigrationService {
                 sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.PROJECT, "PROJECT-");
         long trackedFiles = trackedItemCount(
                 sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE, null);
+        long trackedRemainingProjects = remainingCount(
+                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.PROJECT, "PROJECT-");
+        long trackedRemainingFiles = remainingCount(
+                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE, null);
+
         batch.setProjectsCount(Math.toIntExact(doneProjects));
         batch.setFilesCount(Math.toIntExact(doneFiles));
-        // For a stale batch the original source may no longer be reachable. Retain any previously
-        // captured source totals and use durable tracking counts as the minimum known remainder.
+        // If the original source is offline after a process restart, retain known totals and at
+        // least report all durable tracking rows that are not DONE.
         batch.setTotalProjectsCount(Math.max(batch.getTotalProjectsCount(), Math.toIntExact(trackedProjects)));
         batch.setTotalFilesCount(Math.max(batch.getTotalFilesCount(), Math.toIntExact(trackedFiles)));
-        batch.setRemainingProjectsCount(Math.max(0, batch.getTotalProjectsCount() - batch.getProjectsCount()));
-        batch.setRemainingFilesCount(Math.max(0, batch.getTotalFilesCount() - batch.getFilesCount()));
-        batch.setFilesCount(Math.toIntExact(itemRepository.countByMigrationSourceIdAndKindAndStatus(
-                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE,
-                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE)));
-        batch.setRemainingProjectsCount(Math.toIntExact(remainingCount(
-                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.PROJECT, "PROJECT-")));
-        batch.setRemainingFilesCount(Math.toIntExact(remainingCount(
-                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE, null)));
+        batch.setRemainingProjectsCount(Math.max(
+                Math.max(0, batch.getTotalProjectsCount() - batch.getProjectsCount()),
+                Math.toIntExact(trackedRemainingProjects)));
+        batch.setRemainingFilesCount(Math.max(
+                Math.max(0, batch.getTotalFilesCount() - batch.getFilesCount()),
+                Math.toIntExact(trackedRemainingFiles)));
     }
 
     private long remainingCount(
@@ -555,6 +557,8 @@ public class MigrationService {
                 entity.getStatus().name(),
                 entity.getProjectsCount(),
                 entity.getFilesCount(),
+                entity.getTotalProjectsCount(),
+                entity.getTotalFilesCount(),
                 entity.getRemainingProjectsCount(),
                 entity.getRemainingFilesCount(),
                 cancelRequested,
