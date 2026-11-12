@@ -227,11 +227,18 @@ public class LegacyMigrationService {
     // ------------------------------------------------------------------
     @Transactional
     public int migrateReferences(LegacyConnection connection) {
+        return migrateReferences(connection, new MigrationCancellationToken());
+    }
+
+    public int migrateReferences(LegacyConnection connection, MigrationCancellationToken cancellation) {
         List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idside, name, status FROM " + LEGACY_DB_SCHEMA + ".tbl_side ORDER BY idside");
 
         int created = 0;
         for (Map<String, Object> row : rows) {
+            if (cancellation.isCancellationRequested()) {
+                break;
+            }
             int oldId = ((Number) row.get("idside")).intValue();
             String name = (String) row.get("name");
             Boolean active = row.get("status") == null || Boolean.TRUE.equals(row.get("status"));
@@ -282,12 +289,19 @@ public class LegacyMigrationService {
     // ------------------------------------------------------------------
     @Transactional
     public int migrateProjects(LegacyConnection connection) throws Exception {
+        return migrateProjects(connection, new MigrationCancellationToken());
+    }
+
+    public int migrateProjects(LegacyConnection connection, MigrationCancellationToken cancellation) throws Exception {
         List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idproject, idside, name, number, code, year, admin, detils, note FROM "
                         + LEGACY_DB_SCHEMA + ".tbl_project ORDER BY idproject");
 
         int created = 0;
         for (Map<String, Object> row : rows) {
+            if (cancellation.isCancellationRequested()) {
+                break;
+            }
             int oldId = ((Number) row.get("idproject")).intValue();
             String sourceKey = "PROJECT-" + oldId;
             // A DONE project already has a durable target mapping. FAILED/SKIPPED rows are
@@ -383,12 +397,17 @@ public class LegacyMigrationService {
     // Phase 3: tbl_files -> MinIO + project.files (parallel, resumable)
     // ------------------------------------------------------------------
     public CompletableFuture<LegacyFileSummary> migrateFilesAsync(LegacyConnection connection, int workers) {
+        return migrateFilesAsync(connection, workers, new MigrationCancellationToken());
+    }
+
+    public CompletableFuture<LegacyFileSummary> migrateFilesAsync(
+            LegacyConnection connection, int workers, MigrationCancellationToken cancellation) {
         return CompletableFuture.supplyAsync(() -> {
             ExecutorService pool = null;
             try {
                 int parallel = Math.max(1, Math.min(workers <= 0 ? 4 : workers, 8));
                 pool = Executors.newFixedThreadPool(parallel);
-                return migrateFiles(connection, pool);
+                return migrateFiles(connection, pool, cancellation);
             } finally {
                 if (pool != null) pool.shutdown();
             }
@@ -396,7 +415,15 @@ public class LegacyMigrationService {
     }
 
     public LegacyFileSummary migrateFiles(LegacyConnection connection, ExecutorService pool) {
+        return migrateFiles(connection, pool, new MigrationCancellationToken());
+    }
+
+    public LegacyFileSummary migrateFiles(
+            LegacyConnection connection, ExecutorService pool, MigrationCancellationToken cancellation) {
         LegacyFileSummary summary = new LegacyFileSummary();
+        if (cancellation.isCancellationRequested()) {
+            return summary;
+        }
 
         UUID defaultCategoryId = resolveDefaultCategoryId();
         UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
@@ -406,6 +433,9 @@ public class LegacyMigrationService {
 
         java.util.List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
         for (Map<String, Object> projectRow : projects) {
+            if (cancellation.isCancellationRequested()) {
+                break;
+            }
             int legacyProjectId = ((Number) projectRow.get("idproject")).intValue();
             CompletableFuture<Void> future = CompletableFuture.runAsync(
                     () -> migrateFilesForProject(
@@ -413,7 +443,8 @@ public class LegacyMigrationService {
                             legacyProjectId,
                             summary,
                             defaultCategoryId,
-                            defaultTypeId
+                            defaultTypeId,
+                            cancellation
                     ),
                     pool
             ).exceptionally(error -> {
@@ -442,7 +473,11 @@ public class LegacyMigrationService {
                                         int legacyProjectId,
                                         LegacyFileSummary summary,
                                         UUID defaultCategoryId,
-                                        UUID defaultTypeId) {
+                                        UUID defaultTypeId,
+                                        MigrationCancellationToken cancellation) {
+        if (cancellation.isCancellationRequested()) {
+            return;
+        }
         String projectSourceKey = "PROJECT-" + legacyProjectId;
         UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
                         connection.sourceId(),
@@ -460,6 +495,9 @@ public class LegacyMigrationService {
                             + ".tbl_files WHERE idproject = ? ORDER BY idfile",
                     Integer.class, legacyProjectId);
             for (Integer idfile : sourceFileIds) {
+                if (cancellation.isCancellationRequested()) {
+                    break;
+                }
                 String sourceKey = "FILE-" + idfile;
                 LegacyMigrationItem existing = itemRepository
                         .findByMigrationSourceIdAndKindAndSourceKey(
@@ -501,6 +539,9 @@ public class LegacyMigrationService {
                     preparedStatement.setFetchSize(Math.max(1, batchSize));
                 },
                 resultSet -> {
+                    if (cancellation.isCancellationRequested()) {
+                        return;
+                    }
                     int idfile = resultSet.getInt("idfile");
                     String sourceKey = "FILE-" + idfile;
 
