@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.import_.migration;
 
 import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationRunner;
+import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationCancellationToken;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
