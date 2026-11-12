@@ -65,12 +65,12 @@ export function Migration(){
  const current=useRemote<UserInfo>("/api/v1/auth/me");const isAdmin=!!current.data?.roles.includes("system_admin");
  const settings=useRemote<MigrationSettings>(isAdmin?"/api/v1/migration-settings":null);
  const batches=useRemote<MigrationBatch[]>(selected?"/api/v1/migration-sources/"+selected+"/batches":null);
+ const hasActiveBatch=!!batches.data?.some(batch=>batch.status==="RUNNING"||batch.cancelRequested);
  useEffect(()=>{
-  const active=!!batches.data?.some(batch=>batch.status==="RUNNING"||batch.cancelRequested);
-  if(!selected||!active)return;
+  if(!selected||!hasActiveBatch)return;
   const timer=window.setInterval(()=>batches.reload(),2500);
   return()=>window.clearInterval(timer);
- },[selected,batches.data?.some(batch=>batch.status==="RUNNING"||batch.cancelRequested),batches.reload]);
+ },[selected,hasActiveBatch,batches.reload]);
  async function saveSource(e:FormEvent){e.preventDefault();setError("");setSaving(true);try{const body={...form,port:form.host?Number(form.port):null,sourceType:"LEGACY_DB"};if(editingSource){await api("/api/v1/migration-sources/"+editingSource.id,{method:"PATCH",...jsonBody(body)});setSuccess("تم تحديث إعدادات مصدر الترحيل")}else{await api("/api/v1/migration-sources",{method:"POST",...jsonBody(body)});setSuccess("تم تسجيل مصدر الترحيل")}setModal(null);setEditingSource(null);sources.reload()}catch(e){setError(e instanceof Error?e.message:"تعذر حفظ مصدر الترحيل")}finally{setSaving(false)}}
  function openSourceEditor(source:MigrationSource){setEditingSource(source);setForm({name:source.name,officeName:source.officeName,databaseName:source.databaseName??"",host:source.host??"",port:String(source.port??5432),username:source.username??"",password:"",description:source.description??""});setError("");setModal("source")}
  async function saveBatch(e:FormEvent){e.preventDefault();if(!selected)return;setError("");setSaving(true);try{await api("/api/v1/migration-sources/"+selected+"/batches",{method:"POST",...jsonBody(batch)});setModal(null);batches.reload();sources.reload();setSuccess("تم إنشاء دفعة الترحيل")}catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء الدفعة")}finally{setSaving(false)}}
