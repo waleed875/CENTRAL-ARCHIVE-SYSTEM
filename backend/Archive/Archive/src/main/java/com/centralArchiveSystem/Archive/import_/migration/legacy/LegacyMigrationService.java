@@ -230,6 +230,7 @@ public class LegacyMigrationService {
         return migrateReferences(connection, new MigrationCancellationToken());
     }
 
+    @Transactional
     public int migrateReferences(LegacyConnection connection, MigrationCancellationToken cancellation) {
         List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idside, name, status FROM " + LEGACY_DB_SCHEMA + ".tbl_side ORDER BY idside");
@@ -292,6 +293,7 @@ public class LegacyMigrationService {
         return migrateProjects(connection, new MigrationCancellationToken());
     }
 
+    @Transactional
     public int migrateProjects(LegacyConnection connection, MigrationCancellationToken cancellation) throws Exception {
         List<Map<String, Object>> rows = connection.jdbc().queryForList(
                 "SELECT idproject, idside, name, number, code, year, admin, detils, note FROM "
@@ -568,6 +570,9 @@ public class LegacyMigrationService {
                     String originalName = resultSet.getString("filename");
                     String suffix = resultSet.getString("filesuffix");
 
+                    if (cancellation.isCancellationRequested()) {
+                        return;
+                    }
                     InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
                     try {
                             migrateOneFile(
