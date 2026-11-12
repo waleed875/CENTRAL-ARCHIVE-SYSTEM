@@ -17,6 +17,24 @@ import static org.mockito.Mockito.*;
 class MigrationRunnerCancellationTest {
 
     @Test
+    void cancellationRegistrySignalsOnlyPreparedBatches() {
+        MigrationRunner runner = new MigrationRunner(
+                mock(LegacyMigrationService.class),
+                mock(MigrationBatchRepository.class),
+                mock(MigrationSourceRepository.class),
+                mock(LegacyMigrationItemRepository.class),
+                mock(MigrationSettingsService.class));
+        UUID preparedBatch = UUID.randomUUID();
+        UUID unknownBatch = UUID.randomUUID();
+
+        runner.prepareCancellation(preparedBatch);
+
+        assertTrue(runner.requestCancellation(preparedBatch));
+        assertTrue(runner.requestCancellation(preparedBatch));
+        assertEquals(false, runner.requestCancellation(unknownBatch));
+    }
+
+    @Test
     void requestedCancellationFinalizesBatchWithoutOpeningLegacyConnection() {
         LegacyMigrationService legacy = mock(LegacyMigrationService.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
