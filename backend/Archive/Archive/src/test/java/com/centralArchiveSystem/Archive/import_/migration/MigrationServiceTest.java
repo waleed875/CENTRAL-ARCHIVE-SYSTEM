@@ -37,6 +37,110 @@ class MigrationServiceTest {
     }
 
     @Test
+    void stopBatchRequestsCooperativeCancellationWithoutOverwritingWorkerStatus() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+
+        UUID id = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(UUID.randomUUID());
+        batch.setBatchNumber("B-STOP");
+        batch.setStatus(MigrationBatch.Status.RUNNING);
+
+        when(batches.findByIdForUpdate(id)).thenReturn(Optional.of(batch));
+        when(execution.requestCancellation(id)).thenReturn(true);
+        when(batches.markCancellationRequested(id, MigrationBatch.Status.RUNNING)).thenReturn(1);
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(), items);
+
+        var response = service.stopBatch(id);
+
+        assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
+        assertTrue(response.cancelRequested());
+        verify(execution).requestCancellation(id);
+        verify(batches).markCancellationRequested(id, MigrationBatch.Status.RUNNING);
+        verify(batches, never()).save(any(MigrationBatch.class));
+    }
+
+    @Test
+    void stopBatchFinalizesAStaleRunningRowWhenNoExecutorIsRegistered() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-STALE");
+        batch.setStatus(MigrationBatch.Status.RUNNING);
+
+        when(batches.findByIdForUpdate(id)).thenReturn(Optional.of(batch));
+        when(batches.saveAndFlush(any(MigrationBatch.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(execution.requestCancellation(id)).thenReturn(false);
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(), items);
+
+        var response = service.stopBatch(id);
+
+        assertEquals(MigrationBatch.Status.CANCELLED.name(), response.status());
+        assertFalse(response.cancelRequested());
+        assertNotNull(response.completedAt());
+        verify(items).markAbandonedRunningItemsFailed(
+                eq(sourceId),
+                eq(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.RUNNING),
+                eq(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.FAILED),
+                any(),
+                contains("stopped"));
+        verify(batches).saveAndFlush(batch);
+    }
+
+    @Test
+    void cancelledBatchCanBeResumed() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(UUID.randomUUID());
+        batch.setBatchNumber("B-RESUME");
+        batch.setStatus(MigrationBatch.Status.CANCELLED);
+        batch.setCancelRequested(false);
+
+        MigrationSource source = new MigrationSource();
+        source.setId(batch.getMigrationSourceId());
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
+        source.setOfficeName("ARC2");
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+        when(batches.saveAndFlush(batch)).thenReturn(batch);
+        when(sources.findById(batch.getMigrationSourceId())).thenReturn(Optional.of(source));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(),
+                mock(LegacyMigrationItemRepository.class));
+
+        var response = service.runBatch(
+                id,
+                new MigrationRunRequest(new MigrationRunRequest.MigrationConfig(null, null, Map.of(), null)));
+
+        assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
+        assertFalse(batch.isCancelRequested());
+        assertNull(batch.getCompletedAt());
+        verify(execution).prepare(id);
+        verify(execution).execute(id);
+    }
+
+    @Test
     void runBatchMovesPlannedBatchToRunningAndDispatchesExecution() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
@@ -76,6 +180,7 @@ class MigrationServiceTest {
         assertNotNull(batch.getStartedAt());
         assertNull(batch.getCompletedAt());
         verify(batches).saveAndFlush(batch);
+        verify(execution).prepare(id);
         verify(execution).execute(id);
     }
 
@@ -486,6 +591,26 @@ class MigrationServiceTest {
                 )
         );
         verify(batches, never()).save(any());
+    }
+
+    @Test
+    void manualCompletionCannotOverwriteRunningWorkerWithSuccess() {
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        UUID id = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(UUID.randomUUID());
+        batch.setBatchNumber("B-COMPLETE-RACE");
+        batch.setStatus(MigrationBatch.Status.RUNNING);
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+
+        MigrationService service = new MigrationService(
+                mock(MigrationSourceRepository.class), batches, mock(MigrationExecutionService.class),
+                migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
+
+        assertThrows(IllegalStateException.class, () -> service.completeBatch(
+                id, new MigrationBatchCompleteRequest(MigrationBatch.Status.SUCCESS, "manual override")));
+        verify(batches, never()).save(any(MigrationBatch.class));
     }
 
     @Test

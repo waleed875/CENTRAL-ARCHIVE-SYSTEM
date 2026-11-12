@@ -209,6 +209,25 @@ class LegacyMigrationServiceOfficeScopeTest {
     }
 
     @Test
+    void cancelledProjectPhaseDoesNotStartAnotherProject() throws Exception {
+        stubTwoSides();
+        when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(
+                projectRow(41, 1, "41", "2024"),
+                projectRow(42, 1, "42", "2024")));
+
+        MigrationCancellationToken cancellation = new MigrationCancellationToken();
+        cancellation.requestCancellation();
+
+        int created = service.migrateProjects(connection("ARC1"), cancellation);
+
+        assertEquals(0, created);
+        assertTrue(savedProjects.isEmpty());
+        assertTrue(items.values().stream().noneMatch(item ->
+                item.getKind() == LegacyMigrationItem.Kind.PROJECT
+                        && item.getSourceKey().startsWith("PROJECT-")));
+    }
+
+    @Test
     void aPreviouslyFailedProjectTrackingRowIsRetriedAndUpdatedInPlace() throws Exception {
         Map<String, Object> project = projectRow(42, 1, "3", "2010");
         when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(project));

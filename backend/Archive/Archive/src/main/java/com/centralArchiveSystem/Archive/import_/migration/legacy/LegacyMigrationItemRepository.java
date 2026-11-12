@@ -1,9 +1,13 @@
 package com.centralArchiveSystem.Archive.import_.migration.legacy;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,4 +35,15 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
     long countByMigrationSourceIdAndStatus(UUID migrationSourceId, LegacyMigrationItem.Status status);
 
     long countByMigrationSourceId(UUID migrationSourceId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update LegacyMigrationItem item set item.status = :failedStatus, "
+            + "item.error = :error, item.finishedAt = :finishedAt "
+            + "where item.migrationSourceId = :sourceId and item.status = :runningStatus")
+    int markAbandonedRunningItemsFailed(
+            @Param("sourceId") UUID sourceId,
+            @Param("runningStatus") LegacyMigrationItem.Status runningStatus,
+            @Param("failedStatus") LegacyMigrationItem.Status failedStatus,
+            @Param("finishedAt") LocalDateTime finishedAt,
+            @Param("error") String error);
 }

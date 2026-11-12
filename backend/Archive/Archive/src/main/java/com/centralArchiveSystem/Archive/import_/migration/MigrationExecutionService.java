@@ -10,9 +10,20 @@ import java.util.UUID;
 public class MigrationExecutionService {
 
     private final MigrationRunner migrationRunner;
-
     public MigrationExecutionService(MigrationRunner migrationRunner) {
         this.migrationRunner = migrationRunner;
+    }
+
+    public void prepare(UUID batchId) {
+        migrationRunner.prepareCancellation(batchId);
+    }
+
+    /**
+     * Returns false when no worker is registered in this application process. In that case the
+     * caller may safely finalize a stale RUNNING row while preserving the durable item mappings.
+     */
+    public boolean requestCancellation(UUID batchId) {
+        return migrationRunner.requestCancellation(batchId);
     }
 
     public String testConnection(UUID sourceId) {

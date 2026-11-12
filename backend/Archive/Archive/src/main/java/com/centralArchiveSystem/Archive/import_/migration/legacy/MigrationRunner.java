@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -36,6 +38,10 @@ public class MigrationRunner {
     private final LegacyMigrationItemRepository itemRepository;
     private final MigrationSettingsService migrationSettingsService;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final ConcurrentMap<UUID, MigrationCancellationToken> cancellationTokens =
+            new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicReference<UUID> activeBatchId =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
@@ -82,6 +88,7 @@ public class MigrationRunner {
     public boolean runOnce() {
         ensureEnabled();
         MigrationBatch batch = findOrCreateRunningBatch();
+        prepareCancellation(batch.getId());
         return runBatch(batch.getId());
     }
 
@@ -108,15 +115,48 @@ public class MigrationRunner {
         }
     }
 
+    public void prepareCancellation(UUID batchId) {
+        cancellationTokens.computeIfAbsent(batchId, ignored -> new MigrationCancellationToken());
+    }
+
+    public boolean requestCancellation(UUID batchId) {
+        MigrationCancellationToken token = cancellationTokens.get(batchId);
+        if (token == null) {
+            return false;
+        }
+        token.requestCancellation();
+        return true;
+    }
+
     public boolean runBatch(UUID batchId) {
-        ensureEnabled();
+        MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
+                batchId, ignored -> new MigrationCancellationToken());
+        boolean started = runBatch(batchId, token);
+        // A rejected duplicate trigger may be racing with the worker between its RUNNING CAS and
+        // publishing activeBatchId. Leave the shared token in place; the active worker removes it
+        // during finalization. A successful run removes its own token after the worker has ended.
+        if (started) {
+            cancellationTokens.remove(batchId, token);
+        }
+        return started;
+    }
+
+    public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
         if (!running.compareAndSet(false, true)) {
             log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
         }
+        activeBatchId.set(batchId);
+
+        MigrationBatch batch = null;
+        int refs = 0;
+        int projects = 0;
+        LegacyMigrationService.LegacyFileSummary files = new LegacyMigrationService.LegacyFileSummary();
+        String failureMessage = null;
+        String office = "unknown";
 
         try {
-            MigrationBatch batch = batchRepository.findById(batchId)
+            batch = batchRepository.findById(batchId)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Migration batch not found: " + batchId));
 
@@ -128,61 +168,135 @@ public class MigrationRunner {
 
             log.info("Legacy migration started, batch={}", batch.getId());
 
-            // Each batch reads exactly one organisation's database, so the connection is opened
-            // per batch from the source record and closed when the batch finishes.
-            MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Migration source not found: " + batch.getMigrationSourceId()));
-            if (!source.getIsActive()) {
-                throw new IllegalStateException("Migration source is inactive: " + source.getId());
+            if (!cancellation.isCancellationRequested()) {
+                ensureEnabled();
+                UUID migrationSourceId = batch.getMigrationSourceId();
+                MigrationSource source = sourceRepository.findById(migrationSourceId)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Migration source not found: " + migrationSourceId));
+                if (!source.getIsActive()) {
+                    throw new IllegalStateException("Migration source is inactive: " + source.getId());
+                }
+
+                try (LegacyMigrationService.LegacyConnection connection =
+                             legacyMigrationService.openConnection(source)) {
+                    office = connection.office();
+                    batch.setTotalProjectsCount(Math.toIntExact(queryLegacyCount(
+                            connection, "SELECT COUNT(*) FROM public.tbl_project")));
+                    batch.setTotalFilesCount(Math.toIntExact(queryLegacyCount(
+                            connection, "SELECT COUNT(*) FROM public.tbl_files")));
+                    // Persist the source totals before processing starts. If the process is
+                    // interrupted, a later stale-batch stop can still report meaningful remaining
+                    // counts rather than only the rows that happened to be tracked before the crash.
+                    batchRepository.saveAndFlush(batch);
+
+                    refs = legacyMigrationService.migrateReferences(connection, cancellation);
+                    if (!cancellation.isCancellationRequested()) {
+                        projects = legacyMigrationService.migrateProjects(connection, cancellation);
+                    }
+                    if (!cancellation.isCancellationRequested()) {
+                        files = legacyMigrationService.migrateFilesAsync(connection, 4, cancellation).get();
+                    }
+                    // migrateFilesAsync joins every project task before returning. At this point no
+                    // upload is still running, so the legacy connection can be closed safely.
+                }
             }
-
-            try (LegacyMigrationService.LegacyConnection connection =
-                         legacyMigrationService.openConnection(source)) {
-                int refs = legacyMigrationService.migrateReferences(connection);
-                int projects = legacyMigrationService.migrateProjects(connection);
-                LegacyMigrationService.LegacyFileSummary files =
-                        legacyMigrationService.migrateFilesAsync(connection, 4).get();
-
-                long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
-                        source.getId(), LegacyMigrationItem.Kind.PROJECT, LegacyMigrationItem.Status.DONE, "PROJECT-");
-                long doneFiles = itemRepository.countByMigrationSourceIdAndKindAndStatus(
-                        source.getId(), LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
-                long failedItems = itemRepository.countByMigrationSourceIdAndStatus(
-                        source.getId(), LegacyMigrationItem.Status.FAILED);
-                long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
-                        source.getId(), LegacyMigrationItem.Status.SKIPPED);
-                long pendingItems = itemRepository.countByMigrationSourceIdAndStatus(
-                        source.getId(), LegacyMigrationItem.Status.PENDING);
-                long runningItems = itemRepository.countByMigrationSourceIdAndStatus(
-                        source.getId(), LegacyMigrationItem.Status.RUNNING);
-
-                // Batch totals come from durable tracking rows, not only the items newly processed
-                // during this invocation. A resumed batch therefore reports the complete result.
-                batch.setProjectsCount(Math.toIntExact(doneProjects));
-                batch.setFilesCount(Math.toIntExact(doneFiles));
-                batch.setStatus(files.failed() > 0 || failedItems > 0 || pendingItems > 0 || runningItems > 0
-                        ? MigrationBatch.Status.PARTIAL
-                        : MigrationBatch.Status.SUCCESS);
-                batch.setNotes("office=" + connection.office()
-                        + ", references created=" + refs
-                        + ", projects done=" + doneProjects + " (this run created=" + projects + ")"
-                        + ", files done=" + doneFiles + " (this run done=" + files.done()
-                        + ", failed=" + files.failed() + ", skipped=" + files.skipped() + ")"
-                        + ", failed rows=" + failedItems + ", skipped rows=" + skippedItems
-                        + ", pending rows=" + pendingItems + ", running rows=" + runningItems);
-            } catch (Exception e) {
+        } catch (Exception e) {
+            failureMessage = e.getMessage();
+            if (cancellation.isCancellationRequested()) {
+                log.info("Migration batch {} is stopping after the active item completes: {}",
+                        batchId, e.getMessage());
+            } else {
                 log.error("Legacy migration failed, batch={}", batchId, e);
-                batch.setStatus(MigrationBatch.Status.FAILED);
-                batch.setNotes("FAILED: " + e.getMessage());
-            } finally {
-                batch.setCompletedAt(LocalDateTime.now());
-                batchRepository.save(batch);
             }
-            return true;
         } finally {
-            running.set(false);
+            try {
+                if (batch != null) {
+                    refreshBatchProgress(batch);
+                    boolean cancelled = cancellation.isCancellationRequested();
+                    long failedItems = itemRepository.countByMigrationSourceIdAndStatus(
+                            batch.getMigrationSourceId(), LegacyMigrationItem.Status.FAILED);
+                    long pendingItems = itemRepository.countByMigrationSourceIdAndStatus(
+                            batch.getMigrationSourceId(), LegacyMigrationItem.Status.PENDING);
+                    long runningItems = itemRepository.countByMigrationSourceIdAndStatus(
+                            batch.getMigrationSourceId(), LegacyMigrationItem.Status.RUNNING);
+                    long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
+                            batch.getMigrationSourceId(), LegacyMigrationItem.Status.SKIPPED);
+
+                    if (cancelled) {
+                        batch.setStatus(MigrationBatch.Status.CANCELLED);
+                    } else if (failureMessage != null) {
+                        batch.setStatus(MigrationBatch.Status.FAILED);
+                    } else if (files.failed() > 0 || failedItems > 0
+                            || pendingItems > 0 || runningItems > 0) {
+                        batch.setStatus(MigrationBatch.Status.PARTIAL);
+                    } else {
+                        batch.setStatus(MigrationBatch.Status.SUCCESS);
+                    }
+
+                    batch.setCancelRequested(false);
+                    batch.setCompletedAt(LocalDateTime.now());
+                    batch.setNotes("office=" + office
+                            + ", projects completed=" + batch.getProjectsCount()
+                            + "/" + batch.getTotalProjectsCount()
+                            + ", projects remaining=" + batch.getRemainingProjectsCount()
+                            + ", files completed=" + batch.getFilesCount()
+                            + "/" + batch.getTotalFilesCount()
+                            + ", files remaining=" + batch.getRemainingFilesCount()
+                            + ", failed tracking rows=" + failedItems
+                            + ", pending tracking rows=" + pendingItems
+                            + ", running tracking rows=" + runningItems
+                            + ", skipped tracking rows=" + skippedItems
+                            + ", files failed in this run=" + files.failed()
+                            + (failureMessage == null ? "" : ", error=" + failureMessage)
+                            + (cancelled ? ", stop requested; active file tasks finished safely" : ""));
+                    batchRepository.save(batch);
+                }
+            } finally {
+                activeBatchId.compareAndSet(batchId, null);
+                cancellationTokens.keySet().removeIf(id -> !id.equals(batchId));
+                running.set(false);
+            }
         }
+        return true;
+    }
+
+    private long queryLegacyCount(LegacyMigrationService.LegacyConnection connection, String sql) {
+        Long count = connection.jdbc().queryForObject(sql, Long.class);
+        return count == null ? 0L : count;
+    }
+
+    private void refreshBatchProgress(MigrationBatch batch) {
+        UUID sourceId = batch.getMigrationSourceId();
+        long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+                sourceId, LegacyMigrationItem.Kind.PROJECT, LegacyMigrationItem.Status.DONE, "PROJECT-");
+        long doneFiles = itemRepository.countByMigrationSourceIdAndKindAndStatus(
+                sourceId, LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
+
+        long trackedRemainingProjects = remainingCount(sourceId, LegacyMigrationItem.Kind.PROJECT, "PROJECT-");
+        long trackedRemainingFiles = remainingCount(sourceId, LegacyMigrationItem.Kind.FILE, null);
+
+        long sourceRemainingProjects = Math.max(0L, batch.getTotalProjectsCount() - doneProjects);
+        long sourceRemainingFiles = Math.max(0L, batch.getTotalFilesCount() - doneFiles);
+
+        batch.setProjectsCount(Math.toIntExact(doneProjects));
+        batch.setFilesCount(Math.toIntExact(doneFiles));
+        batch.setRemainingProjectsCount(Math.toIntExact(Math.max(sourceRemainingProjects, trackedRemainingProjects)));
+        batch.setRemainingFilesCount(Math.toIntExact(Math.max(sourceRemainingFiles, trackedRemainingFiles)));
+    }
+
+    private long remainingCount(UUID sourceId, LegacyMigrationItem.Kind kind, String sourcePrefix) {
+        long count = 0;
+        for (LegacyMigrationItem.Status status : LegacyMigrationItem.Status.values()) {
+            if (status == LegacyMigrationItem.Status.DONE) {
+                continue;
+            }
+            count += sourcePrefix == null
+                    ? itemRepository.countByMigrationSourceIdAndKindAndStatus(sourceId, kind, status)
+                    : itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+                            sourceId, kind, status, sourcePrefix);
+        }
+        return count;
     }
 
     private void ensureEnabled() {

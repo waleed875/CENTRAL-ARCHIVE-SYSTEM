@@ -20,7 +20,7 @@ import java.util.UUID;
 public class MigrationBatch {
 
     public enum Status {
-        PLANNED, RUNNING, SUCCESS, FAILED, PARTIAL
+        PLANNED, RUNNING, SUCCESS, FAILED, PARTIAL, CANCELLED
     }
 
     @Id
@@ -50,6 +50,21 @@ public class MigrationBatch {
 
     @Column(name = "files_count")
     private Integer filesCount = 0;
+
+    @Column(name = "total_projects_count", nullable = false)
+    private Integer totalProjectsCount = 0;
+
+    @Column(name = "total_files_count", nullable = false)
+    private Integer totalFilesCount = 0;
+
+    @Column(name = "remaining_projects_count", nullable = false)
+    private Integer remainingProjectsCount = 0;
+
+    @Column(name = "remaining_files_count", nullable = false)
+    private Integer remainingFilesCount = 0;
+
+    @Column(name = "cancel_requested", nullable = false)
+    private boolean cancelRequested = false;
 
     @Column(columnDefinition = "text")
     private String notes;
@@ -91,6 +106,21 @@ public class MigrationBatch {
 
     public Integer getFilesCount() { return filesCount; }
     public void setFilesCount(Integer filesCount) { this.filesCount = filesCount; }
+
+    public Integer getTotalProjectsCount() { return totalProjectsCount; }
+    public void setTotalProjectsCount(Integer totalProjectsCount) { this.totalProjectsCount = totalProjectsCount; }
+
+    public Integer getTotalFilesCount() { return totalFilesCount; }
+    public void setTotalFilesCount(Integer totalFilesCount) { this.totalFilesCount = totalFilesCount; }
+
+    public Integer getRemainingProjectsCount() { return remainingProjectsCount; }
+    public void setRemainingProjectsCount(Integer remainingProjectsCount) { this.remainingProjectsCount = remainingProjectsCount; }
+
+    public Integer getRemainingFilesCount() { return remainingFilesCount; }
+    public void setRemainingFilesCount(Integer remainingFilesCount) { this.remainingFilesCount = remainingFilesCount; }
+
+    public boolean isCancelRequested() { return cancelRequested; }
+    public void setCancelRequested(boolean cancelRequested) { this.cancelRequested = cancelRequested; }
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
