@@ -40,6 +40,8 @@ public class MigrationRunner {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentMap<UUID, MigrationCancellationToken> cancellationTokens =
             new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicReference<UUID> activeBatchId =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
@@ -129,11 +131,13 @@ public class MigrationRunner {
     public boolean runBatch(UUID batchId) {
         MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
                 batchId, ignored -> new MigrationCancellationToken());
-        try {
-            return runBatch(batchId, token);
-        } finally {
+        boolean started = runBatch(batchId, token);
+        // A second scheduler tick for the already-active batch must not remove its token. A
+        // rejected trigger for a different batch has no worker and must not leave a token behind.
+        if (started || !batchId.equals(activeBatchId.get())) {
             cancellationTokens.remove(batchId, token);
         }
+        return started;
     }
 
     public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
@@ -141,6 +145,7 @@ public class MigrationRunner {
             log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
         }
+        activeBatchId.set(batchId);
 
         MigrationBatch batch = null;
         int refs = 0;
@@ -242,6 +247,7 @@ public class MigrationRunner {
                     batchRepository.save(batch);
                 }
             } finally {
+                activeBatchId.compareAndSet(batchId, null);
                 running.set(false);
             }
         }
