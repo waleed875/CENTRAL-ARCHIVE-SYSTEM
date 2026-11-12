@@ -170,9 +170,10 @@ public class MigrationRunner {
 
             if (!cancellation.isCancellationRequested()) {
                 ensureEnabled();
-                MigrationSource source = sourceRepository.findById(batch.getMigrationSourceId())
+                UUID migrationSourceId = batch.getMigrationSourceId();
+                MigrationSource source = sourceRepository.findById(migrationSourceId)
                         .orElseThrow(() -> new IllegalArgumentException(
-                                "Migration source not found: " + batch.getMigrationSourceId()));
+                                "Migration source not found: " + migrationSourceId));
                 if (!source.getIsActive()) {
                     throw new IllegalStateException("Migration source is inactive: " + source.getId());
                 }
