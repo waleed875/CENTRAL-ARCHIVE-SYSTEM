@@ -15,6 +15,8 @@ public record MigrationBatchResponse(
     @Schema(description = "Batch status") String status,
     @Schema(description = "Number of projects migrated") Integer projectsCount,
     @Schema(description = "Number of files migrated") Integer filesCount,
+    @Schema(description = "Total projects found in the legacy source") Integer totalProjectsCount,
+    @Schema(description = "Total files found in the legacy source") Integer totalFilesCount,
     @Schema(description = "Projects remaining in the migration source") Integer remainingProjectsCount,
     @Schema(description = "Files remaining in the migration source") Integer remainingFilesCount,
     @Schema(description = "Whether a safe stop has been requested") boolean cancelRequested,
@@ -24,6 +26,6 @@ public record MigrationBatchResponse(
                                    LocalDateTime startedAt, LocalDateTime completedAt, String status,
                                    Integer projectsCount, Integer filesCount, String notes) {
         this(id, migrationSourceId, batchNumber, startedAt, completedAt, status,
-                projectsCount, filesCount, 0, 0, false, notes);
+                projectsCount, filesCount, 0, 0, 0, 0, false, notes);
     }
 }
