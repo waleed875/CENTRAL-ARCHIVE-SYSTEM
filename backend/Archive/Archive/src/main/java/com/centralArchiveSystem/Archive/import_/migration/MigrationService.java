@@ -350,9 +350,24 @@ public class MigrationService {
 
     private void refreshBatchCounts(MigrationBatch batch) {
         UUID sourceId = batch.getMigrationSourceId();
-        batch.setProjectsCount(Math.toIntExact(itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+        long doneProjects = itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
                 sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.PROJECT,
-                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE, "PROJECT-")));
+                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE, "PROJECT-");
+        long doneFiles = itemRepository.countByMigrationSourceIdAndKindAndStatus(
+                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE,
+                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE);
+        long trackedProjects = trackedItemCount(
+                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.PROJECT, "PROJECT-");
+        long trackedFiles = trackedItemCount(
+                sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE, null);
+        batch.setProjectsCount(Math.toIntExact(doneProjects));
+        batch.setFilesCount(Math.toIntExact(doneFiles));
+        // For a stale batch the original source may no longer be reachable. Retain any previously
+        // captured source totals and use durable tracking counts as the minimum known remainder.
+        batch.setTotalProjectsCount(Math.max(batch.getTotalProjectsCount(), Math.toIntExact(trackedProjects)));
+        batch.setTotalFilesCount(Math.max(batch.getTotalFilesCount(), Math.toIntExact(trackedFiles)));
+        batch.setRemainingProjectsCount(Math.max(0, batch.getTotalProjectsCount() - batch.getProjectsCount()));
+        batch.setRemainingFilesCount(Math.max(0, batch.getTotalFilesCount() - batch.getFilesCount()));
         batch.setFilesCount(Math.toIntExact(itemRepository.countByMigrationSourceIdAndKindAndStatus(
                 sourceId, com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE,
                 com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE)));
@@ -372,6 +387,21 @@ public class MigrationService {
             if (status == com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.DONE) {
                 continue;
             }
+            count += sourcePrefix == null
+                    ? itemRepository.countByMigrationSourceIdAndKindAndStatus(sourceId, kind, status)
+                    : itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
+                            sourceId, kind, status, sourcePrefix);
+        }
+        return count;
+    }
+
+    private long trackedItemCount(
+            UUID sourceId,
+            com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind kind,
+            String sourcePrefix) {
+        long count = 0;
+        for (com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status status
+                : com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.values()) {
             count += sourcePrefix == null
                     ? itemRepository.countByMigrationSourceIdAndKindAndStatus(sourceId, kind, status)
                     : itemRepository.countByMigrationSourceIdAndKindAndStatusAndSourceKeyStartingWith(
@@ -506,6 +536,8 @@ public class MigrationService {
                 entity.getStatus().name(),
                 entity.getProjectsCount(),
                 entity.getFilesCount(),
+                entity.getTotalProjectsCount(),
+                entity.getTotalFilesCount(),
                 entity.getRemainingProjectsCount(),
                 entity.getRemainingFilesCount(),
                 entity.isCancelRequested(),
