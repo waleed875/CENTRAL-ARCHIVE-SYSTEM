@@ -594,6 +594,26 @@ class MigrationServiceTest {
     }
 
     @Test
+    void manualCompletionCannotOverwriteRunningWorkerWithSuccess() {
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        UUID id = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(UUID.randomUUID());
+        batch.setBatchNumber("B-COMPLETE-RACE");
+        batch.setStatus(MigrationBatch.Status.RUNNING);
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+
+        MigrationService service = new MigrationService(
+                mock(MigrationSourceRepository.class), batches, mock(MigrationExecutionService.class),
+                migrationSettings(true), crypto(), mock(LegacyMigrationItemRepository.class));
+
+        assertThrows(IllegalStateException.class, () -> service.completeBatch(
+                id, new MigrationBatchCompleteRequest(MigrationBatch.Status.SUCCESS, "manual override")));
+        verify(batches, never()).save(any(MigrationBatch.class));
+    }
+
+    @Test
     void createSourceEncryptsThePasswordAndNeverReturnsIt() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
