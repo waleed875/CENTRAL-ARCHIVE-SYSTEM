@@ -62,6 +62,19 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     @Query("SELECT f FROM FileEntity f WHERE f.deletedAt IS NULL AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
     Page<FileEntity> findAccessibleRecent(@Param("maxLevelOrder") Integer maxLevelOrder, Pageable pageable);
 
+    /** Batch count of files actually visible to the caller, keyed by project ID. */
+    @Query("""
+        SELECT f.projectId, COUNT(f) FROM FileEntity f
+        WHERE f.projectId IN :projectIds
+          AND f.deletedAt IS NULL
+          AND UPPER(f.status) = 'ACTIVE'
+          AND """ + FILE_CLEARANCE + """
+        GROUP BY f.projectId
+        """)
+    List<Object[]> countAccessibleActiveByProjectIds(
+            @Param("projectIds") java.util.Collection<UUID> projectIds,
+            @Param("maxLevelOrder") Integer maxLevelOrder);
+
     List<FileEntity> findByDeletedAtIsNotNull();
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
     long countByConfidentialityLevelId(UUID confidentialityLevelId);

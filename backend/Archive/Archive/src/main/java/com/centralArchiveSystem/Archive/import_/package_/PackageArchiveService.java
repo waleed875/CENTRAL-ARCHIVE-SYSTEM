@@ -278,11 +278,23 @@ public class PackageArchiveService {
                     filesValid = false;
                 } else {
                     try {
-                        FileContentInspector.validatePackageEntry(
-                                actual.prefix(),
-                                expectedExtension,
-                                actual.zipSpool()
-                        );
+                        if (actual.size() == 0L) {
+                            // A genuinely empty text document is valid if its size and
+                            // SHA-256 were verified against the signed manifest.
+                            // Binary files must still contain their expected magic bytes.
+                            if (!java.util.Set.of("txt", "md", "csv", "sql").contains(
+                                    expectedExtension.toLowerCase(Locale.ROOT))
+                                    || expected.sizeBytes() == null
+                                    || expected.sizeBytes() != 0L
+                                    || expected.checksum() == null
+                                    || !expected.checksum().equalsIgnoreCase(actual.sha256())) {
+                                throw new IllegalArgumentException(
+                                        "Empty package entry is not an authenticated plain-text file");
+                            }
+                        } else {
+                            FileContentInspector.validatePackageEntry(
+                                    actual.prefix(), expectedExtension, actual.zipSpool());
+                        }
                     } catch (Exception e) {
                         errors.add("Content type mismatch for " + path + ": " + e.getMessage());
                         filesValid = false;

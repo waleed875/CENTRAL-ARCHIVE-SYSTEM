@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
 import com.centralArchiveSystem.Archive.auth.CurrentUserService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
@@ -8,6 +9,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
+import com.centralArchiveSystem.Archive.import_.package_.dto.PackagePreviewResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -84,6 +86,13 @@ public class BranchPackageController {
         return ResponseEntity.ok(ApiResponse.success(branchPackageService.getById(id)));
     }
 
+    @GetMapping("/{id}/preview")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
+    @Operation(summary = "Read-only preview of a verified package; no import side effects")
+    public ResponseEntity<ApiResponse<PackagePreviewResponse>> preview(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(branchPackageService.preview(id)));
+    }
+
     @PostMapping("/{id}/verify")
     @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
     @Operation(summary = "Verify stored package hash, manifest and file checksums")
@@ -100,7 +109,15 @@ public class BranchPackageController {
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
-        branchPackageService.assertImportable(id, request);
+        if (request.targetProjectId() != null) {
+            throw new IllegalArgumentException(
+                    "Use /import-as-version with system_admin privileges for existing project versions");
+        }
+        try {
+            branchPackageService.assertImportable(id, request);
+        } catch (IllegalArgumentException | IllegalStateException rejected) {
+            throw new BusinessRuleException(importValidationMessage(rejected.getMessage()));
+        }
 
         UUID importedBy = currentUserService.userId();
         String requestSnapshot = objectMapper.valueToTree(request).toString();
@@ -122,6 +139,63 @@ public class BranchPackageController {
                     ),
                     "Import process started"
                 ));
+    }
+
+    @PostMapping("/{id}/import-as-version")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Import one verified project package as a new version of an explicitly selected project")
+    public ResponseEntity<ApiResponse<Map<String, String>>> importPackageAsVersion(
+            @PathVariable UUID id,
+            @Valid @RequestBody PackageImportRequest request) {
+        if (request.targetProjectId() == null) {
+            throw new IllegalArgumentException("target_project_id is required");
+        }
+        try {
+            branchPackageService.assertImportable(id, request);
+        } catch (IllegalArgumentException | IllegalStateException rejected) {
+            throw new BusinessRuleException(importValidationMessage(rejected.getMessage()));
+        }
+        UUID importedBy = currentUserService.userId();
+        String requestSnapshot = objectMapper.valueToTree(request).toString();
+        ImportOperation operation = importOperationService.create(id, importedBy, requestSnapshot);
+        branchPackageService.importPackage(id, request, importedBy, operation.getId());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                Map.of("import_id", operation.getId().toString(),
+                        "status", ImportOperation.Status.STARTED.name(),
+                        "message", "New-version import started for package: " + id),
+                "New-version import started"));
+    }
+
+    /** Expose actionable but non-sensitive error text, never raw manifest/SQL/MinIO details. */
+    private static String importValidationMessage(String reason) {
+        if (reason == null) return "تعذر بدء استيراد الحزمة؛ راجع البيانات المطلوبة والصلاحيات";
+        String value = reason.toLowerCase(java.util.Locale.ROOT);
+        if (value.contains("verified") || value.contains("package must")) {
+            return "الحزمة ليست في حالة «تم التحقق». تحقق منها أولًا؛ الحزمة المستوردة مسبقًا لا تحتاج إعادة استيراد";
+        }
+        if (value.contains("organization") || value.contains("target org")) {
+            return "تعذر الاستيراد: اختر الجهة المركزية المطابقة لجميع الجهات الموجودة في الحزمة";
+        }
+        if (value.contains("category") || value.contains("file categor")) {
+            return "تعذر الاستيراد: اختر فئة ملفات مركزية نشطة، وحدد الفئة الافتراضية للملفات غير المصنفة";
+        }
+        if (value.contains("file type") || value.contains("project type")) {
+            return "تعذر الاستيراد: تصنيف أو نوع الملف/المشروع غير مطابق للمراجع المركزية";
+        }
+        if (value.contains("confidentiality") || value.contains("clearance")) {
+            return "تعذر الاستيراد: مستوى سرية المشروع أو أحد الملفات غير متوافق مع الصلاحيات أو الربط المحدد";
+        }
+        if (value.contains("latest") || value.contains("approved") || value.contains("archived")
+                || value.contains("rejected")) {
+            return "اختر أحدث إصدار من مشروع معتمد أو مؤرشف أو مرفوض قبل إضافة إصدار جديد";
+        }
+        if (value.contains("project number") || value.contains("must match") || value.contains("year")) {
+            return "تعذر إضافة الإصدار: يجب تطابق الجهة ورقم المشروع والسنة مع المشروع الذي اخترته";
+        }
+        if (value.contains("exactly one") || value.contains("schema")) {
+            return "إضافة إصدار جديد تتطلب حزمة تحتوي مشروعًا واحدًا وبصيغة بيانات مدعومة";
+        }
+        return "تعذر بدء الاستيراد: راجع ربط الجهات والتصنيفات ومستويات السرية وحالة الحزمة";
     }
 
     @GetMapping("/{id}/references")

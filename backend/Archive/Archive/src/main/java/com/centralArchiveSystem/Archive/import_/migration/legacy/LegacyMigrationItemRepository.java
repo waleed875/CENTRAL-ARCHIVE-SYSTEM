@@ -36,6 +36,60 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
 
     long countByMigrationSourceId(UUID migrationSourceId);
 
+    /**
+     * Database-side audit; does not fetch file bytes or mutate tracking items.
+     * Count DONE entries whose target file and project metadata is no longer valid.
+     */
+    @Query(value = """
+        SELECT i.status, COUNT(*),
+               COUNT(*) FILTER (
+                 WHERE i.status = 'DONE' AND (
+                   i.target_id IS NULL OR f.id IS NULL OR p.id IS NULL
+                   OR f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE'
+                 ))
+        FROM import.legacy_migration_items i
+        LEFT JOIN project.files f ON f.id = i.target_id
+        LEFT JOIN project.projects p ON p.id = f.project_id
+        WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
+        GROUP BY i.status
+        """, nativeQuery = true)
+    List<Object[]> auditFileLinkCounts(@Param("sourceId") UUID sourceId);
+
+    @Query(value = """
+        SELECT i.source_key, i.status, i.target_id,
+               CASE
+                 WHEN i.status <> 'DONE' THEN COALESCE(i.error, 'Not completed')
+                 WHEN i.target_id IS NULL THEN 'Missing target_id'
+                 WHEN f.id IS NULL THEN 'File metadata row is missing'
+                 WHEN p.id IS NULL THEN 'Target project row is missing'
+                 WHEN f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE'
+                   THEN 'File is deleted or inactive'
+                 ELSE 'Unknown'
+               END
+        FROM import.legacy_migration_items i
+        LEFT JOIN project.files f ON f.id = i.target_id
+        LEFT JOIN project.projects p ON p.id = f.project_id
+        WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
+          AND (i.status <> 'DONE' OR i.target_id IS NULL OR f.id IS NULL
+               OR p.id IS NULL OR f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE')
+        ORDER BY i.source_key
+        LIMIT 50
+        """, nativeQuery = true)
+    List<Object[]> sampleFileLinkProblems(@Param("sourceId") UUID sourceId);
+
+    @Query(value = """
+        SELECT i.source_key, f.id, f.bucket_name, f.object_key
+        FROM import.legacy_migration_items i
+        JOIN project.files f ON f.id = i.target_id
+        JOIN project.projects p ON p.id = f.project_id
+        WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
+          AND i.status = 'DONE' AND f.deleted_at IS NULL
+          AND UPPER(f.status) = 'ACTIVE'
+        ORDER BY i.source_key
+        LIMIT 15
+        """, nativeQuery = true)
+    List<Object[]> sampleLinkedStorageObjects(@Param("sourceId") UUID sourceId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update LegacyMigrationItem item set item.status = :failedStatus, "
             + "item.error = :error, item.finishedAt = :finishedAt "

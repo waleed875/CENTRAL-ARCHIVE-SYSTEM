@@ -112,10 +112,10 @@ public class ProjectController {
     }
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('system_admin', 'central_data_entry')")
-    @Operation(summary = "Delete an unused standalone draft project")
+    @Operation(summary = "Remove a draft from active projects; retain logically deleted file history when required")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         projectService.deleteDraft(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "تم حذف المشروع"));
+        return ResponseEntity.ok(ApiResponse.success(null, "تمت إزالة المسودة من قائمة المشاريع؛ تُحفظ سجلات الملفات المحذوفة وفق سياسة الاحتفاظ"));
     }
     @GetMapping("/search")
     @Operation(summary = "Search projects with full-text and filter parameters")

@@ -686,26 +686,64 @@ class ProjectServiceTest {
         verify(repository, never()).delete(any());
     }
 
-    /**
-     * A file, even a soft-deleted one, keeps the project.
-     *
-     * <p>The count that matters is {@code countByProjectId} and not the live-only one: a file that
-     * was uploaded and then deleted still has a row, and that row carries the reason and the person
-     * who deleted it.
-     */
+    /** An active file prevents discarding a draft until it has been soft-deleted. */
     @Test
     void refusesToDeleteAProjectThatHasFiles() {
         ProjectRepository repository = mock(ProjectRepository.class);
         FileRepository files = mock(FileRepository.class);
         Project project = baseProject();
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
-        when(files.countByProjectId(project.getId())).thenReturn(3L);
+        when(files.countByProjectIdAndDeletedAtIsNull(project.getId())).thenReturn(3L);
 
         ProjectService service = deleteService(repository, files,
                 mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
 
         assertThrows(BusinessRuleException.class, () -> service.deleteDraft(project.getId()));
         verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void discardsManualDraftWithOnlySoftDeletedFilesWithoutPurgingAuditRows() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        ProjectMemberService members = mock(ProjectMemberService.class);
+        PackageProjectRepository packages = mock(PackageProjectRepository.class);
+        Project project = baseProject();
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(files.countByProjectIdAndDeletedAtIsNull(project.getId())).thenReturn(0L);
+        when(files.countByProjectId(project.getId())).thenReturn(2L);
+        when(members.listByProjectId(project.getId())).thenReturn(java.util.List.of(
+                mock(com.centralArchiveSystem.Archive.project.member.dto.MemberResponse.class)));
+
+        ProjectService service = deleteService(repository, files, members, packages);
+        service.deleteDraft(project.getId());
+
+        assertNotNull(project.getDiscardedAt());
+        assertFalse(project.getIsLatestVersion());
+        verify(repository).save(project);
+        verify(repository, never()).delete(any(Project.class));
+        verify(files, never()).delete(any());
+        verify(members, never()).deleteAllByProjectId(any());
+        assertThrows(java.util.NoSuchElementException.class,
+                () -> service.deleteDraft(project.getId()));
+    }
+
+    @Test
+    void refusesToDiscardImportedDraftWithRetainedFileHistory() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        FileRepository files = mock(FileRepository.class);
+        Project project = baseProject();
+        project.setSourceType(Project.SourceType.BRANCH_PACKAGE);
+        when(repository.findById(project.getId())).thenReturn(Optional.of(project));
+        when(files.countByProjectId(project.getId())).thenReturn(2L);
+
+        ProjectService service = deleteService(repository, files,
+                mock(ProjectMemberService.class), mock(PackageProjectRepository.class));
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class,
+                () -> service.deleteDraft(project.getId()));
+        assertTrue(ex.getMessage().contains("استيراد أو ترحيل"));
+        verify(repository, never()).save(any(Project.class));
+        verify(repository, never()).delete(any(Project.class));
     }
 
     @Test

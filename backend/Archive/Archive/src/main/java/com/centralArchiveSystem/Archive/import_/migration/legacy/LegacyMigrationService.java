@@ -314,7 +314,8 @@ public class LegacyMigrationService {
                     .orElse(null);
             if (previousProjectItem != null
                     && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
-                    && previousProjectItem.getTargetId() != null) {
+                    && previousProjectItem.getTargetId() != null
+                    && projectRepository.existsById(previousProjectItem.getTargetId())) {
                 continue;
             }
             if (previousProjectItem != null
@@ -489,8 +490,8 @@ public class LegacyMigrationService {
                 .map(LegacyMigrationItem::getTargetId)
                 .orElse(null);
 
-        if (targetProjectId == null) {
-            log.warn("No target project for legacy project {} in office {}; recording its files for retry",
+        if (targetProjectId == null || !projectRepository.existsById(targetProjectId)) {
+            log.warn("No valid target project for legacy project {} in office {}; recording its files for retry",
                     legacyProjectId, connection.office());
             List<Integer> sourceFileIds = connection.jdbc().queryForList(
                     "SELECT idfile FROM " + LEGACY_DB_SCHEMA
@@ -505,9 +506,7 @@ public class LegacyMigrationService {
                         .findByMigrationSourceIdAndKindAndSourceKey(
                                 connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
                         .orElse(null);
-                if (existing != null
-                        && existing.getStatus() == LegacyMigrationItem.Status.DONE
-                        && existing.getTargetId() != null) {
+                if (isValidCompletedFile(existing, null)) {
                     summary.incrementSkipped();
                     continue;
                 }
@@ -551,9 +550,7 @@ public class LegacyMigrationService {
                             .findByMigrationSourceIdAndKindAndSourceKey(
                                     connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
                             .orElse(null);
-                    if (previousFileItem != null
-                            && previousFileItem.getStatus() == LegacyMigrationItem.Status.DONE
-                            && previousFileItem.getTargetId() != null) {
+                    if (isValidCompletedFile(previousFileItem, targetProjectId)) {
                         summary.incrementSkipped();
                         return;
                     }
@@ -603,6 +600,20 @@ public class LegacyMigrationService {
                     }
                 }
         );
+    }
+
+    /**
+     * DONE is only valid when the referenced database row still exists and is
+     * attached to the expected project. MinIO objects alone are not file records.
+     */
+    private boolean isValidCompletedFile(LegacyMigrationItem item, UUID expectedProjectId) {
+        if (item == null || item.getStatus() != LegacyMigrationItem.Status.DONE
+                || item.getTargetId() == null) return false;
+        return fileRepository.findById(item.getTargetId())
+                .filter(file -> file.getDeletedAt() == null
+                        && "ACTIVE".equalsIgnoreCase(file.getStatus())
+                        && (expectedProjectId == null || expectedProjectId.equals(file.getProjectId())))
+                .isPresent();
     }
 
     private void migrateOneFile(LegacyConnection connection,

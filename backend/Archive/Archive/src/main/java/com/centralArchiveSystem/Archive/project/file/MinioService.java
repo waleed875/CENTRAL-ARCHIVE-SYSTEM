@@ -73,6 +73,17 @@ public class MinioService {
                         .build()
         );
     }
+    public InputStream downloadRange(String bucket, String objectKey, long offset, long length) throws Exception {
+        return minioClient.getObject(
+                GetObjectArgs.builder()
+                        .bucket(bucket)
+                        .object(objectKey)
+                        .offset(offset)
+                        .length(length)
+                        .build()
+        );
+    }
+
     public void deleteFile(String bucket, String objectKey) throws Exception {
         minioClient.removeObject(
                 RemoveObjectArgs.builder()

@@ -1,5 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +17,11 @@ import java.util.UUID;
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     Optional<Project> findByProjectUid(UUID projectUid);
+
+    /** Serialize imports that create the next version of the same project. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Project p WHERE p.id = :id")
+    Optional<Project> lockById(@Param("id") UUID id);
 
     /** All versions, including confidential ones; callers MUST enforce clearance on every row. */
     List<Project> findByProjectUidOrderByVersionNoAsc(UUID projectUid);
@@ -52,7 +59,8 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     @Query("""
            SELECT p FROM Project p
-           WHERE (:searchTerm IS NULL OR :searchTerm = '' OR
+           WHERE p.discardedAt IS NULL
+             AND (:searchTerm IS NULL OR :searchTerm = '' OR
                   LOWER(p.name) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
                   LOWER(p.projectNumber) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
                   LOWER(p.projectCode) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR
@@ -99,6 +107,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT p FROM Project p
            WHERE p.projectUid = :projectUid
+             AND p.discardedAt IS NULL
              AND (
                  p.confidentialityLevelId IS NULL
                  OR (
@@ -121,6 +130,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT COUNT(p) FROM Project p
            WHERE p.isLatestVersion = true
+             AND p.discardedAt IS NULL
              AND (:organizationId IS NULL OR p.organizationId = :organizationId)
              AND (
                  p.confidentialityLevelId IS NULL
@@ -141,6 +151,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT p.status, COUNT(p) FROM Project p
            WHERE p.isLatestVersion = true
+             AND p.discardedAt IS NULL
              AND (:organizationId IS NULL OR p.organizationId = :organizationId)
              AND (
                  p.confidentialityLevelId IS NULL
@@ -162,6 +173,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT p.year, COUNT(p) FROM Project p
            WHERE p.isLatestVersion = true
+             AND p.discardedAt IS NULL
              AND (:organizationId IS NULL OR p.organizationId = :organizationId)
              AND (
                  p.confidentialityLevelId IS NULL
@@ -184,6 +196,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT p.sourceType, COUNT(p) FROM Project p
            WHERE p.isLatestVersion = true
+             AND p.discardedAt IS NULL
              AND (:organizationId IS NULL OR p.organizationId = :organizationId)
              AND (
                  p.confidentialityLevelId IS NULL
@@ -202,26 +215,27 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
             @Param("organizationId") UUID organizationId,
             @Param("maxLevelOrder") Integer maxLevelOrder);
 
-    @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.isLatestVersion = true")
+    @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.discardedAt IS NULL AND p.isLatestVersion = true")
     long countByOrganizationId(@Param("organizationId") UUID organizationId);
 
     @Query("""
            SELECT COUNT(p) FROM Project p
            WHERE p.organizationId = :organizationId
+             AND p.discardedAt IS NULL
              AND p.isLatestVersion = true
              AND p.status <> com.centralArchiveSystem.Archive.project.project.Project.ProjectStatus.ARCHIVED
            """)
     long countActiveProjectsByOrganizationId(@Param("organizationId") UUID organizationId);
 
-    @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.status = :status AND p.isLatestVersion = true")
+    @Query("SELECT COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.status = :status AND p.discardedAt IS NULL AND p.isLatestVersion = true")
     long countByOrganizationIdAndStatus(
             @Param("organizationId") UUID organizationId,
             @Param("status") Project.ProjectStatus status);
 
-    @Query("SELECT p.year, COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.isLatestVersion = true GROUP BY p.year ORDER BY p.year DESC")
+    @Query("SELECT p.year, COUNT(p) FROM Project p WHERE p.organizationId = :organizationId AND p.discardedAt IS NULL AND p.isLatestVersion = true GROUP BY p.year ORDER BY p.year DESC")
     List<Object[]> countByYearForOrganization(@Param("organizationId") UUID organizationId);
 
-    @Query("SELECT p FROM Project p WHERE p.projectNumber = :projectNumber AND p.organizationId = :organizationId AND p.year = :year AND p.isLatestVersion = true")
+    @Query("SELECT p FROM Project p WHERE p.projectNumber = :projectNumber AND p.organizationId = :organizationId AND p.year = :year AND p.discardedAt IS NULL AND p.isLatestVersion = true")
     Optional<Project> findActiveByProjectNumberAndOrganizationIdAndYear(
             @Param("projectNumber") String projectNumber,
             @Param("organizationId") UUID organizationId,
@@ -239,6 +253,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("""
            SELECT COUNT(p) FROM Project p
            WHERE p.projectTypeId = :projectTypeId
+             AND p.discardedAt IS NULL
              AND p.isLatestVersion = true
            """)
     long countLatestByProjectTypeId(@Param("projectTypeId") UUID projectTypeId);
@@ -247,6 +262,6 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
      * Feeds the incomplete-data report. Only the latest version is listed so a re-migrated project
      * is not counted once per version it went through.
      */
-    List<Project> findByDataCompletionStatusAndIsLatestVersionTrueOrderByCreatedAtDesc(
+    List<Project> findByDataCompletionStatusAndIsLatestVersionTrueAndDiscardedAtIsNullOrderByCreatedAtDesc(
             Project.DataCompletionStatus status);
 }

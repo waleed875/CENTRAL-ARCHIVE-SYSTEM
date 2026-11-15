@@ -90,6 +90,10 @@ class LegacyMigrationServiceOfficeScopeTest {
             savedProjects.add(project);
             return project;
         });
+        when(projectRepository.existsById(any(UUID.class))).thenAnswer(invocation -> {
+            UUID id = invocation.getArgument(0);
+            return savedProjects.stream().anyMatch(project -> id.equals(project.getId()));
+        });
         // Mirrors the projects_organization_id_project_number_year_version_no_key constraint against
         // the rows this run has already created, so a duplicate number is detected the same way the
         // database would detect it.
@@ -172,6 +176,19 @@ class LegacyMigrationServiceOfficeScopeTest {
         assertEquals(1, service.migrateReferences(officeB));
         assertEquals(1, service.migrateProjects(officeB));
         assertEquals(2, savedProjects.size());
+    }
+
+    @Test
+    void staleDoneProjectMappingWithoutDatabaseRowGetsRecovered() throws Exception {
+        stubLegacyRows(1, 23, "P-23");
+        var office = connection("ARC1");
+        assertEquals(1, service.migrateReferences(office));
+        assertEquals(1, service.migrateProjects(office));
+        assertEquals(1, savedProjects.size());
+        // Simulate a tracking row pointing to a project deleted outside the migration.
+        savedProjects.clear();
+        assertEquals(1, service.migrateProjects(office));
+        assertEquals(1, savedProjects.size());
     }
 
     @Test

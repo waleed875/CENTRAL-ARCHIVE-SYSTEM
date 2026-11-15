@@ -252,7 +252,7 @@ def file_and_member_cases():
     check('manual upload download bytes identical', downloaded == payload)
     request('cannot delete project with active file', 'DELETE', '/api/v1/projects/' + pid, expected=422)
     request('soft-delete project file', 'DELETE', f'/api/v1/files/{fid}?reason=live-smoke', expected=(200,204))
-    request('cannot delete project with historical deleted file', 'DELETE', '/api/v1/projects/' + pid, expected=422)
+    check('deleted file history retained', sql(TARGET, f'SELECT count(*) FROM project.files WHERE id={q(fid)}::uuid') == '1')
     request('soft-deleted file not downloadable', 'GET', f'/api/v1/files/{fid}/download', expected=404)
     request('restore project file', 'POST', f'/api/v1/files/{fid}/restore')
     check('restored file content preserved', request('download restored file', 'GET', f'/api/v1/files/{fid}/download') == payload)
