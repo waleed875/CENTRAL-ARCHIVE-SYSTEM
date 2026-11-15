@@ -57,12 +57,13 @@ public class ProjectService {
                                       Project.ProjectStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(normalizePage(page), normalizePageSize(size),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
-        return projectRepository.searchAccessible(null, organizationId, status, year,
+        return withFileCounts(projectRepository.searchAccessible(null, organizationId, status, year,
                 null, null, null, null, null, null, true,
-                confidentialityAccessService.currentMaxLevelOrder(), pageable).map(ProjectResponse::fromEntity);
+                confidentialityAccessService.currentMaxLevelOrder(), pageable));
     }
     public ProjectResponse getById(UUID id) {
-        return ProjectResponse.fromEntity(requireAccessibleProject(id));
+        Project project = requireAccessibleProject(id);
+        return ProjectResponse.fromEntity(project, visibleFileCount(project.getId()));
     }
     public ProjectResponse create(ProjectRequest request, UUID createdBy) {
         validateOrganizationReference(request.organizationId());
@@ -312,11 +313,29 @@ public class ProjectService {
         String sortField = request.sortBy() != null && ALLOWED_SORT_FIELDS.contains(request.sortBy()) ? request.sortBy() : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(request.sortDirection()) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Pageable pageable = PageRequest.of(normalizePage(page), normalizePageSize(size), Sort.by(direction, sortField));
-        return projectRepository.searchAccessible(request.searchTerm(), request.organizationId(), request.status(),
+        return withFileCounts(projectRepository.searchAccessible(request.searchTerm(), request.organizationId(), request.status(),
                 request.year(), request.projectTypeId(), request.confidentialityLevelId(), request.sourceType(),
                 request.projectUid(), request.createdBy(), request.approvedBy(), request.isLatestVersion(),
-                confidentialityAccessService.currentMaxLevelOrder(), pageable).map(ProjectResponse::fromEntity);
+                confidentialityAccessService.currentMaxLevelOrder(), pageable));
     }
+    private long visibleFileCount(UUID projectId) {
+        List<Object[]> rows = fileRepository.countAccessibleActiveByProjectIds(
+                List.of(projectId), confidentialityAccessService.currentMaxLevelOrder());
+        return rows.isEmpty() ? 0L : ((Number) rows.get(0)[1]).longValue();
+    }
+
+    private Page<ProjectResponse> withFileCounts(Page<Project> page) {
+        if (page.isEmpty()) return page.map(project -> ProjectResponse.fromEntity(project, 0L));
+        List<UUID> ids = page.getContent().stream().map(Project::getId).toList();
+        Map<UUID, Long> counts = new HashMap<>();
+        for (Object[] row : fileRepository.countAccessibleActiveByProjectIds(
+                ids, confidentialityAccessService.currentMaxLevelOrder())) {
+            counts.put((UUID) row[0], ((Number) row[1]).longValue());
+        }
+        return page.map(project -> ProjectResponse.fromEntity(
+                project, counts.getOrDefault(project.getId(), 0L)));
+    }
+
     public ProjectStatsResponse getStats(UUID organizationId) {
         Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
         long total = projectRepository.countAccessibleLatest(organizationId, maxLevelOrder);
