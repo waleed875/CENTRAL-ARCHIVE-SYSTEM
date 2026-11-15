@@ -1090,6 +1090,7 @@ public class BranchPackageService {
                                            UUID importedBy,
                                            JsonNode projects) {
         List<StoredObject> objects = new ArrayList<>();
+        boolean transactionCommitted = false;
         try {
             Boolean skipped = projectImportTransaction.execute(status -> {
                 try {
@@ -1140,6 +1141,7 @@ public class BranchPackageService {
             if (skipped == null) {
                 throw new IllegalStateException("New-version transaction returned null");
             }
+            transactionCommitted = true;
             importOperationService.recordProjectOutcome(operation.getId(),
                     skipped ? ImportOperationService.ProjectOutcome.SKIPPED
                             : ImportOperationService.ProjectOutcome.IMPORTED);
@@ -1149,6 +1151,17 @@ public class BranchPackageService {
             branchPackageRepository.save(pkg);
             importOperationService.updateStatus(operation.getId(), ImportOperation.Status.SUCCESS, null);
         } catch (Exception e) {
+            if (transactionCommitted) {
+                // External MinIO objects are now referenced by committed database rows.
+                // Never compensate them merely because status bookkeeping failed.
+                log.error("New version committed but package operation status update failed: {}",
+                        packageId, e);
+                pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
+                pkg.setImportedAt(LocalDateTime.now());
+                pkg.setErrorMessage("New version committed; operation status needs reconciliation");
+                branchPackageRepository.save(pkg);
+                return;
+            }
             cleanupImportedObjects(objects);
             log.error("Package {} could not create a new version of project {}",
                     packageId, request.targetProjectId(), e);
