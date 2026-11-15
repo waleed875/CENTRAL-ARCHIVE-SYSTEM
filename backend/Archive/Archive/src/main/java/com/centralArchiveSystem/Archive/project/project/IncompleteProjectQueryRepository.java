@@ -11,6 +11,7 @@ public interface IncompleteProjectQueryRepository extends Repository<Project, UU
         SELECT p FROM Project p
         WHERE p.dataCompletionStatus = com.centralArchiveSystem.Archive.project.project.Project.DataCompletionStatus.INCOMPLETE
           AND p.isLatestVersion = true
+          AND p.discardedAt IS NULL
           AND (p.confidentialityLevelId IS NULL OR
               (:maxLevelOrder IS NOT NULL AND EXISTS (
                   SELECT c.id FROM ConfidentialityLevel c
