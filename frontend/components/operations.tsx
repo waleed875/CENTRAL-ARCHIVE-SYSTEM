@@ -15,9 +15,17 @@ const mappingFields=[["organizations","organization_mapping","ربط الجها�
 function Imports(){
  const [page,setPage]=useState(1),[modal,setModal]=useState<"upload"|"mapping"|null>(null),[filename,setFilename]=useState<File|null>(null),[passphrase,setPassphrase]=useState(""),[selected,setSelected]=useState<ArchivePackage|null>(null),[mappings,setMappings]=useState<Record<string,Record<string,string>>>({}),[defaultLevel,setDefaultLevel]=useState(""),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
  const [previewId,setPreviewId]=useState<string|null>(null);
+ const [importMode,setImportMode]=useState<"new"|"version">("new");
+ const [targetSearchInput,setTargetSearchInput]=useState("");
+ const [targetSearch,setTargetSearch]=useState("");
+ const [targetProjectId,setTargetProjectId]=useState("");
  const preview=useRemote<PackagePreviewData>(previewId?"/api/v1/packages/"+previewId+"/preview":null);
  const result=useRemote<PageData<ArchivePackage>>("/api/v1/packages"+qs({page,size:15}));
  const current=useRemote<UserInfo>("/api/v1/auth/me");const canImport=!!current.data&&(current.data.roles.includes("system_admin")||current.data.roles.includes("import_officer"));
+ const canImportAsVersion=!!current.data?.roles.includes("system_admin");
+ const targetProjects=useRemote<PageData<Project>>(importMode==="version"&&modal==="mapping"
+   ?"/api/v1/projects/search"+qs({searchTerm:targetSearch||undefined,page:1,size:50})
+   :null);
  const refs=useRemote<Record<string,string[]>>(selected?"/api/v1/packages/"+selected.id+"/references":null);
  const operations=useRemote<Record<string,unknown>>(selected?"/api/v1/packages/"+selected.id+"/operations":null);
  const latestImportStatus=((operations.data?.importOperations as Array<{status?:string}>|undefined)?.[0]?.status)??"";
@@ -30,11 +38,16 @@ function Imports(){
  const options:Record<string,Array<{id:string;name:string}>>={organizations:organizations.data??[],projectTypes:types.data??[],confidentialityLevels:levels.data??[],fileCategories:categories.data??[],fileTypes:fileTypes.data??[]};
  async function upload(e:FormEvent){e.preventDefault();if(!filename)return;setSaving(true);setError("");try{const form=new FormData();form.append("package_file",filename);if(passphrase)form.append("passphrase",passphrase);await api("/api/v1/packages/receive",{method:"POST",body:form});setModal(null);setFilename(null);setPassphrase("");setSuccess("تم استقبال الحزمة. تحقّق من سلامتها قبل الاستيراد.");result.reload()}catch(e){setError(e instanceof Error?e.message:"فشل استقبال الحزمة")}finally{setSaving(false)}}
  async function verify(id:string){setSaving(true);setError("");try{const verified=await api<{valid:boolean;errors?:string[]}>("/api/v1/packages/"+id+"/verify",{method:"POST"});if(!verified.valid)throw new Error(verified.errors?.join("، ")??"لم تجتز الحزمة التحقق");setSuccess("الحزمة سليمة وجاهزة لربط بياناتها");result.reload()}catch(e){setError(e instanceof Error?e.message:"فشل التحقق")}finally{setSaving(false)}}
- function openMapping(item:ArchivePackage){setSelected(item);setMappings({});setDefaultLevel("");setError("");setModal("mapping")}
+ function openMapping(item:ArchivePackage){setSelected(item);setMappings({});setDefaultLevel("");setImportMode("new");setTargetProjectId("");setTargetSearch("");setTargetSearchInput("");setError("");setModal("mapping")}
  async function startImport(e:FormEvent){e.preventDefault();if(!selected)return;setSaving(true);setError("");try{
+ if(importMode==="version"&&(!canImportAsVersion||!targetProjectId||selected.projectsCount!==1)){
+   throw new Error("يلزم حساب مدير النظام وحزمة بمشروع واحد واختيار مشروع موجود");
+ }
  const body:Record<string,unknown>={confidentiality_level_id:defaultLevel||null};
+ if(importMode==="version")body.target_project_id=targetProjectId;
  for(const [source,target] of mappingFields){body[target]=Object.fromEntries(Object.entries(mappings[source]??{}).filter(([,v])=>!!v))}
- const imported=await api<Record<string,string>>("/api/v1/packages/"+selected.id+"/import",{method:"POST",...jsonBody(body)});
+ await api<Record<string,string>>("/api/v1/packages/"+selected.id+
+   (importMode==="version"?"/import-as-version":"/import"),{method:"POST",...jsonBody(body)});
  setSuccess("بدأت عملية الاستيراد. يمكنك متابعة النتيجة من سجل الحزم والعمليات.");setModal(null);result.reload();operations.reload();
  }catch(e){setError(e instanceof Error?e.message:"تعذر بدء الاستيراد")}finally{setSaving(false)}}
  return <><PageHeader eyebrow="تبادل السجلات" title="استيراد المشاريع" description="استقبل حزم الأرشيف من الفروع، تحقّق من سلامتها ثم اربطها بالجهات والتصنيفات المركزية." action={canImport&&<button className="btn btn-primary" onClick={()=>{setError("");setModal("upload")}}><UploadCloud size={17}/> استلام حزمة</button>}/>{success&&<Alert kind="success" message={success} onClose={()=>setSuccess("")}/>}
@@ -46,9 +59,27 @@ function Imports(){
  {selected&&!modal&&<div className="section-gap"><Panel title={"عمليات الحزمة: "+selected.packageName} action={<button className="btn btn-quiet btn-sm" onClick={operations.reload}><RefreshCw size={14}/> تحديث الحالة</button>}>{operations.error?<Alert message={operations.error}/>:operations.loading?<Loading/>:<pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontSize:12,lineHeight:2,background:"#faf9f6",padding:17,borderRadius:8}}>{JSON.stringify(operations.data,null,2)}</pre>}</Panel></div>}
  {previewId&&<Modal title="معاينة بيانات الحزمة" subtitle="قراءة فقط؛ لن يتم إنشاء أو تعديل أي مشروع" onClose={()=>setPreviewId(null)} wide>{preview.loading?<Loading/>:preview.error?<Alert message={preview.error}/>:preview.data?<div className="archive-package-preview"><div className="detail-meta"><span>المشاريع: {preview.data.projectCount}</span><span>الملفات: {preview.data.fileCount}</span><span>المخطط: {preview.data.schemaVersion}</span><span>الصيغة: {preview.data.packageFormat}</span></div>{preview.data.projects.map((project,i)=><section key={project.projectId+"-"+i} className="panel" style={{padding:18,marginTop:15}}><h3>{project.name}</h3><p className="hint">الرقم: {project.projectNumber} • السنة: {project.year??"—"} • الإصدار: {project.versionNo??1}</p>{project.description&&<p style={{whiteSpace:"pre-wrap"}}>{project.description}</p>}<strong>ملفات المشروع: {project.fileCount}</strong>{project.files.length?<div className="table-scroller" style={{marginTop:12}}><table className="data-table"><thead><tr><th>اسم الملف</th><th>النوع</th><th>الحجم</th></tr></thead><tbody>{project.files.map((file,j)=><tr key={j}><td>{file.originalName}</td><td>{file.extension||"—"}</td><td>{file.sizeBytes==null?"—":file.sizeBytes+" بايت"}</td></tr>)}</tbody></table></div>:<p className="hint">لا توجد ملفات مسجلة داخل الحزمة.</p>}{project.truncated&&<p className="hint">تم اختصار قائمة الملفات.</p>}</section>)}{preview.data.truncated&&<p className="hint">تم اختصار معاينة الحزمة الكبيرة؛ بياناتها الأصلية لم تتغير.</p>}</div>:null}</Modal>}
  {modal==="upload"&&<Modal title="استقبال حزمة أرشيف" subtitle="ارفع حزمة صادرة من النظام أو من طرفية متوافقة." onClose={()=>setModal(null)}><form className="form-stack" onSubmit={upload}><label className="upload-box"><UploadCloud size={26}/><strong>{filename?.name??"اختر حزمة من جهازك"}</strong><small>pkg / zip / nxpkg</small><input type="file" required accept=".pkg,.zip,.nxpkg" onChange={e=>setFilename(e.target.files?.[0]??null)}/></label><Field label="عبارة فك التشفير (إن لزمت)"><input type="password" autoComplete="off" value={passphrase} onChange={e=>setPassphrase(e.target.value)} placeholder="اتركها فارغة للحزم غير المشفرة"/></Field><p className="hint">لا تُحفظ عبارة فك التشفير في بيانات النظام، وتُرسل للخادم أثناء استلام الحزمة فقط.</p>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving||!filename} className="btn btn-gold">استلام الحزمة</button></div></form></Modal>}
- {modal==="mapping"&&selected&&<Modal title="ربط مراجع الحزمة" subtitle={"الحزمة: "+selected.packageName} onClose={()=>setModal(null)}><form className="form-stack" onSubmit={startImport}><p className="hint">لكل معرّف مرجعي في الحزمة اختر المقابل المعتمد داخل النظام المركزي. لا تُستبدل قيم معرّفات المصدر.</p>
+ {modal==="mapping"&&selected&&<Modal title="ربط مراجع الحزمة" subtitle={"الحزمة: "+selected.packageName} onClose={()=>setModal(null)}><form className="form-stack" onSubmit={startImport}>
+ <Field label="طريقة استيراد المشروع"><select value={importMode} onChange={e=>{setImportMode(e.target.value as "new"|"version");setTargetProjectId("")}}>
+ <option value="new">إنشاء مشروع مستقل</option>
+ {canImportAsVersion&&selected.projectsCount===1&&<option value="version">إضافة الحزمة كإصدار جديد لمشروع موجود</option>}
+ </select></Field>
+ {importMode==="version"&&<div className="form-stack">
+ <p className="hint">يتطلب النظام أحدث إصدار معتمد أو مؤرشف أو مرفوض، ومطابقة رقم المشروع وسنته والجهة ومستوى السرية. لن تُستبدل ملفات الإصدار السابق.</p>
+ <Field label="البحث عن مشروع موجود"><div className="toolbar">
+ <input value={targetSearchInput} onChange={e=>setTargetSearchInput(e.target.value)} placeholder="اسم المشروع أو رقمه"/>
+ <button type="button" className="btn btn-outline" onClick={()=>{setTargetSearch(targetSearchInput);setTargetProjectId("")}}>بحث</button>
+ </div></Field>
+ <Field label="المشروع المستهدف"><select required value={targetProjectId} onChange={e=>setTargetProjectId(e.target.value)}>
+ <option value="">اختر المشروع الصحيح</option>
+ {targetProjects.data?.data.filter(p=>p.isLatestVersion&&["APPROVED","ARCHIVED","REJECTED"].includes(p.status)).map(p=>
+ <option key={p.id} value={p.id}>{p.name} — {p.projectNumber} — {p.year} — الإصدار {p.versionNo}</option>)}
+ </select></Field>
+ {targetProjects.error&&<Alert message={targetProjects.error}/>}
+ </div>}
+ <p className="hint">لكل معرّف مرجعي في الحزمة اختر المقابل المعتمد داخل النظام المركزي. لا تُستبدل قيم معرّفات المصدر.</p>
  {refs.loading?<Loading/>:refs.error?<Alert message={refs.error}/>:mappingFields.map(([source,,label])=>(refs.data?.[source]?.length??0)>0?<div key={source} className="form-stack"><strong>{label}</strong>{refs.data?.[source].map(uuid=><Field key={uuid} label={uuid}><select required={source==="organizations"} value={mappings[source]?.[uuid]??""} onChange={e=>setMappings(m=>({...m,[source]:{...m[source],[uuid]:e.target.value}}))}><option value="">اختر المقابل المركزي</option>{options[source]?.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>)}</div>:null)}
- <Field label="مستوى سرية افتراضي (اختياري)"><select value={defaultLevel} onChange={e=>setDefaultLevel(e.target.value)}><option value="">بدون قيمة افتراضية</option>{levels.data?.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving||refs.loading} className="btn btn-gold">بدء الاستيراد</button><button type="button" className="btn btn-quiet" onClick={()=>setModal(null)}>إلغاء</button></div></form></Modal>}
+ <Field label="مستوى سرية افتراضي (اختياري)"><select value={defaultLevel} onChange={e=>setDefaultLevel(e.target.value)}><option value="">بدون قيمة افتراضية</option>{levels.data?.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving||refs.loading||(importMode==="version"&&!targetProjectId)} className="btn btn-gold">{importMode==="version"?"إنشاء الإصدار الجديد واستيراد الملفات":"بدء الاستيراد"}</button><button type="button" className="btn btn-quiet" onClick={()=>setModal(null)}>إلغاء</button></div></form></Modal>}
  </>;
 }
 function Exports(){
