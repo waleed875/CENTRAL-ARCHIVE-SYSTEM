@@ -38,9 +38,14 @@ public record ProjectResponse(
       @Schema(description = "User who last submitted the project for review") UUID submittedBy,
       @Schema(description = "When the project was last submitted for review. The queue's wait time") LocalDateTime submittedAt,
     @Schema(description = "Creation timestamp") LocalDateTime createdAt,
-    @Schema(description = "Last update timestamp") LocalDateTime updatedAt
+    @Schema(description = "Last update timestamp") LocalDateTime updatedAt,
+    @Schema(description = "Number of active files visible to the current user; zero means no accessible file records") Long accessibleFileCount
 ) {
     public static ProjectResponse fromEntity(Project project) {
+        return fromEntity(project, null);
+    }
+
+    public static ProjectResponse fromEntity(Project project, Long accessibleFileCount) {
         return new ProjectResponse(
             project.getId(),
             project.getProjectUid(),
@@ -72,7 +77,8 @@ public record ProjectResponse(
             project.getSubmittedBy(),
             project.getSubmittedAt(),
             project.getCreatedAt(),
-            project.getUpdatedAt()
+            project.getUpdatedAt(),
+            accessibleFileCount
         );
     }
 }
