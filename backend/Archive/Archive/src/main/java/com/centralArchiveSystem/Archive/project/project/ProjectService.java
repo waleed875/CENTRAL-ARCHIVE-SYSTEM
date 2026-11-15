@@ -281,9 +281,15 @@ public class ProjectService {
         if (projectRepository.existsByPreviousProjectId(id)) {
             throw new BusinessRuleException("لا يمكن حذف المسودة لأنها أساس لإصدارات لاحقة منها");
         }
-        long files = fileRepository.countByProjectId(id);
-        if (files > 0) {
-            throw new BusinessRuleException("لا يمكن حذف مسودة عليها ملفات (" + files + "). احذف الملفات وفق سياسة الاحتفاظ أولاً");
+        long activeFiles = fileRepository.countByProjectIdAndDeletedAtIsNull(id);
+        if (activeFiles > 0) {
+            throw new BusinessRuleException("لا يمكن حذف المسودة لأن عليها " + activeFiles
+                    + " ملف/ملفات نشطة. احذفها من صفحة المشروع أولًا");
+        }
+        long retainedFileRecords = fileRepository.countByProjectId(id);
+        if (retainedFileRecords > 0 && project.getSourceType() != Project.SourceType.MANUAL) {
+            throw new BusinessRuleException(
+                    "هذه المسودة مرتبطة بسجلات ملفات محفوظة من استيراد أو ترحيل؛ يلزم الرجوع إلى مسؤول الأرشيف");
         }
         if (packageProjectRepository.existsByProjectId(id)) {
             throw new BusinessRuleException("لا يمكن حذف مشروع مرتبط بحزمة واردة من الترحيل");
@@ -303,7 +309,16 @@ public class ProjectService {
             throw new BusinessRuleException("لا يمكن حذف مشروع له أعضاء. أزل الأعضاء أولاً");
         }
 
-        projectRepository.delete(project);
+        if (retainedFileRecords > 0) {
+            // Removing this row would cascade into project.files, destroying the
+            // evidence and retention metadata of the already soft-deleted files.
+            // A manual draft can instead be hidden while retaining all its rows.
+            project.setDiscardedAt(LocalDateTime.now());
+            project.setIsLatestVersion(false);
+            projectRepository.save(project);
+        } else {
+            projectRepository.delete(project);
+        }
         if (previous != null) {
             previous.setIsLatestVersion(true);
             projectRepository.save(previous);
@@ -363,6 +378,9 @@ public class ProjectService {
     }
     private Project requireAccessibleProject(UUID id) {
         Project project = projectRepository.findById(id).orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (project.getDiscardedAt() != null) {
+            throw new NoSuchElementException("Project not found with id: " + id);
+        }
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
         return project;
     }
