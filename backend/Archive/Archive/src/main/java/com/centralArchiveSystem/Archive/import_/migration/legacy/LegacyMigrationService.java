@@ -254,7 +254,8 @@ public class LegacyMigrationService {
                     .orElse(null);
             if (previousProjectItem != null
                     && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
-                    && previousProjectItem.getTargetId() != null) {
+                    && previousProjectItem.getTargetId() != null
+                    && projectRepository.existsById(previousProjectItem.getTargetId())) {
                 continue;
             }
 
@@ -489,8 +490,8 @@ public class LegacyMigrationService {
                 .map(LegacyMigrationItem::getTargetId)
                 .orElse(null);
 
-        if (targetProjectId == null) {
-            log.warn("No target project for legacy project {} in office {}; recording its files for retry",
+        if (targetProjectId == null || !projectRepository.existsById(targetProjectId)) {
+            log.warn("No valid target project for legacy project {} in office {}; recording its files for retry",
                     legacyProjectId, connection.office());
             List<Integer> sourceFileIds = connection.jdbc().queryForList(
                     "SELECT idfile FROM " + LEGACY_DB_SCHEMA
