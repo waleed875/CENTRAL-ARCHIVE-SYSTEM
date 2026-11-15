@@ -108,6 +108,10 @@ public class BranchPackageController {
             @PathVariable UUID id,
             @Valid @RequestBody PackageImportRequest request) {
 
+        if (request.targetProjectId() != null) {
+            throw new IllegalArgumentException(
+                    "Use /import-as-version with system_admin privileges for existing project versions");
+        }
         branchPackageService.assertImportable(id, request);
 
         UUID importedBy = currentUserService.userId();
@@ -130,6 +134,27 @@ public class BranchPackageController {
                     ),
                     "Import process started"
                 ));
+    }
+
+    @PostMapping("/{id}/import-as-version")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Import one verified project package as a new version of an explicitly selected project")
+    public ResponseEntity<ApiResponse<Map<String, String>>> importPackageAsVersion(
+            @PathVariable UUID id,
+            @Valid @RequestBody PackageImportRequest request) {
+        if (request.targetProjectId() == null) {
+            throw new IllegalArgumentException("target_project_id is required");
+        }
+        branchPackageService.assertImportable(id, request);
+        UUID importedBy = currentUserService.userId();
+        String requestSnapshot = objectMapper.valueToTree(request).toString();
+        ImportOperation operation = importOperationService.create(id, importedBy, requestSnapshot);
+        branchPackageService.importPackage(id, request, importedBy, operation.getId());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                Map.of("import_id", operation.getId().toString(),
+                        "status", ImportOperation.Status.STARTED.name(),
+                        "message", "New-version import started for package: " + id),
+                "New-version import started"));
     }
 
     @GetMapping("/{id}/references")
