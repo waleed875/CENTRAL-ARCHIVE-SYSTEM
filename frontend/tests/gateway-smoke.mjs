@@ -95,7 +95,7 @@ try{
   assert.equal((await pdfInfo.json()).pageCount,2);
   const pdfImage=await request("/api/backend/api/v1/files/file-1/preview/pdf/pages/1",{headers});
   assert.equal(pdfImage.status,200);
-  assert.match(pdfImage.headers.get("content-type")??"",/image\\/png/);
+  assert.equal(pdfImage.headers.get("content-type")?.startsWith("image/png"),true);
   const imageBytes=new Uint8Array(await pdfImage.arrayBuffer());
   assert.deepEqual(Array.from(imageBytes.slice(0,4)),[137,80,78,71]);
   const privatePdf=await request("/api/backend/api/v1/files/file-1/preview/pdf/info");
