@@ -46,6 +46,23 @@ class SealedPackageInspectorTest {
     }
 
     @Test
+    void acceptsExplicitlyAllowedSignedArchiveNxpkgFormat() throws Exception {
+        Fixture fixture = packageFixture("ciphertext-frame".getBytes(), "Archive/nxpkg");
+        var inspection = inspector.inspect(new MockMultipartFile(
+                "package_file", "test.zip", "application/zip", fixture.zip()));
+        assertEquals("Archive/nxpkg", inspection.format());
+        assertTrue(inspection.signatureValid());
+        assertTrue(inspection.payloadHashValid());
+    }
+
+    @Test
+    void rejectsUnknownSignedPackageFormats() throws Exception {
+        Fixture fixture = packageFixture("ciphertext-frame".getBytes(), "untrusted/nxpkg");
+        assertThrows(IllegalArgumentException.class, () -> inspector.inspect(
+                new MockMultipartFile("package_file", "test.zip", "application/zip", fixture.zip())));
+    }
+
+    @Test
     void rejectsPayloadThatDoesNotMatchSignedHeaderHash() throws Exception {
         Fixture fixture = packageFixture("original-payload".getBytes());
         byte[] changedZip = zip(fixture.headerBytes(), "changed-payload".getBytes());
@@ -59,6 +76,10 @@ class SealedPackageInspectorTest {
     }
 
     private Fixture packageFixture(byte[] payload) throws Exception {
+        return packageFixture(payload, "omnivault/nxpkg");
+    }
+
+    private Fixture packageFixture(byte[] payload, String format) throws Exception {
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         byte[] encoded = keyPair.getPublic().getEncoded();
         byte[] rawPublicKey = java.util.Arrays.copyOfRange(encoded, encoded.length - 32, encoded.length);
@@ -88,7 +109,7 @@ class SealedPackageInspectorTest {
         file.put("checksum_sha256",
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
-        header.put("format", "omnivault/nxpkg");
+        header.put("format", format);
         header.put("version", 6);
         header.put("generatedAt", "2026-10-07T12:00:00");
 
