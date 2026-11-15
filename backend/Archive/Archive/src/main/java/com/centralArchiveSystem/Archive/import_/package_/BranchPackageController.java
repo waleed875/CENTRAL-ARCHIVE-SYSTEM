@@ -8,6 +8,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
+import com.centralArchiveSystem.Archive.import_.package_.dto.PackagePreviewResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -82,6 +83,13 @@ public class BranchPackageController {
     @Operation(summary = "Get package by ID")
     public ResponseEntity<ApiResponse<PackageResponse>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(branchPackageService.getById(id)));
+    }
+
+    @GetMapping("/{id}/preview")
+    @PreAuthorize("hasAnyRole('system_admin', 'import_officer')")
+    @Operation(summary = "Read-only preview of a verified package; no import side effects")
+    public ResponseEntity<ApiResponse<PackagePreviewResponse>> preview(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(branchPackageService.preview(id)));
     }
 
     @PostMapping("/{id}/verify")
