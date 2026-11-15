@@ -303,9 +303,13 @@ public class ProjectService {
                     || previous.getVersionNo() >= project.getVersionNo()) {
                 throw new BusinessRuleException("تعذر التحقق من تسلسل الإصدار السابق؛ لم يتم حذف المسودة");
             }
-            // Members are copied into a new version by design; they belong to the discarded draft.
-            projectMemberService.deleteAllByProjectId(id);
-        } else if (!projectMemberService.listByProjectId(id).isEmpty()) {
+            // A purged empty draft has no retained file history. A soft-discarded
+            // draft retains both membership history and deleted-file audit records.
+            if (retainedFileRecords == 0) {
+                projectMemberService.deleteAllByProjectId(id);
+            }
+        } else if (retainedFileRecords == 0
+                && !projectMemberService.listByProjectId(id).isEmpty()) {
             throw new BusinessRuleException("لا يمكن حذف مشروع له أعضاء. أزل الأعضاء أولاً");
         }
 
