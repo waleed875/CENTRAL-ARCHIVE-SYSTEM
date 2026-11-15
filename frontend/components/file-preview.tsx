@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
-import {Download,FileWarning,ZoomIn,ZoomOut,RotateCcw} from "lucide-react";
+import {Download,FileWarning,ZoomIn,ZoomOut,RotateCcw,ChevronLeft,ChevronRight} from "lucide-react";
 import {download} from "@/lib/api";
 import {Modal,Loading,Alert} from "@/components/ui";
 import type {ArchiveFile} from "@/lib/types";
@@ -83,10 +83,12 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(!["unsupported","audio","video"].includes(type));
   const [zoom,setZoom]=useState(1);
+  const [pdfPage,setPdfPage]=useState(1);
+  const [pdfPages,setPdfPages]=useState(0);
   const mediaUrl="/api/backend/api/v1/files/"+encodeURIComponent(file.id)+"/preview";
 
   useEffect(()=>{
-    if(["unsupported","audio","video"].includes(type))return;
+    if(["unsupported","audio","video","pdf"].includes(type))return;
     let cancelled=false;
     let objectUrl="";
     const controller=new AbortController();
@@ -119,13 +121,53 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
     return ()=>{cancelled=true;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl)};
   },[mediaUrl,file.sizeBytes,type]);
 
+  useEffect(()=>{
+    if(type!=="pdf")return;
+    let cancelled=false;
+    let objectUrl="";
+    const controller=new AbortController();
+    setLoading(true);
+    setError("");
+    async function showPdf(){
+      try{
+        const base=mediaUrl+"/pdf";
+        let count=pdfPages;
+        if(!count){
+          const info=await authorizedPreview(base+"/info",controller.signal);
+          const payload=await info.json() as {pageCount:number};
+          if(!Number.isInteger(payload.pageCount)||payload.pageCount<1)throw new Error("بيانات صفحات PDF غير صالحة");
+          count=payload.pageCount;
+          if(!cancelled)setPdfPages(count);
+        }
+        if(pdfPage>count)throw new Error("صفحة PDF المطلوبة غير موجودة");
+        const response=await authorizedPreview(base+"/pages/"+pdfPage,controller.signal);
+        const blob=await response.blob();
+        if(!blob.type.includes("image/png"))throw new Error("خادم المعاينة لم يُرجع صورة PDF صالحة");
+        if(cancelled)return;
+        objectUrl=URL.createObjectURL(blob);
+        setSource(objectUrl);
+      }catch(e){
+        if(!cancelled&&!(e instanceof DOMException&&e.name==="AbortError"))setError(e instanceof Error?e.message:"تعذرت معاينة PDF");
+      }finally{if(!cancelled)setLoading(false)}
+    }
+    void showPdf();
+    return ()=>{cancelled=true;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl)};
+  },[type,mediaUrl,pdfPage,pdfPages]);
+
   return <Modal title="معاينة الملف" subtitle={file.originalName+" · "+sizeLabel(file.sizeBytes)} onClose={onClose} wide>
     <div className="archive-preview-body">
       {loading?<Loading/>:error?<Alert message={error}/>:type==="unsupported"?
         <div className="archive-preview-unsupported"><FileWarning size={34}/><p>هذا النوع لا يدعم المعاينة داخل المتصفح حاليًا.</p><p className="hint">استخدم زر التنزيل لفتحه في البرنامج المناسب.</p></div>:
       type==="office"&&office?<OfficeView data={office}/>:
       type==="text"?<pre dir="auto" className="archive-preview-text">{text||"الملف فارغ"}</pre>:
-      type==="pdf"&&source?<iframe title={"معاينة "+file.originalName} src={source} className="archive-preview-pdf" onError={()=>setError("تعذر عرض PDF في المتصفح")}/>:
+      type==="pdf"&&source?<div className="archive-pdf-pages">
+        <div className="archive-pdf-controls">
+          <button type="button" disabled={pdfPage<=1} onClick={()=>{setSource("");setPdfPage(p=>p-1)}} aria-label="الصفحة السابقة"><ChevronRight size={17}/> السابقة</button>
+          <span>صفحة {pdfPage} من {pdfPages}</span>
+          <button type="button" disabled={pdfPage>=pdfPages} onClick={()=>{setSource("");setPdfPage(p=>p+1)}} aria-label="الصفحة التالية">التالية <ChevronLeft size={17}/></button>
+        </div>
+        <img className="archive-pdf-page-image" src={source} alt={"صفحة "+pdfPage+" من "+pdfPages} onError={()=>setError("تعذر عرض صورة صفحة PDF")}/>
+      </div>:
       type==="image"&&source?<div className="archive-preview-image-wrap"><div className="archive-preview-zoom">
         <button type="button" onClick={()=>setZoom(v=>Math.max(.25,+(v-.25).toFixed(2)))} aria-label="تصغير الصورة"><ZoomOut size={16}/></button>
         <span>{Math.round(zoom*100)}%</span>
