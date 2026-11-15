@@ -96,3 +96,12 @@
 .archive-slide p{white-space:pre-wrap;overflow-wrap:anywhere}
 .archive-preview-warning{background:#fff6e9;color:#8a621f;padding:10px 12px;border-radius:8px;font-size:12px}
 @media(max-width:600px){.archive-word-page{padding:16px}.archive-preview-body{max-height:66vh}.archive-preview-pdf{height:58vh}}
+
+
+/* PDF preview pages are rendered as PNG on the authenticated backend, not in an iframe. */
+.archive-pdf-pages{display:grid;gap:12px;justify-items:center;background:#e9edf2;border-radius:10px;padding:10px}
+.archive-pdf-controls{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;width:100%;background:#fffefc;padding:10px;border:1px solid #e0e5e9;border-radius:9px}
+.archive-pdf-controls button{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border:1px solid #d4dce4;border-radius:7px;background:white;cursor:pointer;color:#25384a;font-weight:700}
+.archive-pdf-controls button:disabled{cursor:not-allowed;opacity:.45}
+.archive-pdf-controls span{font-size:13px;font-weight:700}
+.archive-pdf-page-image{display:block;width:auto;max-width:100%;height:auto;max-height:none;margin:auto;background:#fff;box-shadow:0 3px 25px #00000025;border:1px solid #dce1e8}
