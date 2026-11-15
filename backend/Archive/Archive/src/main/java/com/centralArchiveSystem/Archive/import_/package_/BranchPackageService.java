@@ -785,6 +785,10 @@ public class BranchPackageService {
                 throw new IllegalArgumentException("Stored manifest has no projects array");
             }
 
+            if (request.targetProjectId() != null) {
+                validateTargetVersion(pkg, request, projects, false);
+            }
+
             for (JsonNode projectNode : projects) {
                 UUID targetOrgId = resolveOrganization(projectNode, pkg, request);
                 Organization targetOrganization = organizationRepository.findById(targetOrgId)
@@ -919,6 +923,10 @@ public class BranchPackageService {
                 throw new IllegalStateException("Stored manifest has no projects array");
             }
             importOperationService.initializeProjectStatistics(operationId, projects.size());
+            if (request.targetProjectId() != null) {
+                importIntoExistingVersion(id, operation, pkg, request, importedBy, projects);
+                return;
+            }
             if ("2.0".equals(pkg.getSchemaVersion())) {
                 importVersionedFamilies(id, operation, pkg, request, importedBy, projects);
                 return;
@@ -1023,6 +1031,137 @@ public class BranchPackageService {
      * "version 2" project is acceptable if version 1 or its files failed.
      * We retain the historical v1 project-by-project import behavior.
      */
+    /**
+     * Only single-project schema v1 packages may attach to an existing central
+     * project. The client must explicitly select the target; automatic matching
+     * would risk silently overwriting an unrelated version chain.
+     */
+    private Project validateTargetVersion(BranchPackage pkg, PackageImportRequest request,
+                                          JsonNode projects, boolean lock) {
+        if (request.targetProjectId() == null) {
+            throw new IllegalArgumentException("Target project ID is required");
+        }
+        if (!"1.0".equals(pkg.getSchemaVersion()) || !projects.isArray() || projects.size() != 1) {
+            throw new IllegalArgumentException(
+                    "Import-as-version requires a verified schema 1.0 package containing exactly one project");
+        }
+        JsonNode source = projects.get(0);
+        Project target = (lock
+                ? projectRepository.lockById(request.targetProjectId())
+                : projectRepository.findById(request.targetProjectId()))
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Project", "id", request.targetProjectId()));
+        confidentialityAccessService.requireReadAccess(target.getConfidentialityLevelId());
+        if (!Boolean.TRUE.equals(target.getIsLatestVersion())
+                || !java.util.Set.of(Project.ProjectStatus.APPROVED,
+                                   Project.ProjectStatus.ARCHIVED,
+                                   Project.ProjectStatus.REJECTED).contains(target.getStatus())) {
+            throw new IllegalArgumentException(
+                    "Only the latest approved, archived, or rejected project may receive a new version");
+        }
+        UUID targetOrganization = resolveOrganization(source, pkg, request);
+        if (!target.getOrganizationId().equals(targetOrganization)
+                || !target.getProjectNumber().equals(requiredText(source, "project_number"))
+                || !target.getYear().equals(source.path("year").asInt(-1))) {
+            throw new IllegalArgumentException(
+                    "The package organization, project number, and year must match the selected project");
+        }
+        UUID requestedLevel = resolveProjectConfidentiality(source, request);
+        if (requestedLevel != null && !requestedLevel.equals(target.getConfidentialityLevelId())) {
+            throw new IllegalArgumentException(
+                    "Package confidentiality differs from the selected project's level");
+        }
+        JsonNode fileNodes = source.path("files");
+        if (fileNodes.isArray()) for (JsonNode file : fileNodes) {
+            UUID fileLevel = resolveFileConfidentiality(
+                    file, target.getConfidentialityLevelId(), request);
+            if (!java.util.Objects.equals(fileLevel, target.getConfidentialityLevelId())) {
+                throw new IllegalArgumentException(
+                        "Files imported as a version must inherit the selected project's confidentiality level");
+            }
+        }
+        return target;
+    }
+
+    private void importIntoExistingVersion(UUID packageId,
+                                           ImportOperation operation,
+                                           BranchPackage pkg,
+                                           PackageImportRequest request,
+                                           UUID importedBy,
+                                           JsonNode projects) {
+        List<StoredObject> objects = new ArrayList<>();
+        try {
+            Boolean skipped = projectImportTransaction.execute(status -> {
+                try {
+                    Project original = validateTargetVersion(pkg, request, projects, true);
+                    JsonNode source = projects.get(0);
+                    UUID sourceId = requiredUuid(source, "project_id");
+                    var prior = packageProjectRepository.findByPackageIdAndLocalProjectUuid(
+                            pkg.getId(), sourceId);
+                    if (prior.isPresent()) return true;
+
+                    // Persist the next version and its file rows atomically.
+                    Project next = buildProject(source, original.getOrganizationId(),
+                            pkg, request, importedBy);
+                    next.setProjectUid(original.getProjectUid());
+                    next.setVersionNo(projectRepository.findMaxVersionNoByProjectUid(
+                            original.getProjectUid()) + 1);
+                    next.setPreviousProjectId(original.getId());
+                    next.setIsLatestVersion(true);
+                    next.setProjectNumber(original.getProjectNumber());
+                    next.setName(original.getName()); // Inherited identity: never renamed here.
+                    next.setYear(original.getYear());
+                    next.setOrganizationId(original.getOrganizationId());
+                    next.setConfidentialityLevelId(original.getConfidentialityLevelId());
+                    next.setStatus(Project.ProjectStatus.IMPORTED);
+                    original.setIsLatestVersion(false);
+                    projectRepository.saveAndFlush(original);
+                    Project saved = projectRepository.saveAndFlush(next);
+
+                    createProjectMembers(source, saved.getId());
+                    int count = 0;
+                    JsonNode fileNodes = source.path("files");
+                    if (fileNodes.isArray()) for (JsonNode file : fileNodes) {
+                        objects.add(importFile(file, saved.getId(),
+                                saved.getConfidentialityLevelId(), pkg, request, importedBy));
+                        count++;
+                    }
+                    PackageProject link = createPackageProjectLink(pkg, saved, sourceId,
+                            source, PackageProject.ImportStatus.IMPORTED);
+                    link.setFilesCount(count);
+                    link.setFilesImported(count);
+                    link.setFilesFailed(0);
+                    packageProjectRepository.save(link);
+                    return false;
+                } catch (Exception e) {
+                    throw new ProjectImportException(e);
+                }
+            });
+            if (skipped == null) {
+                throw new IllegalStateException("New-version transaction returned null");
+            }
+            importOperationService.recordProjectOutcome(operation.getId(),
+                    skipped ? ImportOperationService.ProjectOutcome.SKIPPED
+                            : ImportOperationService.ProjectOutcome.IMPORTED);
+            pkg.setStatus(BranchPackage.PackageStatus.IMPORTED);
+            pkg.setImportedAt(LocalDateTime.now());
+            pkg.setErrorMessage(null);
+            branchPackageRepository.save(pkg);
+            importOperationService.updateStatus(operation.getId(), ImportOperation.Status.SUCCESS, null);
+        } catch (Exception e) {
+            cleanupImportedObjects(objects);
+            log.error("Package {} could not create a new version of project {}",
+                    packageId, request.targetProjectId(), e);
+            importOperationService.recordProjectOutcome(
+                    operation.getId(), ImportOperationService.ProjectOutcome.FAILED);
+            pkg.setStatus(BranchPackage.PackageStatus.FAILED);
+            pkg.setErrorMessage("New-version import failed; no partial version was committed");
+            branchPackageRepository.save(pkg);
+            importOperationService.updateStatus(
+                    operation.getId(), ImportOperation.Status.FAILED, pkg.getErrorMessage());
+        }
+    }
+
     private void importVersionedFamilies(UUID packageId,
                                          ImportOperation operation,
                                          BranchPackage pkg,
