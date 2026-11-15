@@ -25,7 +25,7 @@ export function previewType(file:ArchiveFile):PreviewType {
   if(["mp3","wav","flac","m4a"].includes(ext)&&(mime.startsWith("audio/")||!mime))return "audio";
   if(["mp4","webm","mov"].includes(ext)&&(mime.startsWith("video/")||!mime))return "video";
   if(["docx","xlsx","pptx"].includes(ext))return "office";
-  if(ext==="md"||ext==="markdown")return "markdown";
+  if(ext==="md")return "markdown";
   if(["txt","csv","md","json","xml","sql","html","htm","svg"].includes(ext))return "text";
   return "unsupported";
 }
