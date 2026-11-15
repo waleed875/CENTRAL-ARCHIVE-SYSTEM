@@ -15,10 +15,25 @@ import java.util.UUID;
 public class FilePreviewController {
     private final FileService files;
     private final FilePreviewService previews;
+    private final OfficePreviewService office;
 
-    public FilePreviewController(FileService files, FilePreviewService previews) {
+    public FilePreviewController(FileService files, FilePreviewService previews, OfficePreviewService office) {
         this.files = files;
         this.previews = previews;
+        this.office = office;
+    }
+
+    @GetMapping("/api/v1/files/{id}/preview/office")
+    @PreAuthorize("hasAnyRole('system_admin','central_data_entry','auditor','archive_officer','import_officer','export_officer','read_only')")
+    public ResponseEntity<OfficePreviewService.Preview> previewOffice(@PathVariable UUID id) {
+        FileResponse metadata = files.getFileMetadata(id);
+        if (FilePreviewService.classify(metadata.originalName(), metadata.mimeType()) != FilePreviewService.Kind.OFFICE) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "الملف ليس مستند Office مدعومًا");
+        }
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(office.preview(id, FilePreviewService.extension(metadata.originalName())));
     }
 
     // Keep the explicit StreamingResponseBody generic type: Spring MVC needs it to
