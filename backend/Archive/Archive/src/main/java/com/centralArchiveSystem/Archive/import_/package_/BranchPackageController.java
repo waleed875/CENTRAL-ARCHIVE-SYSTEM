@@ -1,6 +1,7 @@
 package com.centralArchiveSystem.Archive.import_.package_;
 
 import com.centralArchiveSystem.Archive.auth.CurrentUserService;
+import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.common.dto.PagedResponse;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
@@ -112,7 +113,11 @@ public class BranchPackageController {
             throw new IllegalArgumentException(
                     "Use /import-as-version with system_admin privileges for existing project versions");
         }
-        branchPackageService.assertImportable(id, request);
+        try {
+            branchPackageService.assertImportable(id, request);
+        } catch (IllegalArgumentException | IllegalStateException rejected) {
+            throw new BusinessRuleException(importValidationMessage(rejected.getMessage()));
+        }
 
         UUID importedBy = currentUserService.userId();
         String requestSnapshot = objectMapper.valueToTree(request).toString();
@@ -145,7 +150,11 @@ public class BranchPackageController {
         if (request.targetProjectId() == null) {
             throw new IllegalArgumentException("target_project_id is required");
         }
-        branchPackageService.assertImportable(id, request);
+        try {
+            branchPackageService.assertImportable(id, request);
+        } catch (IllegalArgumentException | IllegalStateException rejected) {
+            throw new BusinessRuleException(importValidationMessage(rejected.getMessage()));
+        }
         UUID importedBy = currentUserService.userId();
         String requestSnapshot = objectMapper.valueToTree(request).toString();
         ImportOperation operation = importOperationService.create(id, importedBy, requestSnapshot);
@@ -155,6 +164,38 @@ public class BranchPackageController {
                         "status", ImportOperation.Status.STARTED.name(),
                         "message", "New-version import started for package: " + id),
                 "New-version import started"));
+    }
+
+    /** Expose actionable but non-sensitive error text, never raw manifest/SQL/MinIO details. */
+    private static String importValidationMessage(String reason) {
+        if (reason == null) return "تعذر بدء استيراد الحزمة؛ راجع البيانات المطلوبة والصلاحيات";
+        String value = reason.toLowerCase(java.util.Locale.ROOT);
+        if (value.contains("verified") || value.contains("package must")) {
+            return "الحزمة ليست في حالة «تم التحقق». تحقق منها أولًا؛ الحزمة المستوردة مسبقًا لا تحتاج إعادة استيراد";
+        }
+        if (value.contains("organization") || value.contains("target org")) {
+            return "تعذر الاستيراد: اختر الجهة المركزية المطابقة لجميع الجهات الموجودة في الحزمة";
+        }
+        if (value.contains("category") || value.contains("file categor")) {
+            return "تعذر الاستيراد: اختر فئة ملفات مركزية نشطة، وحدد الفئة الافتراضية للملفات غير المصنفة";
+        }
+        if (value.contains("file type") || value.contains("project type")) {
+            return "تعذر الاستيراد: تصنيف أو نوع الملف/المشروع غير مطابق للمراجع المركزية";
+        }
+        if (value.contains("confidentiality") || value.contains("clearance")) {
+            return "تعذر الاستيراد: مستوى سرية المشروع أو أحد الملفات غير متوافق مع الصلاحيات أو الربط المحدد";
+        }
+        if (value.contains("latest") || value.contains("approved") || value.contains("archived")
+                || value.contains("rejected")) {
+            return "اختر أحدث إصدار من مشروع معتمد أو مؤرشف أو مرفوض قبل إضافة إصدار جديد";
+        }
+        if (value.contains("project number") || value.contains("must match") || value.contains("year")) {
+            return "تعذر إضافة الإصدار: يجب تطابق الجهة ورقم المشروع والسنة مع المشروع الذي اخترته";
+        }
+        if (value.contains("exactly one") || value.contains("schema")) {
+            return "إضافة إصدار جديد تتطلب حزمة تحتوي مشروعًا واحدًا وبصيغة بيانات مدعومة";
+        }
+        return "تعذر بدء الاستيراد: راجع ربط الجهات والتصنيفات ومستويات السرية وحالة الحزمة";
     }
 
     @GetMapping("/{id}/references")
