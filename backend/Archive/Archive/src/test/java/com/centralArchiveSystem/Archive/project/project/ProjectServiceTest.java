@@ -712,7 +712,8 @@ class ProjectServiceTest {
         when(repository.findById(project.getId())).thenReturn(Optional.of(project));
         when(files.countByProjectIdAndDeletedAtIsNull(project.getId())).thenReturn(0L);
         when(files.countByProjectId(project.getId())).thenReturn(2L);
-        when(members.listByProjectId(project.getId())).thenReturn(java.util.List.of());
+        when(members.listByProjectId(project.getId())).thenReturn(java.util.List.of(
+                mock(com.centralArchiveSystem.Archive.project.member.dto.MemberResponse.class)));
 
         ProjectService service = deleteService(repository, files, members, packages);
         service.deleteDraft(project.getId());
@@ -722,6 +723,7 @@ class ProjectServiceTest {
         verify(repository).save(project);
         verify(repository, never()).delete(any(Project.class));
         verify(files, never()).delete(any());
+        verify(members, never()).deleteAllByProjectId(any());
         assertThrows(java.util.NoSuchElementException.class,
                 () -> service.deleteDraft(project.getId()));
     }
