@@ -1,5 +1,7 @@
 package com.centralArchiveSystem.Archive.project.project;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +17,11 @@ import java.util.UUID;
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     Optional<Project> findByProjectUid(UUID projectUid);
+
+    /** Serialize imports that create the next version of the same project. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Project p WHERE p.id = :id")
+    Optional<Project> lockById(@Param("id") UUID id);
 
     /** All versions, including confidential ones; callers MUST enforce clearance on every row. */
     List<Project> findByProjectUidOrderByVersionNoAsc(UUID projectUid);
