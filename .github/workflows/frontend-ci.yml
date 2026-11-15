@@ -37,6 +37,8 @@ jobs:
         run: npm ci
       - name: TypeScript check
         run: npm run typecheck
+      - name: Markdown preview parser tests
+        run: node --experimental-strip-types --test tests/markdown-preview.test.mjs
       - name: Production build
         run: npm run build
       - name: Docker image build
