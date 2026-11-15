@@ -11,6 +11,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperationService
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageImportRequest;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageResponse;
 import com.centralArchiveSystem.Archive.import_.package_.dto.PackageVerifyResponse;
+import com.centralArchiveSystem.Archive.import_.package_.dto.PackagePreviewResponse;
 import com.centralArchiveSystem.Archive.project.file.FileContentInspector;
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
 import com.centralArchiveSystem.Archive.project.filecategory.FileCategoryRepository;
@@ -138,6 +139,62 @@ public class BranchPackageService {
     @Transactional(readOnly = true)
     public PackageResponse getById(UUID id) {
         return PackageResponse.fromEntity(findPackage(id));
+    }
+
+    /** Safe inspection of stored, verified manifests; no import or file content access. */
+    @Transactional(readOnly = true)
+    public PackagePreviewResponse preview(UUID id) {
+        BranchPackage pkg = findPackage(id);
+        if (pkg.getStatus() != BranchPackage.PackageStatus.VERIFIED
+                && pkg.getStatus() != BranchPackage.PackageStatus.IMPORTED) {
+            throw new IllegalStateException("Package must be verified before preview");
+        }
+        if (pkg.getManifestData() == null) {
+            throw new IllegalStateException("Verified package manifest is not available");
+        }
+        try {
+            JsonNode manifest = objectMapper.readTree(pkg.getManifestData());
+            JsonNode sources = manifest.path("projects");
+            if (!sources.isArray()) throw new IllegalArgumentException("Invalid package manifest");
+            List<PackagePreviewResponse.ProjectEntry> summaries = new ArrayList<>();
+            int totalFiles = 0;
+            boolean truncated = sources.size() > 100;
+            for (JsonNode project : sources) {
+                if (summaries.size() >= 100) break;
+                JsonNode files = project.path("files");
+                List<PackagePreviewResponse.FileEntry> entries = new ArrayList<>();
+                int projectCount = files.isArray() ? files.size() : 0;
+                totalFiles += projectCount;
+                if (files.isArray()) for (JsonNode file : files) {
+                    if (entries.size() >= 250) break;
+                    entries.add(new PackagePreviewResponse.FileEntry(
+                            bounded(file.path("original_name").asText(file.path("name").asText("file")), 250),
+                            bounded(file.path("extension").asText(""), 20),
+                            file.path("size_bytes").canConvertToLong()
+                                    ? file.path("size_bytes").asLong() : null));
+                }
+                boolean limitedFiles = projectCount > entries.size();
+                truncated |= limitedFiles;
+                summaries.add(new PackagePreviewResponse.ProjectEntry(
+                        bounded(project.path("project_id").asText(""), 60),
+                        bounded(project.path("project_number").asText(""), 80),
+                        bounded(project.path("name").asText(""), 250),
+                        project.path("year").canConvertToInt() ? project.path("year").asInt() : null,
+                        project.path("version_no").canConvertToInt() ? project.path("version_no").asInt() : null,
+                        bounded(project.path("project_uid").asText(""), 60),
+                        bounded(project.path("description").asText(""), 2000),
+                        projectCount, limitedFiles, entries));
+            }
+            return new PackagePreviewResponse(pkg.getId(), pkg.getPackageName(),
+                    pkg.getStatus().name(), pkg.getSchemaVersion(), pkg.getPackageFormat(),
+                    sources.size(), pkg.getFilesCount(), truncated, summaries);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Stored package manifest is invalid", e);
+        }
+    }
+
+    private static String bounded(String text, int maxChars) {
+        return text.length() <= maxChars ? text : text.substring(0, maxChars);
     }
 
     public PackageResponse receive(MultipartFile packageFile, UUID receivedBy) throws Exception {
