@@ -19,6 +19,7 @@ function Imports(){
  const [targetSearchInput,setTargetSearchInput]=useState("");
  const [targetSearch,setTargetSearch]=useState("");
  const [targetProjectId,setTargetProjectId]=useState("");
+ const [defaultFileCategoryId,setDefaultFileCategoryId]=useState("");
  const preview=useRemote<PackagePreviewData>(previewId?"/api/v1/packages/"+previewId+"/preview":null);
  const result=useRemote<PageData<ArchivePackage>>("/api/v1/packages"+qs({page,size:15}));
  const current=useRemote<UserInfo>("/api/v1/auth/me");const canImport=!!current.data&&(current.data.roles.includes("system_admin")||current.data.roles.includes("import_officer"));
@@ -38,12 +39,12 @@ function Imports(){
  const options:Record<string,Array<{id:string;name:string}>>={organizations:organizations.data??[],projectTypes:types.data??[],confidentialityLevels:levels.data??[],fileCategories:categories.data??[],fileTypes:fileTypes.data??[]};
  async function upload(e:FormEvent){e.preventDefault();if(!filename)return;setSaving(true);setError("");try{const form=new FormData();form.append("package_file",filename);if(passphrase)form.append("passphrase",passphrase);await api("/api/v1/packages/receive",{method:"POST",body:form});setModal(null);setFilename(null);setPassphrase("");setSuccess("تم استقبال الحزمة. تحقّق من سلامتها قبل الاستيراد.");result.reload()}catch(e){setError(e instanceof Error?e.message:"فشل استقبال الحزمة")}finally{setSaving(false)}}
  async function verify(id:string){setSaving(true);setError("");try{const verified=await api<{valid:boolean;errors?:string[]}>("/api/v1/packages/"+id+"/verify",{method:"POST"});if(!verified.valid)throw new Error(verified.errors?.join("، ")??"لم تجتز الحزمة التحقق");setSuccess("الحزمة سليمة وجاهزة لربط بياناتها");result.reload()}catch(e){setError(e instanceof Error?e.message:"فشل التحقق")}finally{setSaving(false)}}
- function openMapping(item:ArchivePackage){setSelected(item);setMappings({});setDefaultLevel("");setImportMode("new");setTargetProjectId("");setTargetSearch("");setTargetSearchInput("");setError("");setModal("mapping")}
+ function openMapping(item:ArchivePackage){setSelected(item);setMappings({});setDefaultLevel("");setDefaultFileCategoryId("");setImportMode("new");setTargetProjectId("");setTargetSearch("");setTargetSearchInput("");setError("");setModal("mapping")}
  async function startImport(e:FormEvent){e.preventDefault();if(!selected)return;setSaving(true);setError("");try{
  if(importMode==="version"&&(!canImportAsVersion||!targetProjectId||selected.projectsCount!==1)){
    throw new Error("يلزم حساب مدير النظام وحزمة بمشروع واحد واختيار مشروع موجود");
  }
- const body:Record<string,unknown>={confidentiality_level_id:defaultLevel||null};
+ const body:Record<string,unknown>={confidentiality_level_id:defaultLevel||null,default_file_category_id:defaultFileCategoryId||null};
  if(importMode==="version")body.target_project_id=targetProjectId;
  for(const [source,target] of mappingFields){body[target]=Object.fromEntries(Object.entries(mappings[source]??{}).filter(([,v])=>!!v))}
  await api<Record<string,string>>("/api/v1/packages/"+selected.id+
@@ -79,6 +80,7 @@ function Imports(){
  </div>}
  <p className="hint">لكل معرّف مرجعي في الحزمة اختر المقابل المعتمد داخل النظام المركزي. لا تُستبدل قيم معرّفات المصدر.</p>
  {refs.loading?<Loading/>:refs.error?<Alert message={refs.error}/>:mappingFields.map(([source,,label])=>(refs.data?.[source]?.length??0)>0?<div key={source} className="form-stack"><strong>{label}</strong>{refs.data?.[source].map(uuid=><Field key={uuid} label={uuid}><select required={source==="organizations"} value={mappings[source]?.[uuid]??""} onChange={e=>setMappings(m=>({...m,[source]:{...m[source],[uuid]:e.target.value}}))}><option value="">اختر المقابل المركزي</option>{options[source]?.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>)}</div>:null)}
+ <Field label="فئة افتراضية للملفات التي لا تحتوي على تصنيف في الحزمة"><select value={defaultFileCategoryId} onChange={e=>setDefaultFileCategoryId(e.target.value)}><option value="">بدون فئة افتراضية</option>{categories.data?.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
  <Field label="مستوى سرية افتراضي (اختياري)"><select value={defaultLevel} onChange={e=>setDefaultLevel(e.target.value)}><option value="">بدون قيمة افتراضية</option>{levels.data?.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving||refs.loading||(importMode==="version"&&!targetProjectId)} className="btn btn-gold">{importMode==="version"?"إنشاء الإصدار الجديد واستيراد الملفات":"بدء الاستيراد"}</button><button type="button" className="btn btn-quiet" onClick={()=>setModal(null)}>إلغاء</button></div></form></Modal>}
  </>;
 }
