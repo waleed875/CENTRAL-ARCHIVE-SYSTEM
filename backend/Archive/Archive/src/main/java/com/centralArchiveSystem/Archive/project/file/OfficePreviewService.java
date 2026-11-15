@@ -67,7 +67,7 @@ public class OfficePreviewService {
         }
     }
 
-    static Preview parse(byte[] bytes, String extension) throws Exception {
+    public static Preview parse(byte[] bytes, String extension) throws Exception {
         return switch (extension.toLowerCase(Locale.ROOT)) {
             case "docx" -> readWord(bytes);
             case "xlsx" -> readExcel(bytes);
