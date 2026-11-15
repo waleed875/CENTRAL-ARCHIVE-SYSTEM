@@ -505,9 +505,7 @@ public class LegacyMigrationService {
                         .findByMigrationSourceIdAndKindAndSourceKey(
                                 connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
                         .orElse(null);
-                if (existing != null
-                        && existing.getStatus() == LegacyMigrationItem.Status.DONE
-                        && existing.getTargetId() != null) {
+                if (isValidCompletedFile(existing, null)) {
                     summary.incrementSkipped();
                     continue;
                 }
@@ -551,9 +549,7 @@ public class LegacyMigrationService {
                             .findByMigrationSourceIdAndKindAndSourceKey(
                                     connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
                             .orElse(null);
-                    if (previousFileItem != null
-                            && previousFileItem.getStatus() == LegacyMigrationItem.Status.DONE
-                            && previousFileItem.getTargetId() != null) {
+                    if (isValidCompletedFile(previousFileItem, targetProjectId)) {
                         summary.incrementSkipped();
                         return;
                     }
@@ -603,6 +599,20 @@ public class LegacyMigrationService {
                     }
                 }
         );
+    }
+
+    /**
+     * DONE is only valid when the referenced database row still exists and is
+     * attached to the expected project. MinIO objects alone are not file records.
+     */
+    private boolean isValidCompletedFile(LegacyMigrationItem item, UUID expectedProjectId) {
+        if (item == null || item.getStatus() != LegacyMigrationItem.Status.DONE
+                || item.getTargetId() == null) return false;
+        return fileRepository.findById(item.getTargetId())
+                .filter(file -> file.getDeletedAt() == null
+                        && "ACTIVE".equalsIgnoreCase(file.getStatus())
+                        && (expectedProjectId == null || expectedProjectId.equals(file.getProjectId())))
+                .isPresent();
     }
 
     private void migrateOneFile(LegacyConnection connection,
