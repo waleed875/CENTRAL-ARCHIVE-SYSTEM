@@ -2,11 +2,12 @@
 import {useEffect,useState} from "react";
 import {Download,FileWarning,ZoomIn,ZoomOut,RotateCcw,ChevronLeft,ChevronRight} from "lucide-react";
 import {download} from "@/lib/api";
+import {MarkdownPreview} from "@/components/markdown-preview";
 import {Modal,Loading,Alert} from "@/components/ui";
 import type {ArchiveFile} from "@/lib/types";
 import {sizeLabel} from "@/lib/types";
 
-type PreviewType="pdf"|"image"|"audio"|"video"|"office"|"text"|"unsupported";
+type PreviewType="pdf"|"image"|"audio"|"video"|"office"|"markdown"|"text"|"unsupported";
 type OfficeRun={text:string;bold:boolean;italic:boolean;underline:boolean};
 type WordBlock={type:string;align:string;runs:OfficeRun[];rows:string[][]};
 type SheetView={name:string;rows:string[][];truncated:boolean};
@@ -24,6 +25,7 @@ export function previewType(file:ArchiveFile):PreviewType {
   if(["mp3","wav","flac","m4a"].includes(ext)&&(mime.startsWith("audio/")||!mime))return "audio";
   if(["mp4","webm","mov"].includes(ext)&&(mime.startsWith("video/")||!mime))return "video";
   if(["docx","xlsx","pptx"].includes(ext))return "office";
+  if(ext==="md"||ext==="markdown")return "markdown";
   if(["txt","csv","md","json","xml","sql","html","htm","svg"].includes(ext))return "text";
   return "unsupported";
 }
@@ -102,7 +104,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
           const payload=await response.json() as OfficePreview;
           if(!["word","excel","powerpoint"].includes(payload.type))throw new Error("استجابة معاينة Office غير متوقعة");
           if(!cancelled)setOffice(payload);
-        }else if(type==="text"){
+        }else if(type==="text"||type==="markdown"){
           const body=await response.text();
           if(!cancelled)setText(body.slice(0,120000));
         }else{
@@ -159,6 +161,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
       {loading?<Loading/>:error?<Alert message={error}/>:type==="unsupported"?
         <div className="archive-preview-unsupported"><FileWarning size={34}/><p>هذا النوع لا يدعم المعاينة داخل المتصفح حاليًا.</p><p className="hint">استخدم زر التنزيل لفتحه في البرنامج المناسب.</p></div>:
       type==="office"&&office?<OfficeView data={office}/>:
+      type==="markdown"?<MarkdownPreview source={text}/>: 
       type==="text"?<pre dir="auto" className="archive-preview-text">{text||"الملف فارغ"}</pre>:
       type==="pdf"&&source?<div className="archive-pdf-pages">
         <div className="archive-pdf-controls">
