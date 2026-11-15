@@ -76,6 +76,9 @@ public class FileService {
                                                String status, String search, int page, int size) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+        if (project.getDiscardedAt() != null) {
+            throw new ResourceNotFoundException("Project", "id", projectId);
+        }
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
         Integer maxLevelOrder = confidentialityAccessService.currentMaxLevelOrder();
@@ -417,6 +420,9 @@ public class FileService {
     private Project requireMutableProject(UUID projectId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
+        if (project.getDiscardedAt() != null) {
+            throw new ResourceNotFoundException("Project", "id", projectId);
+        }
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
         if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW
@@ -439,6 +445,9 @@ public class FileService {
 
         Project project = projectRepository.findById(file.getProjectId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", file.getProjectId()));
+        if (project.getDiscardedAt() != null) {
+            throw new ResourceNotFoundException("Project", "id", file.getProjectId());
+        }
 
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
         confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
