@@ -1,10 +1,10 @@
 "use client";
 import {useEffect,useState} from "react";
 import {Download,FileWarning,ZoomIn,ZoomOut,RotateCcw,ChevronLeft,ChevronRight} from "lucide-react";
-import {download} from "@/lib/api";
+import {download,api,jsonBody} from "@/lib/api";
 import {MarkdownPreview} from "@/components/markdown-preview";
 import {Modal,Loading,Alert} from "@/components/ui";
-import type {ArchiveFile} from "@/lib/types";
+import type {ArchiveFile,Project} from "@/lib/types";
 import {sizeLabel} from "@/lib/types";
 
 type PreviewType="pdf"|"image"|"audio"|"video"|"office"|"markdown"|"text"|"unsupported";
@@ -77,7 +77,7 @@ function OfficeView({data}:{data:OfficePreview}){
 }
 function columnName(index:number){let name="";for(let n=index+1;n>0;n=Math.floor((n-1)/26))name=String.fromCharCode(65+(n-1)%26)+name;return name}
 
-export function FilePreview({file,onClose,previewBase,allowDownload=true}:{file:ArchiveFile;onClose:()=>void;previewBase?:string;allowDownload?:boolean}){
+export function FilePreview({file,onClose,previewBase,allowDownload=true,project,onProjectUpdated}:{file:ArchiveFile;onClose:()=>void;previewBase?:string;allowDownload?:boolean;project?:Project;onProjectUpdated?:()=>void}){
   const type=previewType(file);
   const [source,setSource]=useState("");
   const [text,setText]=useState("");
@@ -87,6 +87,12 @@ export function FilePreview({file,onClose,previewBase,allowDownload=true}:{file:
   const [zoom,setZoom]=useState(1);
   const [pdfPage,setPdfPage]=useState(1);
   const [pdfPages,setPdfPages]=useState(0);
+  const [editProject,setEditProject]=useState(false);
+  const [savingProject,setSavingProject]=useState(false);
+  const [projectError,setProjectError]=useState("");
+  const [projectSuccess,setProjectSuccess]=useState("");
+  const [projectForm,setProjectForm]=useState({name:project?.name??"",projectNumber:project?.projectNumber??"",projectCode:project?.projectCode??"",year:String(project?.year??""),executingEntity:project?.executingEntity??"",supervisorName:project?.supervisorName??"",description:project?.description??"",notes:project?.notes??"",keywords:project?.keywords??"",tableOfContents:project?.tableOfContents??"",dataCompletionStatus:project?.dataCompletionStatus??"INCOMPLETE"});
+  async function saveProject(e:React.FormEvent){e.preventDefault();if(!project)return;setSavingProject(true);setProjectError("");setProjectSuccess("");try{await api("/api/v1/projects/"+project.id,{method:"PATCH",...jsonBody({...projectForm,year:Number(projectForm.year)})});setProjectSuccess("تم حفظ بيانات المشروع بنجاح");setEditProject(false);onProjectUpdated?.()}catch(error){setProjectError(error instanceof Error?error.message:"تعذر حفظ بيانات المشروع")}finally{setSavingProject(false)}}
   const mediaUrl="/api/backend"+(previewBase??("/api/v1/files/"+encodeURIComponent(file.id)+"/preview"));
 
   useEffect(()=>{
@@ -157,6 +163,16 @@ export function FilePreview({file,onClose,previewBase,allowDownload=true}:{file:
   },[type,mediaUrl,pdfPage,pdfPages]);
 
   return <Modal title="معاينة الملف" subtitle={file.originalName+" · "+sizeLabel(file.sizeBytes)} onClose={onClose} wide>
+    {project&&<section className="archive-preview-project-tools">
+      <div className="chips" style={{justifyContent:"space-between",alignItems:"center"}}><div><strong>بيانات المشروع المرتبط</strong><p className="hint">{project.name} · {project.projectNumber}</p></div><button type="button" className="btn btn-outline btn-sm" onClick={()=>{setProjectForm({name:project.name,projectNumber:project.projectNumber,projectCode:project.projectCode??"",year:String(project.year),executingEntity:project.executingEntity??"",supervisorName:project.supervisorName??"",description:project.description??"",notes:project.notes??"",keywords:project.keywords??"",tableOfContents:project.tableOfContents??"",dataCompletionStatus:project.dataCompletionStatus});setProjectError("");setEditProject(v=>!v)}}>{editProject?"إغلاق التعديل":"تعديل بيانات المشروع"}</button></div>
+      {projectSuccess&&<Alert kind="success" message={projectSuccess}/>}
+      {editProject&&<form className="form-stack" onSubmit={saveProject}>
+        <div className="form-grid"><label className="field"><span>اسم المشروع</span><input required maxLength={250} value={projectForm.name} onChange={e=>setProjectForm(v=>({...v,name:e.target.value}))}/></label><label className="field"><span>رقم المشروع</span><input required maxLength={50} value={projectForm.projectNumber} onChange={e=>setProjectForm(v=>({...v,projectNumber:e.target.value}))}/></label></div>
+        <div className="form-grid"><label className="field"><span>رمز المشروع</span><input value={projectForm.projectCode} onChange={e=>setProjectForm(v=>({...v,projectCode:e.target.value}))}/></label><label className="field"><span>السنة</span><input type="number" min={1900} max={2100} required value={projectForm.year} onChange={e=>setProjectForm(v=>({...v,year:e.target.value}))}/></label></div>
+        <div className="form-grid"><label className="field"><span>الجهة المنفذة</span><input value={projectForm.executingEntity} onChange={e=>setProjectForm(v=>({...v,executingEntity:e.target.value}))}/></label><label className="field"><span>المشرف</span><input value={projectForm.supervisorName} onChange={e=>setProjectForm(v=>({...v,supervisorName:e.target.value}))}/></label></div>
+        <label className="field"><span>الوصف</span><textarea value={projectForm.description} onChange={e=>setProjectForm(v=>({...v,description:e.target.value}))}/></label><label className="field"><span>الملاحظات</span><textarea value={projectForm.notes} onChange={e=>setProjectForm(v=>({...v,notes:e.target.value}))}/></label><label className="field"><span>الكلمات المفتاحية</span><textarea value={projectForm.keywords} onChange={e=>setProjectForm(v=>({...v,keywords:e.target.value}))}/></label><label className="field"><span>فهرس المحتويات</span><textarea value={projectForm.tableOfContents} onChange={e=>setProjectForm(v=>({...v,tableOfContents:e.target.value}))}/></label>
+        <label className="field"><span>اكتمال البيانات</span><select value={projectForm.dataCompletionStatus} onChange={e=>setProjectForm(v=>({...v,dataCompletionStatus:e.target.value}))}><option value="INCOMPLETE">غير مكتمل</option><option value="COMPLETE">مكتمل</option></select></label>{projectError&&<Alert message={projectError}/>}<div className="form-actions"><button className="btn btn-gold" disabled={savingProject}>{savingProject?"جارٍ الحفظ...":"حفظ بيانات المشروع"}</button><button type="button" className="btn btn-quiet" onClick={()=>setEditProject(false)}>إلغاء</button></div>
+      </form>}</section>}
     <div className="archive-preview-body">
       {loading?<Loading/>:error?<Alert message={error}/>:type==="unsupported"?
         <div className="archive-preview-unsupported"><FileWarning size={34}/><p>هذا النوع لا يدعم المعاينة داخل المتصفح حاليًا.</p><p className="hint">استخدم زر التنزيل لفتحه في البرنامج المناسب.</p></div>:
