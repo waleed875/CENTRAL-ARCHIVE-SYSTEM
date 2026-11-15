@@ -1759,8 +1759,14 @@ public class BranchPackageService {
     private UUID resolveFileCategory(JsonNode fileNode, PackageImportRequest request) {
         UUID sourceId = optionalUuid(fileNode, "category_id");
         if (sourceId == null && request.defaultFileCategoryId() == null) {
-            throw new IllegalArgumentException(
-                    "A central default file category is required for source files without category metadata");
+            // Compatible fallback for packages that predate source category IDs.
+            // This seed is created by DataInitializer; do not introduce a NULL
+            // category that would violate the project.files FK/NOT NULL constraint.
+            return fileCategoryRepository.findByCode("SUPPORTING_ATTACHMENTS")
+                    .filter(category -> Boolean.TRUE.equals(category.getIsActive()))
+                    .map(FileCategory::getId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Select a central default file category; the SUPPORTING_ATTACHMENTS category is unavailable"));
         }
         UUID targetId = sourceId == null
                 ? request.defaultFileCategoryId()
