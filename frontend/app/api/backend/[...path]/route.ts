@@ -12,11 +12,11 @@ async function relay(request:NextRequest,ctx:{params:Promise<{path:string[]}>}){
   if(!token)return Response.json({success:false,data:{message:"يرجى تسجيل الدخول"}},{status:401});
   const url=backendUrl+"/"+path.map(encodeURIComponent).join("/")+request.nextUrl.search;
   const headers=new Headers();headers.set("Authorization","Bearer "+token);
-  for(const key of ["content-type","accept","x-request-id"]){const value=request.headers.get(key);if(value)headers.set(key,value)}
+  for(const key of ["content-type","accept","x-request-id","range"]){const value=request.headers.get(key);if(value)headers.set(key,value)}
   try{
     const upstream=await fetch(url,{method:request.method,headers,body:request.method==="GET"?undefined:request.body,cache:"no-store",redirect:"manual",duplex:"half"} as RequestInit&{duplex:string});
     const pass=new Headers();
-    for(const key of ["content-type","content-disposition","content-length","retry-after","x-request-id"]){const value=upstream.headers.get(key);if(value)pass.set(key,value)}
+    for(const key of ["content-type","content-disposition","content-length","content-range","accept-ranges","retry-after","x-request-id"]){const value=upstream.headers.get(key);if(value)pass.set(key,value)}
     pass.set("Cache-Control","no-store");
     return new Response(upstream.body,{status:upstream.status,headers:pass});
   }catch{return Response.json({success:false,data:{message:"تعذر الاتصال بالخادم الخلفي"}},{status:502})}
