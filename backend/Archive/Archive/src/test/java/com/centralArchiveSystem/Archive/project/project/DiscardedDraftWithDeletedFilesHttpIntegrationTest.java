@@ -29,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class DiscardedDraftWithDeletedFilesHttpIntegrationTest {
     @Autowired JdbcTemplate jdbc;
+    @Autowired jakarta.persistence.EntityManager entityManager;
     @Autowired MockMvc mvc;
     @Autowired UserRepository users;
     @Autowired RoleRepository roles;
@@ -68,6 +69,7 @@ class DiscardedDraftWithDeletedFilesHttpIntegrationTest {
         mvc.perform(delete("/api/v1/projects/{id}", project)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
+        entityManager.flush();
         assertEquals(2L, jdbc.queryForObject(
                 "SELECT COUNT(*) FROM project.files WHERE project_id=?", Long.class, project));
         assertEquals(1L, jdbc.queryForObject("""
