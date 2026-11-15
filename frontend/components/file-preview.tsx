@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
-import {Download,Eye,FileWarning} from "lucide-react";
+import {Download,FileWarning} from "lucide-react";
 import {download} from "@/lib/api";
 import {Modal,Loading,Alert} from "@/components/ui";
 import type {ArchiveFile} from "@/lib/types";
@@ -59,7 +59,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
     void load();
     return ()=>{cancelled=true;controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl)};
   },[file.id,file.sizeBytes,type]);
-  return <Modal title="معاينة الملف" subtitle={file.originalName+" · "+sizeLabel(file.sizeBytes)} onClose={onClose}>
+  return <Modal title="معاينة الملف" subtitle={file.originalName+" · "+sizeLabel(file.sizeBytes)} onClose={onClose} wide>
     <div style={{width:"min(100%,1000px)",minHeight:220}}>
       {loading?<Loading/>:error?<Alert message={error}/>:type==="unsupported"?
         <div style={{textAlign:"center",padding:36}}><FileWarning size={34}/><p>هذا النوع لا يدعم المعاينة داخل المتصفح حاليًا.</p><p className="hint">يمكنك تنزيل الملف لفتحه باستخدام البرنامج المناسب.</p></div>:
