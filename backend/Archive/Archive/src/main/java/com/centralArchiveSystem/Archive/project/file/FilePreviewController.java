@@ -16,11 +16,49 @@ public class FilePreviewController {
     private final FileService files;
     private final FilePreviewService previews;
     private final OfficePreviewService office;
+    private final PdfPreviewService pdf;
 
-    public FilePreviewController(FileService files, FilePreviewService previews, OfficePreviewService office) {
+    public FilePreviewController(FileService files, FilePreviewService previews,
+                                 OfficePreviewService office, PdfPreviewService pdf) {
         this.files = files;
         this.previews = previews;
         this.office = office;
+        this.pdf = pdf;
+    }
+
+    private FileResponse requirePdf(UUID id) {
+        FileResponse metadata = files.getFileMetadata(id);
+        if (!"pdf".equals(FilePreviewService.extension(metadata.originalName()))
+                || FilePreviewService.classify(metadata.originalName(), metadata.mimeType())
+                    != FilePreviewService.Kind.INLINE) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "هذا الملف ليس PDF صالحًا للمعاينة");
+        }
+        return metadata;
+    }
+
+    @GetMapping("/api/v1/files/{id}/preview/pdf/info")
+    @PreAuthorize("hasAnyRole('system_admin','central_data_entry','auditor','archive_officer','import_officer','export_officer','read_only')")
+    public ResponseEntity<PdfPreviewService.PdfInfo> previewPdfInfo(@PathVariable UUID id) {
+        FileResponse metadata = requirePdf(id);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(pdf.inspect(id, metadata.sizeBytes()));
+    }
+
+    @GetMapping("/api/v1/files/{id}/preview/pdf/pages/{page}")
+    @PreAuthorize("hasAnyRole('system_admin','central_data_entry','auditor','archive_officer','import_officer','export_officer','read_only')")
+    public ResponseEntity<byte[]> previewPdfPage(@PathVariable UUID id, @PathVariable int page) {
+        FileResponse metadata = requirePdf(id);
+        byte[] png = pdf.renderPage(id, metadata.sizeBytes(), page);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Security-Policy", "default-src 'none'; sandbox")
+                .contentType(MediaType.IMAGE_PNG)
+                .contentLength(png.length)
+                .body(png);
     }
 
     @GetMapping("/api/v1/files/{id}/preview/office")
