@@ -22,9 +22,10 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
   const [source,setSource]=useState("");
   const [text,setText]=useState("");
   const [error,setError]=useState("");
-  const [loading,setLoading]=useState(type!=="unsupported");
+  const [loading,setLoading]=useState(type!=="unsupported"&&type!=="audio"&&type!=="video");
+  const mediaUrl="/api/backend/api/v1/files/"+encodeURIComponent(file.id)+"/preview";
   useEffect(()=>{
-    if(type==="unsupported")return;
+    if(type==="unsupported"||type==="audio"||type==="video")return;
     let cancelled=false;
     let objectUrl="";
     const controller=new AbortController();
@@ -67,7 +68,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
       type==="pdf"?<iframe title={"معاينة "+file.originalName} src={source} style={{width:"100%",height:"65vh",border:0,background:"white"}}/>:
       type==="image"?<img src={source} alt={file.originalName} style={{display:"block",maxWidth:"100%",maxHeight:"65vh",margin:"auto",objectFit:"contain"}}/>:
       type==="audio"?<audio controls src={source} style={{width:"100%"}}/>:
-      type==="video"?<video controls src={source} style={{display:"block",maxWidth:"100%",maxHeight:"65vh",margin:"auto"}}/>:null}
+      type==="video"?<video controls preload="metadata" src={mediaUrl} onError={()=>setError("تعذر تشغيل الفيديو؛ قد يكون ترميز MP4 غير مدعوم أو انتهت الجلسة")} style={{display:"block",maxWidth:"100%",maxHeight:"65vh",margin:"auto"}}/>:null}
     </div>
     <div className="form-actions">
       <button type="button" className="btn btn-outline" onClick={()=>download("/api/v1/files/"+file.id+"/download",file.originalName).catch(e=>setError(e.message))}><Download size={16}/> تنزيل الملف</button>
