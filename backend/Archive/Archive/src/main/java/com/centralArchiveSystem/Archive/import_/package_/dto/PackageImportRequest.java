@@ -34,7 +34,11 @@ public record PackageImportRequest(
 
     @JsonProperty("target_project_id")
     @Schema(description = "Explicit existing central project ID when importing as a new version")
-    UUID targetProjectId
+    UUID targetProjectId,
+
+    @JsonProperty("default_file_category_id")
+    @Schema(description = "Optional central file category for package entries without category metadata")
+    UUID defaultFileCategoryId
 ) {
     public PackageImportRequest(Map<UUID, UUID> organizationMapping,
                                 UUID confidentialityLevelId) {
@@ -45,6 +49,7 @@ public record PackageImportRequest(
                 Map.of(),
                 Map.of(),
                 confidentialityLevelId,
+                null,
                 null
         );
     }
@@ -56,7 +61,19 @@ public record PackageImportRequest(
                                 Map<UUID, UUID> fileTypeMapping,
                                 UUID confidentialityLevelId) {
         this(organizationMapping, projectTypeMapping, confidentialityMapping,
-                fileCategoryMapping, fileTypeMapping, confidentialityLevelId, null);
+                fileCategoryMapping, fileTypeMapping, confidentialityLevelId, null, null);
+    }
+
+    public PackageImportRequest(Map<UUID, UUID> organizationMapping,
+                                Map<UUID, UUID> projectTypeMapping,
+                                Map<UUID, UUID> confidentialityMapping,
+                                Map<UUID, UUID> fileCategoryMapping,
+                                Map<UUID, UUID> fileTypeMapping,
+                                UUID confidentialityLevelId,
+                                UUID targetProjectId) {
+        this(organizationMapping, projectTypeMapping, confidentialityMapping,
+                fileCategoryMapping, fileTypeMapping, confidentialityLevelId,
+                targetProjectId, null);
     }
 
     public PackageImportRequest {
