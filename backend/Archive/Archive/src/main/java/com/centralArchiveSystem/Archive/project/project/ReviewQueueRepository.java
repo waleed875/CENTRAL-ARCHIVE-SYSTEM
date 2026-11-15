@@ -13,6 +13,7 @@ public interface ReviewQueueRepository extends Repository<Project, UUID> {
             SELECT p FROM Project p
             WHERE p.status = com.centralArchiveSystem.Archive.project.project.Project.ProjectStatus.UNDER_REVIEW
               AND p.isLatestVersion = true
+              AND p.discardedAt IS NULL
               AND (:organizationId IS NULL OR p.organizationId = :organizationId)
               AND (:submittedBy IS NULL OR p.submittedBy = :submittedBy)
               AND (p.confidentialityLevelId IS NULL OR
