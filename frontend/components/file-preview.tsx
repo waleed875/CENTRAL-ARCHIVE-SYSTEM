@@ -77,7 +77,7 @@ function OfficeView({data}:{data:OfficePreview}){
 }
 function columnName(index:number){let name="";for(let n=index+1;n>0;n=Math.floor((n-1)/26))name=String.fromCharCode(65+(n-1)%26)+name;return name}
 
-export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
+export function FilePreview({file,onClose,previewBase,allowDownload=true}:{file:ArchiveFile;onClose:()=>void;previewBase?:string;allowDownload?:boolean}){
   const type=previewType(file);
   const [source,setSource]=useState("");
   const [text,setText]=useState("");
@@ -87,7 +87,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
   const [zoom,setZoom]=useState(1);
   const [pdfPage,setPdfPage]=useState(1);
   const [pdfPages,setPdfPages]=useState(0);
-  const mediaUrl="/api/backend/api/v1/files/"+encodeURIComponent(file.id)+"/preview";
+  const mediaUrl="/api/backend"+(previewBase??("/api/v1/files/"+encodeURIComponent(file.id)+"/preview"));
 
   useEffect(()=>{
     if(["unsupported","audio","video","pdf"].includes(type))return;
@@ -182,7 +182,7 @@ export function FilePreview({file,onClose}:{file:ArchiveFile;onClose:()=>void}){
       null}
     </div>
     <div className="form-actions">
-      <button type="button" className="btn btn-outline" onClick={()=>download("/api/v1/files/"+file.id+"/download",file.originalName).catch(e=>setError(e.message))}><Download size={16}/> تنزيل الملف</button>
+      {allowDownload&&<button type="button" className="btn btn-outline" onClick={()=>download("/api/v1/files/"+file.id+"/download",file.originalName).catch(e=>setError(e.message))}><Download size={16}/> تنزيل الملف</button>}
       <button type="button" className="btn btn-quiet" onClick={onClose}>إغلاق</button>
     </div>
   </Modal>;
