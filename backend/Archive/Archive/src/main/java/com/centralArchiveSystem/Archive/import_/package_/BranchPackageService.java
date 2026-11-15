@@ -1758,11 +1758,13 @@ public class BranchPackageService {
 
     private UUID resolveFileCategory(JsonNode fileNode, PackageImportRequest request) {
         UUID sourceId = optionalUuid(fileNode, "category_id");
-        if (sourceId == null) {
-            return null;
+        if (sourceId == null && request.defaultFileCategoryId() == null) {
+            throw new IllegalArgumentException(
+                    "A central default file category is required for source files without category metadata");
         }
-
-        UUID targetId = request.fileCategoryMapping().getOrDefault(sourceId, sourceId);
+        UUID targetId = sourceId == null
+                ? request.defaultFileCategoryId()
+                : request.fileCategoryMapping().getOrDefault(sourceId, sourceId);
         FileCategory category = fileCategoryRepository.findById(targetId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         request.fileCategoryMapping().containsKey(sourceId)
