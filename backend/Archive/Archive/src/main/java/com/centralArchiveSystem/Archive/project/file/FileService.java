@@ -326,6 +326,20 @@ public class FileService {
         }
     }
 
+    public InputStream downloadFileRange(UUID id, long offset, long length) {
+        FileEntity file = getAccessibleFile(id);
+        if (offset < 0 || length <= 0 || file.getSizeBytes() == null ||
+                offset >= file.getSizeBytes() || length > file.getSizeBytes() - offset) {
+            throw new IllegalArgumentException("Invalid file byte range");
+        }
+        try {
+            return minioService.downloadRange(file.getBucketName(), file.getObjectKey(), offset, length);
+        } catch (Exception e) {
+            log.error("Failed to read file range: id={}", id, e);
+            throw new RuntimeException("Failed to read file range", e);
+        }
+    }
+
     public String getFileName(UUID id) {
         return getAccessibleFile(id).getOriginalName();
     }
