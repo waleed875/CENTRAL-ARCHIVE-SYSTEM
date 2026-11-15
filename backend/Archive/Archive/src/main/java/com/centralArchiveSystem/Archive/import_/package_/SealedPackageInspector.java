@@ -29,6 +29,7 @@ public class SealedPackageInspector {
     private static final String HEADER_ENTRY = "header.json";
     private static final String PAYLOAD_ENTRY = "payload.enc";
     private static final String FORMAT = "omnivault/nxpkg";
+    private static final String ARCHIVE_FORMAT = "Archive/nxpkg";
     private static final int MAX_HEADER_BYTES = 10 * 1024 * 1024;
     private static final int BUFFER_SIZE = 8192;
     private static final byte[] ED25519_X509_PREFIX = hex("302a300506032b6570032100");
@@ -119,7 +120,7 @@ public class SealedPackageInspector {
         }
 
         String format = requiredText(header, "format");
-        if (!FORMAT.equals(format)) {
+        if (!FORMAT.equals(format) && !ARCHIVE_FORMAT.equals(format)) {
             throw new IllegalArgumentException("Unsupported encrypted package format: " + format);
         }
         int version = requiredPositiveInt(header, "version");
