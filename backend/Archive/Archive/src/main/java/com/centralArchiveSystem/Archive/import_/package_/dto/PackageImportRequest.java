@@ -30,7 +30,11 @@ public record PackageImportRequest(
 
     @JsonProperty("confidentiality_level_id")
     @Schema(description = "Default central confidentiality level when source metadata has none")
-    UUID confidentialityLevelId
+    UUID confidentialityLevelId,
+
+    @JsonProperty("target_project_id")
+    @Schema(description = "Explicit existing central project ID when importing as a new version")
+    UUID targetProjectId
 ) {
     public PackageImportRequest(Map<UUID, UUID> organizationMapping,
                                 UUID confidentialityLevelId) {
@@ -40,8 +44,19 @@ public record PackageImportRequest(
                 Map.of(),
                 Map.of(),
                 Map.of(),
-                confidentialityLevelId
+                confidentialityLevelId,
+                null
         );
+    }
+
+    public PackageImportRequest(Map<UUID, UUID> organizationMapping,
+                                Map<UUID, UUID> projectTypeMapping,
+                                Map<UUID, UUID> confidentialityMapping,
+                                Map<UUID, UUID> fileCategoryMapping,
+                                Map<UUID, UUID> fileTypeMapping,
+                                UUID confidentialityLevelId) {
+        this(organizationMapping, projectTypeMapping, confidentialityMapping,
+                fileCategoryMapping, fileTypeMapping, confidentialityLevelId, null);
     }
 
     public PackageImportRequest {
