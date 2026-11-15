@@ -63,6 +63,7 @@ class PackageFilePreviewServiceTest {
         assertEquals("notes.md", file.originalName());
         assertEquals("text/markdown", file.mimeType());
         assertArrayEquals(content, file.bytes());
+        verify(packages).findById(id);
         verifyNoMoreInteractions(packages);
     }
 
