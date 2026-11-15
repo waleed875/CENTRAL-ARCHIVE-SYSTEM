@@ -99,6 +99,33 @@ public class PdfPreviewService {
         return new PdfInfo(pages);
     }
 
+    /** Render from authenticated package bytes without requiring a persisted FileEntity. */
+    public static PdfInfo inspectBytes(byte[] bytes) {
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            return pageInfo(document);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "تعذر قراءة PDF داخل الحزمة؛ قد يكون مشفرًا أو تالفًا", e);
+        }
+    }
+
+    public static byte[] renderPackagePdfPage(byte[] bytes, int pageNumber) {
+        if (pageNumber < 1 || pageNumber > MAX_PAGES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "رقم صفحة PDF غير صالح");
+        }
+        if (!RENDER_SLOTS.tryAcquire()) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "عدد معاينات PDF كبير حاليًا؛ حاول مجددًا");
+        }
+        try {
+            return renderPdf(bytes, pageNumber);
+        } finally {
+            RENDER_SLOTS.release();
+        }
+    }
+
     static byte[] renderPdf(byte[] bytes, int pageNumber) {
         try (PDDocument document = Loader.loadPDF(bytes)) {
             PdfInfo info = pageInfo(document);
