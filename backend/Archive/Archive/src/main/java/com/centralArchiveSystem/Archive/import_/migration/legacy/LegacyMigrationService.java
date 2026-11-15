@@ -254,8 +254,7 @@ public class LegacyMigrationService {
                     .orElse(null);
             if (previousProjectItem != null
                     && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
-                    && previousProjectItem.getTargetId() != null
-                    && projectRepository.existsById(previousProjectItem.getTargetId())) {
+                    && previousProjectItem.getTargetId() != null) {
                 continue;
             }
 
@@ -315,7 +314,8 @@ public class LegacyMigrationService {
                     .orElse(null);
             if (previousProjectItem != null
                     && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
-                    && previousProjectItem.getTargetId() != null) {
+                    && previousProjectItem.getTargetId() != null
+                    && projectRepository.existsById(previousProjectItem.getTargetId())) {
                 continue;
             }
             if (previousProjectItem != null
