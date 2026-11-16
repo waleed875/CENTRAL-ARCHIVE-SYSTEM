@@ -38,7 +38,6 @@ export function Workspace({section}:{section:string}){
  case "organizations":return <Organizations/>;
  case "projects":return <Projects/>;
  case "files":return <AdvancedFileSearch/>;
- case "files-old":return <><PageHeader title="الملفات والوثائق" description="تدار الملفات ضمن مشاريعها لتبقى البيانات والتصنيفات والسجل محفوظة معًا."/><Panel title="ملفات الأرشيف"><div className="empty"><div><Files size={28}/></div><strong>اعثر على المشروع أولًا</strong><p>افتح مشروعًا لاستعراض جميع ملفاته أو رفع ملفات جديدة، وتنزيلها وتعديل بياناتها.</p><Link className="btn btn-gold" href="/projects">فتح المشاريع <ArrowLeft size={16}/></Link></div></Panel></>;
  case "reviews":return <Projects reviewMode/>;
  case "imports":return <ImportExport mode="imports"/>;
  case "exports":return <ImportExport mode="exports"/>;
