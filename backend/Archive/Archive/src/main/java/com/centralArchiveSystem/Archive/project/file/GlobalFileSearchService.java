@@ -69,8 +69,8 @@ public class GlobalFileSearchService {
                 ext, ext == null ? null : "%." + ext,
                 categoryId, organizationId,
                 projectNo == null ? null : "%" + escapeLike(projectNo.toLowerCase(Locale.ROOT)) + "%",
-                projectYear, from == null ? null : from.atStartOfDay(),
-                to == null ? null : to.plusDays(1).atStartOfDay(),
+                projectYear, from == null ? LocalDate.of(1, 1, 1).atStartOfDay() : from.atStartOfDay(),
+                to == null ? LocalDate.of(9999, 12, 31).atStartOfDay() : to.plusDays(1).atStartOfDay(),
                 includeVersions, maxLevel, sortMode,
                 PageRequest.of(page - 1, Math.max(1, Math.min(100, size))));
     }
