@@ -1,6 +1,7 @@
 "use client";
 
-import {FormEvent,useEffect,useState} from "react";
+import {FormEvent,useEffect,useMemo,useState} from "react";
+import {useRouter,useSearchParams} from "next/navigation";
 import Link from "next/link";
 import {Search,Eye,FolderOpen,RotateCcw} from "lucide-react";
 import {useRemote} from "@/components/hooks";
@@ -33,8 +34,7 @@ function query(state:SearchFilters){
  if(state.page!==1)p.set("page",String(state.page));
  return p;
 }
-function readUrl(){
- const p=new URLSearchParams(window.location.search);
+function readUrl(p:{get(name:string):string|null}){
  const mode=p.get("sort");
  const page=Number(p.get("page")??"1");
  return {
@@ -48,32 +48,28 @@ function readUrl(){
  } satisfies SearchFilters;
 }
 export function AdvancedFileSearch(){
- const [ready,setReady]=useState(false);
- const [draft,setDraft]=useState<SearchFilters>(empty);
- const [filters,setFilters]=useState<SearchFilters>(empty);
+ const router=useRouter();
+ const params=useSearchParams();
+ const filters=useMemo(()=>readUrl(params),[params]);
+ const [draft,setDraft]=useState<SearchFilters>(filters);
  const [preview,setPreview]=useState<ArchiveFile|null>(null);
- useEffect(()=>{
-  const initial=readUrl();
-  setDraft(initial);setFilters(initial);setReady(true);
- },[]);
- useEffect(()=>{
-  if(!ready)return;
-  const suffix=query(filters).toString();
-  const path="/files"+(suffix?"?"+suffix:"");
-  if(window.location.pathname+window.location.search!==path){
-   window.history.replaceState(window.history.state,"",path);
-  }
- },[filters,ready]);
+ useEffect(()=>{setDraft(filters)},[filters]);
+ // The URL is the single source of truth. Searches made from the global
+ // top bar, browser back/forward, and project-return links update results.
+ function navigate(next:SearchFilters){
+  const suffix=query(next).toString();
+  router.push("/files"+(suffix?"?"+suffix:""),{scroll:false});
+ }
  const apiQuery=query(filters);
  apiQuery.set("size","20");
- const endpoint=ready?"/api/v1/files/search?"+apiQuery.toString():null;
+ const endpoint="/api/v1/files/search?"+apiQuery.toString();
  const results=useRemote<PageData<Result>>(endpoint);
  const orgs=useRemote<Organization[]>("/api/v1/organizations/all");
  const categories=useRemote<FileCategory[]>("/api/v1/file-categories/all");
  const update=<K extends keyof SearchFilters>(key:K,value:SearchFilters[K])=>
   setDraft(v=>({...v,[key]:value}));
- const submit=(e:FormEvent)=>{e.preventDefault();setFilters({...draft,page:1});};
- const reset=()=>{setDraft(empty);setFilters(empty);};
+ const submit=(e:FormEvent)=>{e.preventDefault();navigate({...draft,page:1});};
+ const reset=()=>{setDraft(empty);navigate(empty);};
  const back="/files"+(query(filters).toString()?"?"+query(filters).toString():"");
  function previewFile(file:Result){
   setPreview({id:file.id,projectId:file.projectId,originalName:file.originalName,
@@ -148,7 +144,7 @@ export function AdvancedFileSearch(){
      </div></td>
     </tr>)}</tbody></table></div>}
    <Pagination page={filters.page} totalPages={results.data?.totalPages??0}
-    onChange={page=>{setFilters(v=>({...v,page}));setDraft(v=>({...v,page}));}}/>
+    onChange={page=>navigate({...filters,page})}/>
   </Panel></div>
   {preview&&<FilePreview key={preview.id} file={preview} onClose={()=>setPreview(null)}/>}
  </>;
