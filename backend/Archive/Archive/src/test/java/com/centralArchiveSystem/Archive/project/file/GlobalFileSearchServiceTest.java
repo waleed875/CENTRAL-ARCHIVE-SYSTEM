@@ -24,13 +24,16 @@ class GlobalFileSearchServiceTest {
         when(clearance.currentMaxLevelOrder()).thenReturn(2);
         when(repository.searchGlobalFileNames(
                 anyString(), isNull(), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), isNull(), eq(false), eq(2), eq("newest"),
+                isNull(), any(java.time.LocalDateTime.class), any(java.time.LocalDateTime.class),
+                eq(false), eq(2), eq("newest"),
                 any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
         service.search("Report%_!", null, null, null, null, null, null, null,
                 false, "newest", 1, 20);
         verify(repository).searchGlobalFileNames(
                 eq("%report!%!_!!%"), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), isNull(), isNull(), eq(false), eq(2),
+                isNull(), isNull(),
+                eq(LocalDate.of(1,1,1).atStartOfDay()),
+                eq(LocalDate.of(9999,12,31).atStartOfDay()), eq(false), eq(2),
                 eq("newest"), any(Pageable.class));
     }
 
