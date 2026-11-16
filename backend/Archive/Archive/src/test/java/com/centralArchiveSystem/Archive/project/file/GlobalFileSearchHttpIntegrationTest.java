@@ -121,6 +121,38 @@ class GlobalFileSearchHttpIntegrationTest {
     }
 
     @Test
+    void lowClearanceCannotSeeFileOrProjectNamesAboveItsClearance() throws Exception {
+        UUID organization = org();
+        UUID classifiedLevel = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO core.confidentiality_levels(id,code,name,level_order)
+                VALUES (?,?,'Classified for search',990)
+                """, classifiedLevel, "FILE_SEARCH_" + UUID.randomUUID());
+
+        UUID publicProject = project(organization, "PUBLIC-S", "Public files", true, false);
+        file(publicProject, "public-memo.pdf", false);
+        UUID confidentialFile = file(publicProject, "secret-file.pdf", false);
+        jdbc.update("UPDATE project.files SET confidentiality_level_id=? WHERE id=?",
+                classifiedLevel, confidentialFile);
+
+        UUID secretProject = project(organization, "SECRET-S", "Hidden project", true, false);
+        file(secretProject, "secret-project-file.pdf", false);
+        jdbc.update("UPDATE project.projects SET confidentiality_level_id=? WHERE id=?",
+                classifiedLevel, secretProject);
+
+        String auth = "Bearer " + token();
+        mvc.perform(get("/api/v1/files/search").param("fileName", "secret")
+                .header("Authorization", auth))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.total").value(0));
+        mvc.perform(get("/api/v1/files/search")
+                .header("Authorization", auth))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.data[0].originalName").value("public-memo.pdf"));
+    }
+
+    @Test
     void rejectsInvalidExtensionAndRequiresAuthentication() throws Exception {
         mvc.perform(get("/api/v1/files/search")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/files/search").param("extension", "pdf or bad")
