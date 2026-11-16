@@ -145,7 +145,7 @@ class GlobalFileSearchHttpIntegrationTest {
                 .header("Authorization", auth))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.total").value(0));
-        mvc.perform(get("/api/v1/files/search")
+        mvc.perform(get("/api/v1/files/search").param("organizationId", organization.toString())
                 .header("Authorization", auth))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.total").value(1))
