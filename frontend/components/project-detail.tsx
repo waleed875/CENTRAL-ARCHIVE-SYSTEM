@@ -15,7 +15,7 @@ export function ProjectDetail({id}:{id:string}){
  const [fileSearchInput,setFileSearchInput]=useState("");
  const [fileSearch,setFileSearch]=useState("");
  const [filePage,setFilePage]=useState(1);
- useEffect(()=>{const back=new URLSearchParams(window.location.search).get("back");if(back&&back.startsWith("/projects?")&&!back.startsWith("//")&&!back.includes("\\")&&!back.includes("#"))setBackHref(back)},[]);
+ useEffect(()=>{const back=new URLSearchParams(window.location.search).get("back");if(back&&(back.startsWith("/projects?")||back==="/projects"||back.startsWith("/files?")||back==="/files")&&!back.startsWith("//")&&!back.includes("\\")&&!back.includes("#"))setBackHref(back)},[]);
  const project=useRemote<Project>("/api/v1/projects/"+id),members=useRemote<ProjectMember[]>("/api/v1/projects/"+id+"/members"),files=useRemote<PageData<ArchiveFile>>("/api/v1/projects/"+id+"/files"+qs({page:filePage,size:20,search:fileSearch||undefined})),versions=useRemote<Project[]>("/api/v1/projects/"+id+"/versions");
  const user=useRemote<UserInfo>("/api/v1/auth/me"),orgs=useRemote<Organization[]>("/api/v1/organizations/all"),types=useRemote<Reference[]>("/api/v1/project-types/all"),levels=useRemote<Reference[]>("/api/v1/confidentiality-levels/all");
  const cats=useRemote<FileCategory[]>("/api/v1/file-categories/all?isActive=true");
@@ -93,7 +93,7 @@ export function ProjectDetail({id}:{id:string}){
  if(project.loading)return <Loading/>;
  if(project.error)return <><Link className="btn btn-quiet" href={backHref}><ArrowRight size={16}/> العودة للمشاريع</Link><div className="section-gap"><Alert message={project.error}/></div></>;
  if(!p)return <Empty title="المشروع غير موجود"/>;
- return <><div className="detail-header"><Link href={backHref} className="eyebrow" style={{display:"inline-flex",gap:6,alignItems:"center"}}><ArrowRight size={15}/> العودة إلى المشاريع</Link>
+ return <><div className="detail-header"><Link href={backHref} className="eyebrow" style={{display:"inline-flex",gap:6,alignItems:"center"}}><ArrowRight size={15}/> العودة إلى النتائج</Link>
  <div className="detail-heading"><div><h1>{p.name}</h1><div className="detail-meta"><span>{p.projectNumber}</span><span>سنة {p.year}</span><span>الإصدار {p.versionNo??1}</span><Status value={p.status}/></div></div><div className="detail-actions">{canEdit&&<button onClick={openEdit} className="btn btn-outline"><Edit3 size={16}/> تعديل البيانات</button>}{canUpload&&<button onClick={()=>{setCategoryId("");setCategoryIds([]);setTypeId("");setLevelId("");setError("");setMode("upload")}} className="btn btn-outline"><UploadCloud size={16}/> رفع ملف</button>}{isEditor&&["DRAFT","IMPORTED","NEEDS_CORRECTION"].includes(p.status)&&<button disabled={saving} onClick={()=>perform("/submit-for-review")} className="btn btn-gold"><ClipboardCheck size={16}/> إرسال للمراجعة</button>}{isEditor&&["APPROVED","ARCHIVED","REJECTED"].includes(p.status)&&p.isLatestVersion&&<button onClick={createVersion} disabled={saving} className="btn btn-gold"><GitBranch size={16}/> إصدار جديد</button>}{isEditor&&p.status==="REJECTED"&&p.isLatestVersion&&<button onClick={()=>perform("/reopen")} disabled={saving} className="btn btn-outline"><RotateCcw size={16}/> إعادة فتح للتصحيح</button>}</div></div></div>
  {success&&<Alert kind="success" message={success} onClose={()=>setSuccess("")}/>}
  {error&&<Alert message={error} onClose={()=>setError("")}/>}

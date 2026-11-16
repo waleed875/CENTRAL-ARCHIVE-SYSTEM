@@ -7,6 +7,7 @@ const menu=[
 {href:"/",label:"الرئيسية",icon:LayoutDashboard},
 {href:"/organizations",label:"الجهات والمؤسسات",icon:Building2},
 {href:"/projects",label:"المشاريع",icon:FolderKanban},
+{href:"/files",label:"بحث الملفات المتقدم",icon:Search},
 {href:"/reviews",label:"المراجعة والاعتماد",icon:ClipboardCheck},
 {href:"/imports",label:"استيراد الحزم",icon:PackageOpen},
 {href:"/exports",label:"تصدير المشاريع",icon:PackageCheck},
@@ -22,7 +23,7 @@ export function AppShell({children}:{children:React.ReactNode}){
  const showSection=(href:string)=>{if(["/","/organizations","/projects","/files"].includes(href))return true; if(href==="/reviews")return authorized("auditor");if(href==="/imports")return authorized("import_officer");if(href==="/exports")return authorized("export_officer");return authorized("system_admin")};
  useEffect(()=>{let active=true;api<UserInfo>("/api/v1/auth/me").then(v=>{if(active)setUser(v)}).catch(()=>{});return()=>{active=false}},[]);
  useEffect(()=>setOpen(false),[pathname]);
- function submitSearch(e:FormEvent){e.preventDefault();router.push("/projects?searchTerm="+encodeURIComponent(search))}
+ function submitSearch(e:FormEvent){e.preventDefault();router.push("/files?fileName="+encodeURIComponent(search))}
  async function logout(){setSigningOut(true);try{await fetch("/api/session/logout",{method:"POST"})}finally{router.replace("/login");router.refresh()}}
  return <div className="shell"><div className={open?"mobile-scrim visible":"mobile-scrim"} onClick={()=>setOpen(false)}/>
  <aside className={"sidebar"+(open?" open":"")} aria-label="التنقل الرئيسي">
@@ -31,7 +32,7 @@ export function AppShell({children}:{children:React.ReactNode}){
    <div className="sidebar-bottom"><div className="sidebar-glyph">۞</div><div className="side-secure"><ShieldCheck size={17}/><span>مساحة أرشيف مؤمّنة</span></div><small>Central Archive System</small></div>
  </aside>
  <div className="main-column"><header className="topbar"><div className="topbar-start"><button className="icon-button menu-toggle" onClick={()=>setOpen(true)} aria-label="فتح القائمة"><Menu/></button><strong>{menu.find(m=>pathname===m.href)?.label??(pathname.startsWith("/projects/")?"تفاصيل المشروع":"الأرشيف")}</strong></div>
- <form className="top-search" onSubmit={submitSearch}><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="البحث عن مشروع أو وثيقة..." aria-label="البحث في المشاريع"/><kbd>↵</kbd></form>
+ <form className="top-search" onSubmit={submitSearch}><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ابحث باسم الملف..." aria-label="البحث في أسماء الملفات"/><kbd>↵</kbd></form>
  <div className="top-actions">{authorized("central_data_entry")&&<Link className="top-create" href="/projects?create=1"><Plus size={17}/> مشروع جديد</Link>}<div className="profile"><div className="avatar">{user?.fullName?.[0]??"م"}</div><div className="profile-copy"><strong>{user?.fullName??"المستخدم"}</strong><span>{user?.roles?.includes("system_admin")?"مدير النظام":user?.organization??"مستخدم الأرشيف"}</span></div></div><button className="icon-button logout" title="تسجيل الخروج" onClick={logout} disabled={signingOut} aria-label="تسجيل الخروج"><LogOut size={19}/></button></div>
  </header><main className="page-content">{children}</main><footer className="footer">النظام المركزي للأرشيف <span>•</span> بيئة عمل موحّدة للوثائق والمشاريع</footer></div></div>
 }

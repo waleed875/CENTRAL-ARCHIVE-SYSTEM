@@ -7,6 +7,7 @@ import type{DashboardStats,Project,PageData,UserInfo}from"@/lib/types";
 import {dateLabel}from"@/lib/types";
 import {Organizations}from"@/components/organizations";
 import {Projects}from"@/components/projects";
+import {AdvancedFileSearch} from "@/components/advanced-file-search";
 import {ImportExport,Migration}from"@/components/operations";
 import {AdminSection}from"@/components/admin";
 function Dashboard(){
@@ -36,7 +37,7 @@ export function Workspace({section}:{section:string}){
  case "dashboard":return <Dashboard/>;
  case "organizations":return <Organizations/>;
  case "projects":return <Projects/>;
- case "files":return <><PageHeader title="الملفات والوثائق" description="تدار الملفات ضمن مشاريعها لتبقى البيانات والتصنيفات والسجل محفوظة معًا."/><Panel title="ملفات الأرشيف"><div className="empty"><div><Files size={28}/></div><strong>اعثر على المشروع أولًا</strong><p>افتح مشروعًا لاستعراض جميع ملفاته أو رفع ملفات جديدة، وتنزيلها وتعديل بياناتها.</p><Link className="btn btn-gold" href="/projects">فتح المشاريع <ArrowLeft size={16}/></Link></div></Panel></>;
+ case "files":return <AdvancedFileSearch/>;
  case "reviews":return <Projects reviewMode/>;
  case "imports":return <ImportExport mode="imports"/>;
  case "exports":return <ImportExport mode="exports"/>;
