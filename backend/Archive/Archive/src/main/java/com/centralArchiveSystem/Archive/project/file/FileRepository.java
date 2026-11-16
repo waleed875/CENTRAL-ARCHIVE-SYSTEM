@@ -98,8 +98,8 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
           AND (:organizationId IS NULL OR p.organizationId = :organizationId)
           AND (:projectNumber IS NULL OR LOWER(p.projectNumber) LIKE :projectNumber ESCAPE '!')
           AND (:projectYear IS NULL OR p.year = :projectYear)
-          AND (:startDate IS NULL OR f.createdAt >= :startDate)
-          AND (:endDateExclusive IS NULL OR f.createdAt < :endDateExclusive)
+          AND f.createdAt >= :startDate
+          AND f.createdAt < :endDateExclusive
           AND """ + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE;
 
     @Query(value = """
