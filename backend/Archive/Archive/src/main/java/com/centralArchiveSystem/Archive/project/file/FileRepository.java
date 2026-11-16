@@ -1,5 +1,8 @@
 package com.centralArchiveSystem.Archive.project.file;
 
+import com.centralArchiveSystem.Archive.core.organization.Organization;
+import com.centralArchiveSystem.Archive.project.filecategory.FileCategory;
+import com.centralArchiveSystem.Archive.project.project.Project;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -74,6 +77,58 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     List<Object[]> countAccessibleActiveByProjectIds(
             @Param("projectIds") java.util.Collection<UUID> projectIds,
             @Param("maxLevelOrder") Integer maxLevelOrder);
+
+    /**
+     * Global filename search: never matches project names. Clearance and active
+     * project/file predicates are applied in the database before both page and
+     * total count are computed. Escaped LIKE uses '!' as its escape character.
+     */
+    String GLOBAL_FILE_WHERE = """
+        FROM FileEntity f
+        JOIN Project p ON p.id = f.projectId
+        JOIN Organization o ON o.id = p.organizationId
+        LEFT JOIN FileCategory c ON c.id = f.categoryId
+        WHERE f.deletedAt IS NULL AND UPPER(f.status) = 'ACTIVE'
+          AND p.discardedAt IS NULL
+          AND (:includeVersions = true OR p.isLatestVersion = true)
+          AND (:namePattern IS NULL OR LOWER(f.originalName) LIKE :namePattern ESCAPE '!')
+          AND (:extension IS NULL OR LOWER(f.extension) = :extension
+               OR LOWER(f.originalName) LIKE :extensionPattern ESCAPE '!')
+          AND (:categoryId IS NULL OR f.categoryId = :categoryId OR :categoryId MEMBER OF f.categoryIds)
+          AND (:organizationId IS NULL OR p.organizationId = :organizationId)
+          AND (:projectNumber IS NULL OR LOWER(p.projectNumber) LIKE :projectNumber ESCAPE '!')
+          AND (:projectYear IS NULL OR p.year = :projectYear)
+          AND (:startDate IS NULL OR f.createdAt >= :startDate)
+          AND (:endDateExclusive IS NULL OR f.createdAt < :endDateExclusive)
+          AND """ + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE;
+
+    @Query(value = """
+        SELECT new com.centralArchiveSystem.Archive.project.file.dto.GlobalFileSearchResult(
+          f.id, f.projectId, f.originalName, f.extension, f.mimeType, f.sizeBytes,
+          f.createdAt, f.categoryId, c.name, p.name, p.projectNumber, p.year,
+          p.organizationId, o.name, p.versionNo, p.isLatestVersion)
+        """ + GLOBAL_FILE_WHERE + """
+        ORDER BY
+          CASE WHEN :sortMode = 'name' THEN LOWER(f.originalName) ELSE NULL END ASC,
+          CASE WHEN :sortMode = 'oldest' THEN f.createdAt ELSE NULL END ASC,
+          CASE WHEN :sortMode = 'newest' THEN f.createdAt ELSE NULL END DESC,
+          f.id ASC
+        """,
+        countQuery = "SELECT COUNT(f.id) " + GLOBAL_FILE_WHERE)
+    Page<com.centralArchiveSystem.Archive.project.file.dto.GlobalFileSearchResult> searchGlobalFileNames(
+            @Param("namePattern") String namePattern,
+            @Param("extension") String extension,
+            @Param("extensionPattern") String extensionPattern,
+            @Param("categoryId") UUID categoryId,
+            @Param("organizationId") UUID organizationId,
+            @Param("projectNumber") String projectNumber,
+            @Param("projectYear") Integer projectYear,
+            @Param("startDate") java.time.LocalDateTime startDate,
+            @Param("endDateExclusive") java.time.LocalDateTime endDateExclusive,
+            @Param("includeVersions") boolean includeVersions,
+            @Param("maxLevelOrder") Integer maxLevelOrder,
+            @Param("sortMode") String sortMode,
+            Pageable pageable);
 
     List<FileEntity> findByDeletedAtIsNotNull();
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
