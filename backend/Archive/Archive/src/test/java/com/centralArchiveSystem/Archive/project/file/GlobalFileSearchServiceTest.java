@@ -37,6 +37,7 @@ class GlobalFileSearchServiceTest {
     @Test
     void combinesFiltersWithDateBoundsAndClampsPageSize() {
         UUID cat = UUID.randomUUID(), org = UUID.randomUUID();
+        when(clearance.currentMaxLevelOrder()).thenReturn(null);
         service.search("وثيقة", ".PDF", cat, org, "P_25", 2025,
                 LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31),
                 true, "oldest", 3, 900);
