@@ -72,6 +72,9 @@ public class FileEntity {
     @Column(name = "source_reference")
     private String sourceReference;
 
+    @Column(name = "quarantine_reason")
+    private String quarantineReason;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -185,6 +188,9 @@ public class FileEntity {
 
     public String getSourceReference() { return sourceReference; }
     public void setSourceReference(String sourceReference) { this.sourceReference = sourceReference; }
+
+    public String getQuarantineReason() { return quarantineReason; }
+    public void setQuarantineReason(String quarantineReason) { this.quarantineReason = quarantineReason; }
 
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }

@@ -111,6 +111,7 @@ public class ExportService {
             long bytes = 0;
             for (Project project : entry.getValue()) {
                 for (FileEntity file : fileRepository.findByProjectIdAndDeletedAtIsNull(project.getId())) {
+                if (!"ACTIVE".equalsIgnoreCase(file.getStatus())) continue;
                     confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
                     filesCount++;
                     bytes += file.getSizeBytes() == null ? 0 : file.getSizeBytes();
@@ -245,6 +246,7 @@ public class ExportService {
 
             ArrayNode filesNode = projectNode.putArray("files");
             for (FileEntity file : fileRepository.findByProjectIdAndDeletedAtIsNull(projectId)) {
+                if (!"ACTIVE".equalsIgnoreCase(file.getStatus())) continue;
                 confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
 
                 String checksum = file.getChecksumSha256();
@@ -505,6 +507,7 @@ public class ExportService {
                     FileEntity file = fileRepository.findById(fileId)
                             .filter(candidate -> candidate.getProjectId().equals(projectId))
                             .filter(candidate -> candidate.getDeletedAt() == null)
+                            .filter(candidate -> "ACTIVE".equalsIgnoreCase(candidate.getStatus()))
                             .orElseThrow(() -> new IllegalStateException(
                                     "Source file not found while creating package: " + fileId));
 

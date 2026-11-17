@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useState,FormEvent} from "react";
 import Link from "next/link";import {usePathname,useRouter} from "next/navigation";
-import {LayoutDashboard,Building2,FolderKanban,ClipboardCheck,PackageOpen,PackageCheck,DatabaseZap,UsersRound,ScrollText,Settings2,LibraryBig,Search,LogOut,Menu,X,Plus,ShieldCheck} from "lucide-react";
+import {LayoutDashboard,Building2,FolderKanban,ClipboardCheck,PackageOpen,PackageCheck,DatabaseZap,UsersRound,ScrollText,Settings2,LibraryBig,Search,LogOut,Menu,X,Plus,ShieldCheck,ShieldAlert} from "lucide-react";
 import {api} from "@/lib/api";import type{UserInfo}from "@/lib/types";
 const menu=[
 {href:"/",label:"الرئيسية",icon:LayoutDashboard},
@@ -12,6 +12,7 @@ const menu=[
 {href:"/imports",label:"استيراد الحزم",icon:PackageOpen},
 {href:"/exports",label:"تصدير المشاريع",icon:PackageCheck},
 {href:"/migration",label:"ترحيل البيانات",icon:DatabaseZap},
+{href:"/quarantine",label:"الملفات المعزولة",icon:ShieldAlert},
 {href:"/users",label:"المستخدمون",icon:UsersRound},
 {href:"/audit",label:"سجل التدقيق",icon:ScrollText},
 {href:"/settings",label:"الإعدادات",icon:Settings2}

@@ -39,6 +39,16 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
               WHERE pc.id=p.confidentialityLevelId AND pc.levelOrder <= :maxLevelOrder))))
         """;
 
+    String QUARANTINE_WHERE = """
+        FROM FileEntity f JOIN Project p ON p.id = f.projectId
+        WHERE f.status = 'QUARANTINED' AND f.sourceType = 'MIGRATION'
+          AND f.deletedAt IS NULL AND p.discardedAt IS NULL AND
+        """ + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE;
+
+    @Query(value = "SELECT f " + QUARANTINE_WHERE,
+           countQuery = "SELECT COUNT(f) " + QUARANTINE_WHERE)
+    Page<FileEntity> findAccessibleQuarantined(@Param("maxLevelOrder") Integer maxLevelOrder,
+                                               Pageable pageable);
     @Query("""
         SELECT f FROM FileEntity f WHERE f.projectId=:projectId
           AND ((UPPER(:status)='DELETED' AND f.deletedAt IS NOT NULL)
@@ -56,13 +66,13 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
             @Param("typeId") UUID typeId, @Param("status") String status, @Param("search") String search,
             @Param("maxLevelOrder") Integer maxLevelOrder, Pageable pageable);
 
-    @Query("SELECT COUNT(f) FROM FileEntity f WHERE f.deletedAt IS NULL AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
+    @Query("SELECT COUNT(f) FROM FileEntity f WHERE f.deletedAt IS NULL AND f.status = 'ACTIVE' AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
     long countAccessibleActive(@Param("maxLevelOrder") Integer maxLevelOrder);
 
-    @Query("SELECT COALESCE(SUM(f.sizeBytes),0) FROM FileEntity f WHERE f.deletedAt IS NULL AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
+    @Query("SELECT COALESCE(SUM(f.sizeBytes),0) FROM FileEntity f WHERE f.deletedAt IS NULL AND f.status = 'ACTIVE' AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
     long sumAccessibleActiveSize(@Param("maxLevelOrder") Integer maxLevelOrder);
 
-    @Query("SELECT f FROM FileEntity f WHERE f.deletedAt IS NULL AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
+    @Query("SELECT f FROM FileEntity f WHERE f.deletedAt IS NULL AND f.status = 'ACTIVE' AND " + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE)
     Page<FileEntity> findAccessibleRecent(@Param("maxLevelOrder") Integer maxLevelOrder, Pageable pageable);
 
     /** Batch count of files actually visible to the caller, keyed by project ID. */

@@ -8,6 +8,7 @@ import {dateLabel}from"@/lib/types";
 import {Organizations}from"@/components/organizations";
 import {Projects}from"@/components/projects";
 import {AdvancedFileSearch} from "@/components/advanced-file-search";
+import {QuarantinedFiles} from "@/components/quarantined-files";
 import {ImportExport,Migration}from"@/components/operations";
 import {AdminSection}from"@/components/admin";
 function Dashboard(){
@@ -38,6 +39,7 @@ export function Workspace({section}:{section:string}){
  case "organizations":return <Organizations/>;
  case "projects":return <Projects/>;
  case "files":return <AdvancedFileSearch/>;
+ case "quarantine":return <QuarantinedFiles/>;
  case "reviews":return <Projects reviewMode/>;
  case "imports":return <ImportExport mode="imports"/>;
  case "exports":return <ImportExport mode="exports"/>;

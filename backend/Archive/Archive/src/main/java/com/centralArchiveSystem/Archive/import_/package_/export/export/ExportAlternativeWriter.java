@@ -91,6 +91,7 @@ public class ExportAlternativeWriter {
                     FileEntity entity = files.findById(fileId)
                             .filter(source -> source.getProjectId().equals(projectId))
                             .filter(source -> source.getDeletedAt() == null)
+                            .filter(source -> "ACTIVE".equalsIgnoreCase(source.getStatus()))
                             .orElseThrow(() -> new IllegalStateException("Source export file disappeared"));
                     String name = safeName(file.path("original_name").asText("document"));
                     String entry = "projects/" + projectId + "/version-" + version + "/"

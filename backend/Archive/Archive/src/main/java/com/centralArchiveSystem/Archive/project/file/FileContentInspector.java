@@ -29,16 +29,23 @@ public final class FileContentInspector {
             "zip", "docx", "xlsx", "pptx", "odt", "ods", "odp"
     );
     private static final Set<String> OLE_EXTENSIONS = Set.of(
-            "doc", "xls", "ppt", "msg"
+            "doc", "xls", "ppt", "msg", "vsd"
     );
     private static final Set<String> TEXT_EXTENSIONS = Set.of(
-            "txt", "csv", "md", "json", "xml", "html", "htm", "svg", "dxf", "eml", "sql"
+            "txt", "csv", "md", "json", "xml", "html", "htm", "svg", "dxf", "eml", "sql", "css", "js"
     );
 
     /**
      * RAR is not a ZIP container, so it is matched on its own signature instead of going through
      * the ZIP branch. RAR 4.x ends the marker block at 0x00, RAR 5.x continues with 0x01 0x00.
      */
+    // These legacy engineering/backup formats have no single trustworthy file
+    // signature. They are permitted ONLY for historical migration as opaque
+    // downloads, never executable or inline-previewed, and remain subject to
+    // the executable-header rejection below.
+    private static final Set<String> LEGACY_OPAQUE_EXTENSIONS = Set.of(
+            "dbk", "dsn", "opj", "mdl", "dat");
+
     private static final byte[] RAR4_SIGNATURE = {
             0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00
     };
@@ -78,6 +85,9 @@ public final class FileContentInspector {
             Map.entry("dxf", "application/dxf"),
             Map.entry("eml", "message/rfc822"),
             Map.entry("sql", "application/sql"),
+            Map.entry("css", "text/css"),
+            Map.entry("js", "text/javascript"),
+            Map.entry("vsd", "application/vnd.visio"),
             Map.entry("rar", "application/vnd.rar"),
             Map.entry("rtf", "application/rtf"),
             Map.entry("dwg", "application/acad"),
@@ -212,6 +222,58 @@ public final class FileContentInspector {
         }
 
         return MIME_TYPES.getOrDefault(expected, "application/octet-stream");
+    }
+
+    /**
+     * Migration-only policy for opaque legacy engineering and backup artifacts.
+     * These are retained as-is in MinIO with octet-stream MIME. Unknown types,
+     * executable content and suspicious signatures stay blocked. This does not
+     * weaken regular user uploads or offline package imports.
+     */
+    public static String validateLegacyEntry(byte[] prefix, String expectedExtension,
+                                             Path spool) throws IOException {
+        String expected = normalizeExtension(expectedExtension);
+        if (expected != null && LEGACY_OPAQUE_EXTENSIONS.contains(expected)) {
+            if (prefix == null || prefix.length == 0) {
+                throw new IllegalArgumentException("File content is empty");
+            }
+            rejectExecutableContent(prefix);
+            // No renderer or parser is run for opaque formats, reducing attack
+            // surface. A byte-preserving download is the only supported access.
+            return "application/octet-stream";
+        }
+        return validatePackageEntry(prefix, expectedExtension, spool);
+    }
+
+    /**
+     * Historical originals must not be lost just because their extension is
+     * unknown, their signature mismatches, or they contain executable bytes.
+     * Quarantined objects are inert and excluded from ordinary file endpoints.
+     * This method is ONLY for the trusted legacy migration pipeline.
+     */
+    public record LegacyAssessment(String mimeType, boolean quarantined, String reason) {}
+
+    public static LegacyAssessment assessLegacyEntry(byte[] prefix, String extension,
+                                                     Path spool) {
+        if (prefix == null || prefix.length == 0) {
+            return new LegacyAssessment("application/octet-stream", true, "Empty legacy content");
+        }
+        String ext = normalizeExtension(extension);
+        if (ext == null || Set.of("exe", "dll", "com", "scr", "bat", "cmd", "ps1",
+                "vbs", "msi", "jar", "sh", "app", "so", "elf").contains(ext)) {
+            return new LegacyAssessment("application/octet-stream", true,
+                    "Executable or unidentified file extension");
+        }
+        try {
+            String detected = validateLegacyEntry(prefix, ext, spool);
+            return new LegacyAssessment(detected, false, null);
+        } catch (IllegalArgumentException | IOException rejected) {
+            String reason = rejected.getMessage();
+            if (reason == null || reason.isBlank()) reason = "Unknown or unsafe legacy file content";
+            // Avoid storing unbounded exception strings into file metadata.
+            if (reason.length() > 300) reason = reason.substring(0, 300);
+            return new LegacyAssessment("application/octet-stream", true, reason);
+        }
     }
 
     public static boolean hasZipSignature(byte[] prefix) {

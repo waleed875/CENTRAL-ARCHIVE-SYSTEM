@@ -32,6 +32,20 @@ class FilePreviewServiceTest {
     }
 
     @Test
+    void codeFilesAreInertTextAndEngineeringFormatsAreDownloadOnly() {
+        assertEquals(FilePreviewService.Kind.TEXT,
+                FilePreviewService.classify("theme.css", "text/css"));
+        assertEquals(FilePreviewService.Kind.TEXT,
+                FilePreviewService.classify("diagram.js", "text/javascript"));
+        assertEquals(FilePreviewService.Kind.UNSUPPORTED,
+                FilePreviewService.classify("drawing.vsd", "application/vnd.visio"));
+        assertEquals(FilePreviewService.Kind.UNSUPPORTED,
+                FilePreviewService.classify("board.dsn", "application/octet-stream"));
+        assertEquals(FilePreviewService.Kind.UNSUPPORTED,
+                FilePreviewService.classify("backup.dbk", "application/octet-stream"));
+    }
+
+    @Test
     void officePreviewRequiresMatchingTypeAndUnsupportedLegacyFilesStayDownloadOnly() {
         assertEquals(FilePreviewService.Kind.OFFICE,
                 FilePreviewService.classify("letter.docx",

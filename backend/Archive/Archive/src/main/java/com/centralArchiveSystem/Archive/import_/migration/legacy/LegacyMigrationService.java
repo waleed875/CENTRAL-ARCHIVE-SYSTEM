@@ -457,10 +457,17 @@ public class LegacyMigrationService {
                 return null;
             });
             futures.add(future);
+            // Limit pending tasks. An office with many projects must not
+            // enqueue every migration as a CompletableFuture before the four
+            // workers can finish the first batch, or it can exhaust heap.
+            if (futures.size() >= 16) {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                futures.clear();
+            }
         }
 
-        // Each project task handles its own exceptional completion above. Joining the aggregate
-        // now waits for every project and does not let one failed project hide the remaining work.
+        // Every task captures its own failure above. Drain the last bounded
+        // batch before returning so the legacy connection can be closed safely.
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info(
                 "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
@@ -532,7 +539,9 @@ public class LegacyMigrationService {
                 .orElse(null);
 
         connection.jdbc().query(
-                "SELECT idfile, filename, filesuffix, filebinary FROM "
+                // Only select metadata: retrieving BYTEA via a JDBC ResultSet can allocate
+                // the whole Base64 payload on the heap even with getBinaryStream().
+                "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
                         + LEGACY_DB_SCHEMA
                         + ".tbl_files WHERE idproject = ? ORDER BY idfile",
                 preparedStatement -> {
@@ -570,7 +579,12 @@ public class LegacyMigrationService {
                     if (cancellation.isCancellationRequested()) {
                         return;
                     }
-                    InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
+                    // Fetch the potentially large BYTEA through separate bounded substring
+                    // queries. Four metadata cursors plus four chunk readers fit the legacy
+                    // connection pool (8) without loading whole files into Java memory.
+                    long encodedLength = resultSet.getLong("encoded_length");
+                    InputStream encodedBase64 = resultSet.wasNull() ? null :
+                            new LegacyByteaInputStream(connection.jdbc(), idfile, encodedLength);
                     try {
                             migrateOneFile(
                                     connection,
@@ -611,7 +625,7 @@ public class LegacyMigrationService {
                 || item.getTargetId() == null) return false;
         return fileRepository.findById(item.getTargetId())
                 .filter(file -> file.getDeletedAt() == null
-                        && "ACTIVE".equalsIgnoreCase(file.getStatus())
+                        && ("ACTIVE".equalsIgnoreCase(file.getStatus()) || "QUARANTINED".equalsIgnoreCase(file.getStatus()))
                         && (expectedProjectId == null || expectedProjectId.equals(file.getProjectId())))
                 .isPresent();
     }
@@ -654,8 +668,8 @@ public class LegacyMigrationService {
             );
             spool = prepared.path();
 
-            String storedName = UUID.randomUUID() + "." + prepared.extension();
-            objectKey = minioPrefix + "/" + targetProjectId + "/" + storedName;
+            String storedName = UUID.randomUUID() + (prepared.quarantined() ? ".bin" : "." + prepared.extension());
+            objectKey = minioPrefix + (prepared.quarantined() ? "/quarantine" : "/files") + "/" + targetProjectId + "/" + storedName;
 
             try (InputStream uploadInput = Files.newInputStream(spool)) {
                 minioService.uploadRaw(
@@ -692,7 +706,8 @@ public class LegacyMigrationService {
             file.setMimeType(prepared.mimeType());
             file.setSizeBytes(prepared.sizeBytes());
             file.setChecksumSha256(prepared.checksumSha256());
-            file.setStatus("ACTIVE");
+            file.setStatus(prepared.quarantined() ? "QUARANTINED" : "ACTIVE");
+            file.setQuarantineReason(prepared.quarantineReason());
             file.setSourceType("MIGRATION");
             file.setSourceReference(connection.fileReference(idfile));
 
@@ -794,23 +809,17 @@ public class LegacyMigrationService {
                 }
             }
 
-            if (totalBytes == 0) {
-                throw new IllegalArgumentException("Legacy file content is empty");
-            }
-
             byte[] actualPrefix = java.util.Arrays.copyOf(prefix, prefixLength);
-            String mimeType = FileContentInspector.validatePackageEntry(
-                    actualPrefix,
-                    extension,
-                    spool
-            );
-
+            FileContentInspector.LegacyAssessment assessment =
+                    FileContentInspector.assessLegacyEntry(actualPrefix, extension, spool);
+            String conflict = extensionConflict(suffix, originalName);
+            if (conflict != null) {
+                assessment = new FileContentInspector.LegacyAssessment(
+                        "application/octet-stream", true, conflict);
+            }
             return new PreparedLegacyFile(
-                    spool,
-                    totalBytes,
-                    toHex(digest.digest()),
-                    mimeType,
-                    extension
+                    spool, totalBytes, toHex(digest.digest()), assessment.mimeType(),
+                    extension, assessment.quarantined(), assessment.reason()
             );
         } catch (Exception e) {
             Files.deleteIfExists(spool);
@@ -826,28 +835,18 @@ public class LegacyMigrationService {
             candidate = nameExtension;
         }
 
-        if (candidate == null || candidate.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Legacy file has no resolvable extension: " + originalName);
-        }
+        if (candidate == null || candidate.isBlank()) return "bin";
+        String normalized = candidate.strip().toLowerCase(java.util.Locale.ROOT);
+        while (normalized.startsWith(".")) normalized = normalized.substring(1);
+        // Never use untrusted legacy suffix characters in temp-file names.
+        return normalized.matches("[a-z0-9]{1,20}") ? normalized : "bin";
+    }
 
-        String normalized = candidate.trim().toLowerCase(java.util.Locale.ROOT);
-        while (normalized.startsWith(".")) {
-            normalized = normalized.substring(1);
-        }
-
-        if (normalized.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Legacy file has no resolvable extension: " + originalName);
-        }
-
-        if (nameExtension != null
-                && !FileContentInspector.extensionsEquivalent(normalized, nameExtension)) {
-            throw new IllegalArgumentException(
-                    "Legacy file suffix does not match original filename: " + originalName);
-        }
-
-        return normalized;
+    private static String extensionConflict(String suffix, String originalName) {
+        String nameExtension = FileContentInspector.extensionFromName(originalName);
+        if (suffix == null || suffix.isBlank() || nameExtension == null) return null;
+        return FileContentInspector.extensionsEquivalent(suffix, nameExtension)
+                ? null : "Legacy filename and stored suffix do not match";
     }
 
     private static String toHex(byte[] hash) {
@@ -863,7 +862,9 @@ public class LegacyMigrationService {
             long sizeBytes,
             String checksumSha256,
             String mimeType,
-            String extension
+            String extension,
+            boolean quarantined,
+            String quarantineReason
     ) {}
 
     // ------------------------------------------------------------------
