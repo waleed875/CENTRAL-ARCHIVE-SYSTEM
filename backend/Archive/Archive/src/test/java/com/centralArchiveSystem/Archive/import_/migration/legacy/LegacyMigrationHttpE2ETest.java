@@ -7,6 +7,8 @@ import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceReposit
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceType;
 import com.centralArchiveSystem.Archive.project.file.FileRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
+import com.centralArchiveSystem.Archive.project.file.FileService;
+import com.centralArchiveSystem.Archive.project.file.QuarantineService;
 import com.centralArchiveSystem.Archive.project.project.Project;
 import com.centralArchiveSystem.Archive.project.project.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,6 +100,8 @@ class LegacyMigrationHttpE2ETest {
     @Autowired ProjectRepository projectRepository;
     @Autowired FileRepository fileRepository;
     @Autowired MinioService minioService;
+    @Autowired FileService fileService;
+    @Autowired QuarantineService quarantineService;
 
     private int legacySideId;
     private int legacyProjectId;
@@ -274,6 +278,48 @@ class LegacyMigrationHttpE2ETest {
             assertNotNull(file.getProjectId());
             try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
                 assertArrayEquals(source, input.readAllBytes());
+            }
+        }
+    }
+
+    @Test
+    void preservesExecutableLegacyBytesAsLinkedQuarantineAndSkipsRerun() throws Exception {
+        byte[] executable = {'M', 'Z', 0, 1, 5, 7, 9};
+        jdbcTemplate.update("UPDATE public.tbl_files SET filename=?, filesuffix=?, filebinary=? WHERE idfile=?",
+                "legacy-app.exe", ".exe",
+                Base64.getEncoder().encodeToString(executable), legacyFileId);
+
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var result = migrationService.migrateFiles(connection, workers);
+                assertEquals(1, result.done());
+                assertEquals(0, result.failed());
+            }
+            UUID id = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + legacyFileId
+            ).orElseThrow().getTargetId();
+            var file = fileRepository.findById(id).orElseThrow();
+            assertEquals("QUARANTINED", file.getStatus());
+            assertEquals("application/octet-stream", file.getMimeType());
+            assertNotNull(file.getQuarantineReason());
+            assertTrue(file.getObjectKey().contains("/quarantine/"));
+            assertNotNull(file.getProjectId());
+            assertEquals(sha256(executable), file.getChecksumSha256());
+            try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
+                assertArrayEquals(executable, input.readAllBytes());
+            }
+            assertThrows(jakarta.persistence.EntityNotFoundException.class,
+                    () -> fileService.getFileMetadata(id));
+            assertEquals(id, quarantineService.get(id).id());
+
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var repeat = migrationService.migrateFiles(connection, workers);
+                assertEquals(0, repeat.done());
+                assertEquals(1, repeat.skipped());
             }
         }
     }
