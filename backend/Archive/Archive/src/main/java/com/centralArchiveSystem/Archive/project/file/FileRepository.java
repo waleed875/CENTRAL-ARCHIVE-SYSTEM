@@ -20,7 +20,16 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     List<FileEntity> findByProjectId(UUID projectId);
     List<FileEntity> findByCategoryId(UUID categoryId);
     List<FileEntity> findByTypeId(UUID typeId);
-    Page<FileEntity> findByStatusAndSourceTypeAndDeletedAtIsNull(String status, String sourceType, Pageable pageable);
+    String QUARANTINE_WHERE = """
+        FROM FileEntity f JOIN Project p ON p.id = f.projectId
+        WHERE f.status = 'QUARANTINED' AND f.sourceType = 'MIGRATION'
+          AND f.deletedAt IS NULL AND p.discardedAt IS NULL AND
+        """ + FILE_CLEARANCE + " AND " + PROJECT_CLEARANCE;
+
+    @Query(value = "SELECT f " + QUARANTINE_WHERE,
+           countQuery = "SELECT COUNT(f) " + QUARANTINE_WHERE)
+    Page<FileEntity> findAccessibleQuarantined(@Param("maxLevelOrder") Integer maxLevelOrder,
+                                               Pageable pageable);
     long countByProjectIdAndDeletedAtIsNull(UUID projectId);
     /** Includes soft-deleted history so draft deletion cannot erase archived file records. */
     long countByProjectId(UUID projectId);
