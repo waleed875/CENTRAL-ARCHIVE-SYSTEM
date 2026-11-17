@@ -245,6 +245,37 @@ public final class FileContentInspector {
         return validatePackageEntry(prefix, expectedExtension, spool);
     }
 
+    /**
+     * Historical originals must not be lost just because their extension is
+     * unknown, their signature mismatches, or they contain executable bytes.
+     * Quarantined objects are inert and excluded from ordinary file endpoints.
+     * This method is ONLY for the trusted legacy migration pipeline.
+     */
+    public record LegacyAssessment(String mimeType, boolean quarantined, String reason) {}
+
+    public static LegacyAssessment assessLegacyEntry(byte[] prefix, String extension,
+                                                     Path spool) {
+        if (prefix == null || prefix.length == 0) {
+            return new LegacyAssessment("application/octet-stream", true, "Empty legacy content");
+        }
+        String ext = normalizeExtension(extension);
+        if (ext == null || Set.of("exe", "dll", "com", "scr", "bat", "cmd", "ps1",
+                "vbs", "msi", "jar", "sh", "app", "so", "elf").contains(ext)) {
+            return new LegacyAssessment("application/octet-stream", true,
+                    "Executable or unidentified file extension");
+        }
+        try {
+            String detected = validateLegacyEntry(prefix, ext, spool);
+            return new LegacyAssessment(detected, false, null);
+        } catch (IllegalArgumentException | IOException rejected) {
+            String reason = rejected.getMessage();
+            if (reason == null || reason.isBlank()) reason = "Unknown or unsafe legacy file content";
+            // Avoid storing unbounded exception strings into file metadata.
+            if (reason.length() > 300) reason = reason.substring(0, 300);
+            return new LegacyAssessment("application/octet-stream", true, reason);
+        }
+    }
+
     public static boolean hasZipSignature(byte[] prefix) {
         return prefix != null && isZip(prefix);
     }
