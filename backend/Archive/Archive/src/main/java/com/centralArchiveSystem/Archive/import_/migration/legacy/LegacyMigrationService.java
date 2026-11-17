@@ -532,7 +532,9 @@ public class LegacyMigrationService {
                 .orElse(null);
 
         connection.jdbc().query(
-                "SELECT idfile, filename, filesuffix, filebinary FROM "
+                // Only select metadata: retrieving BYTEA via a JDBC ResultSet can allocate
+                // the whole Base64 payload on the heap even with getBinaryStream().
+                "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
                         + LEGACY_DB_SCHEMA
                         + ".tbl_files WHERE idproject = ? ORDER BY idfile",
                 preparedStatement -> {
@@ -570,7 +572,12 @@ public class LegacyMigrationService {
                     if (cancellation.isCancellationRequested()) {
                         return;
                     }
-                    InputStream encodedBase64 = resultSet.getBinaryStream("filebinary");
+                    // Fetch the potentially large BYTEA through separate bounded substring
+                    // queries. Four metadata cursors plus four chunk readers fit the legacy
+                    // connection pool (8) without loading whole files into Java memory.
+                    long encodedLength = resultSet.getLong("encoded_length");
+                    InputStream encodedBase64 = resultSet.wasNull() ? null :
+                            new LegacyByteaInputStream(connection.jdbc(), idfile, encodedLength);
                     try {
                             migrateOneFile(
                                     connection,
