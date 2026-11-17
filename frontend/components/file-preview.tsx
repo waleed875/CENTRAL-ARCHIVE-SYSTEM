@@ -26,7 +26,7 @@ export function previewType(file:ArchiveFile):PreviewType {
   if(["mp4","webm","mov"].includes(ext)&&(mime.startsWith("video/")||!mime))return "video";
   if(["docx","xlsx","pptx"].includes(ext))return "office";
   if(ext==="md")return "markdown";
-  if(["txt","csv","md","json","xml","sql","html","htm","svg"].includes(ext))return "text";
+  if(["txt","csv","md","json","xml","sql","html","htm","svg","css","js"].includes(ext))return "text";
   return "unsupported";
 }
 function errorForStatus(status:number){
