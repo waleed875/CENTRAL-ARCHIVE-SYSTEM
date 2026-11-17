@@ -45,7 +45,7 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
                COUNT(*) FILTER (
                  WHERE i.status = 'DONE' AND (
                    i.target_id IS NULL OR f.id IS NULL OR p.id IS NULL
-                   OR f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE'
+                   OR f.deleted_at IS NOT NULL OR UPPER(f.status) NOT IN ('ACTIVE', 'QUARANTINED')
                  ))
         FROM import.legacy_migration_items i
         LEFT JOIN project.files f ON f.id = i.target_id
@@ -62,7 +62,7 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
                  WHEN i.target_id IS NULL THEN 'Missing target_id'
                  WHEN f.id IS NULL THEN 'File metadata row is missing'
                  WHEN p.id IS NULL THEN 'Target project row is missing'
-                 WHEN f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE'
+                 WHEN f.deleted_at IS NOT NULL OR UPPER(f.status) NOT IN ('ACTIVE', 'QUARANTINED')
                    THEN 'File is deleted or inactive'
                  ELSE 'Unknown'
                END
@@ -71,7 +71,7 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
         LEFT JOIN project.projects p ON p.id = f.project_id
         WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
           AND (i.status <> 'DONE' OR i.target_id IS NULL OR f.id IS NULL
-               OR p.id IS NULL OR f.deleted_at IS NOT NULL OR UPPER(f.status) <> 'ACTIVE')
+               OR p.id IS NULL OR f.deleted_at IS NOT NULL OR UPPER(f.status) NOT IN ('ACTIVE', 'QUARANTINED'))
         ORDER BY i.source_key
         LIMIT 50
         """, nativeQuery = true)
@@ -84,7 +84,7 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
         JOIN project.projects p ON p.id = f.project_id
         WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
           AND i.status = 'DONE' AND f.deleted_at IS NULL
-          AND UPPER(f.status) = 'ACTIVE'
+          AND UPPER(f.status) IN ('ACTIVE', 'QUARANTINED')
         ORDER BY i.source_key
         LIMIT 15
         """, nativeQuery = true)
