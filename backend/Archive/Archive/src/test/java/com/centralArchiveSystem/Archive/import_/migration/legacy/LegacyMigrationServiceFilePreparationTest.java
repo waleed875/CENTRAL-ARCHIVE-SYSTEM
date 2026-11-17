@@ -90,6 +90,33 @@ class LegacyMigrationServiceFilePreparationTest {
     }
 
     @Test
+    void preservesEngineeringArchiveBytesAndMetadataForMinio() throws Exception {
+        byte[] opaque = new byte[]{0, 1, 4, 5, 0, 7, (byte)0xff};
+        for (String extension : new String[]{"dbk", "dsn", "opj", "mdl", "dat"}) {
+            var prepared = LegacyMigrationService.prepareLegacyFile(
+                    new ByteArrayInputStream(Base64.getEncoder().encode(opaque)),
+                    "source." + extension, "." + extension);
+            try {
+                assertEquals("application/octet-stream", prepared.mimeType());
+                assertEquals(extension, prepared.extension());
+                assertArrayEquals(opaque, Files.readAllBytes(prepared.path()));
+                assertEquals(sha256(opaque), prepared.checksumSha256());
+            } finally {
+                Files.deleteIfExists(prepared.path());
+            }
+        }
+    }
+
+    @Test
+    void legacyExecutableDisguisedAsDataIsStillRejected() {
+        byte[] executable = new byte[]{'M', 'Z', 0, 2, 0, 1};
+        var encoded = Base64.getEncoder().encode(executable);
+        assertThrows(IllegalArgumentException.class,
+                () -> LegacyMigrationService.prepareLegacyFile(
+                        new ByteArrayInputStream(encoded), "file.dat", "dat"));
+    }
+
+    @Test
     void countersRemainAccurateUnderConcurrentUpdates() {
         LegacyMigrationService.LegacyFileSummary summary =
                 new LegacyMigrationService.LegacyFileSummary();
