@@ -56,37 +56,35 @@ class LegacyMigrationServiceFilePreparationTest {
     }
 
     @Test
-    void rejectsExecutableLegacyContentAndRemovesSpool() {
+    void executableLegacyContentIsPreservedButQuarantined() throws Exception {
         byte[] executable = new byte[]{0x4D, 0x5A, 0x00, 0x01, 0x02};
-        byte[] encoded = Base64.getEncoder().encode(executable);
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> LegacyMigrationService.prepareLegacyFile(
-                        new ByteArrayInputStream(encoded),
-                        "malware.exe",
-                        ".exe"
-                )
-        );
-
-        assertTrue(error.getMessage().contains("Executable"));
+        var prepared = LegacyMigrationService.prepareLegacyFile(
+                new ByteArrayInputStream(Base64.getEncoder().encode(executable)),
+                "malware.exe", ".exe");
+        try {
+            assertTrue(prepared.quarantined());
+            assertEquals("application/octet-stream", prepared.mimeType());
+            assertArrayEquals(executable, Files.readAllBytes(prepared.path()));
+            assertEquals(sha256(executable), prepared.checksumSha256());
+        } finally {
+            Files.deleteIfExists(prepared.path());
+        }
     }
 
     @Test
-    void rejectsLegacySuffixThatDisagreesWithOriginalFilename() {
+    void mismatchedLegacySuffixPreservesOriginalInQuarantine() throws Exception {
         byte[] content = "%PDF-1.7\nlegacy archive\n".getBytes(StandardCharsets.US_ASCII);
-        byte[] encoded = Base64.getEncoder().encode(content);
-
-        IllegalArgumentException error = assertThrows(
-                IllegalArgumentException.class,
-                () -> LegacyMigrationService.prepareLegacyFile(
-                        new ByteArrayInputStream(encoded),
-                        "document.pdf",
-                        ".txt"
-                )
-        );
-
-        assertTrue(error.getMessage().contains("does not match"));
+        var prepared = LegacyMigrationService.prepareLegacyFile(
+                new ByteArrayInputStream(Base64.getEncoder().encode(content)),
+                "document.pdf", ".txt");
+        try {
+            assertTrue(prepared.quarantined());
+            assertTrue(prepared.quarantineReason().contains("do not match"));
+            assertEquals("application/octet-stream", prepared.mimeType());
+            assertArrayEquals(content, Files.readAllBytes(prepared.path()));
+        } finally {
+            Files.deleteIfExists(prepared.path());
+        }
     }
 
     @Test
@@ -108,12 +106,34 @@ class LegacyMigrationServiceFilePreparationTest {
     }
 
     @Test
-    void legacyExecutableDisguisedAsDataIsStillRejected() {
+    void disguisedExecutableAndUnidentifiedExtensionAreQuarantined() throws Exception {
         byte[] executable = new byte[]{'M', 'Z', 0, 2, 0, 1};
-        var encoded = Base64.getEncoder().encode(executable);
-        assertThrows(IllegalArgumentException.class,
-                () -> LegacyMigrationService.prepareLegacyFile(
-                        new ByteArrayInputStream(encoded), "file.dat", "dat"));
+        for (String ext : new String[]{"dat", "unknown", "exe"}) {
+            var prepared = LegacyMigrationService.prepareLegacyFile(
+                    new ByteArrayInputStream(Base64.getEncoder().encode(executable)),
+                    "file." + ext, ext);
+            try {
+                assertTrue(prepared.quarantined());
+                assertArrayEquals(executable, Files.readAllBytes(prepared.path()));
+            } finally {
+                Files.deleteIfExists(prepared.path());
+            }
+        }
+    }
+
+    @Test
+    void preservesUnknownAndExtensionlessFilesAsOpaqueQuarantine() throws Exception {
+        byte[] bytes = {0, 3, 5, (byte) 255};
+        var prepared = LegacyMigrationService.prepareLegacyFile(
+                new ByteArrayInputStream(Base64.getEncoder().encode(bytes)),
+                "unidentified", null);
+        try {
+            assertEquals("bin", prepared.extension());
+            assertTrue(prepared.quarantined());
+            assertArrayEquals(bytes, Files.readAllBytes(prepared.path()));
+        } finally {
+            Files.deleteIfExists(prepared.path());
+        }
     }
 
     @Test
