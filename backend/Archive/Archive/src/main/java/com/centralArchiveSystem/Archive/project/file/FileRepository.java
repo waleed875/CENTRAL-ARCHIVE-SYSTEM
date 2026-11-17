@@ -16,6 +16,7 @@ import java.util.UUID;
 public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     Page<FileEntity> findByProjectIdAndDeletedAtIsNull(UUID projectId, Pageable pageable);
     List<FileEntity> findByProjectIdAndDeletedAtIsNull(UUID projectId);
+    List<FileEntity> findByProjectIdAndStatusAndDeletedAtIsNull(UUID projectId, String status);
     Page<FileEntity> findByProjectId(UUID projectId, Pageable pageable);
     List<FileEntity> findByProjectId(UUID projectId);
     List<FileEntity> findByCategoryId(UUID categoryId);
