@@ -806,7 +806,7 @@ public class LegacyMigrationService {
             }
 
             byte[] actualPrefix = java.util.Arrays.copyOf(prefix, prefixLength);
-            String mimeType = FileContentInspector.validatePackageEntry(
+            String mimeType = FileContentInspector.validateLegacyEntry(
                     actualPrefix,
                     extension,
                     spool
