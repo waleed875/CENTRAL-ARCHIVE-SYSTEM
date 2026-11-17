@@ -308,6 +308,9 @@ public class FileService {
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
         requireMutableProject(file.getProjectId());
         confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
+        if ("QUARANTINED".equalsIgnoreCase(file.getStatus())) {
+            throw new IllegalStateException("Quarantined originals require a separate retention review");
+        }
 
         file.setStatus("DELETED");
         file.setDeletedAt(LocalDateTime.now());
@@ -439,7 +442,10 @@ public class FileService {
         FileEntity file = fileRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("File not found with id: " + id));
 
-        if (file.getDeletedAt() != null || "DELETED".equalsIgnoreCase(file.getStatus())) {
+        // Quarantined originals are not ordinary documents. All standard
+        // metadata, preview, range and download routes share this guard.
+        if (file.getDeletedAt() != null || "DELETED".equalsIgnoreCase(file.getStatus())
+                || "QUARANTINED".equalsIgnoreCase(file.getStatus())) {
             throw new EntityNotFoundException("File not found with id: " + id);
         }
 
