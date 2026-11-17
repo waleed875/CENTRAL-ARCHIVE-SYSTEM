@@ -20,6 +20,7 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
     List<FileEntity> findByProjectId(UUID projectId);
     List<FileEntity> findByCategoryId(UUID categoryId);
     List<FileEntity> findByTypeId(UUID typeId);
+    Page<FileEntity> findByStatusAndSourceTypeAndDeletedAtIsNull(String status, String sourceType, Pageable pageable);
     long countByProjectIdAndDeletedAtIsNull(UUID projectId);
     /** Includes soft-deleted history so draft deletion cannot erase archived file records. */
     long countByProjectId(UUID projectId);
