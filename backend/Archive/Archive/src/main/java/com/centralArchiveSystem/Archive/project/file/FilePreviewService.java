@@ -49,7 +49,8 @@ public class FilePreviewService {
             entry("md", "text/markdown"), entry("json", "application/json"),
             entry("xml", "application/xml"), entry("sql", "application/sql"),
             entry("html", "text/html"), entry("htm", "text/html"),
-            entry("svg", "image/svg+xml")
+            entry("svg", "image/svg+xml"), entry("css", "text/css"),
+            entry("js", "text/javascript")
     );
     private static final Map<String, String> OFFICE_TYPES = Map.of(
             "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
