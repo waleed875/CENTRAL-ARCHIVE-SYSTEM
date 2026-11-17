@@ -329,6 +329,44 @@ class FileContentInspectorTest {
     }
 
     @Test
+    void archivesOpaqueLegacyEngineeringFilesWithoutWeakeningRegularUploadChecks() throws Exception {
+        byte[] unknownBinary = new byte[]{1, 0, 9, 10, 0, 3, (byte)0xfe};
+        for (String ext : new String[]{"dbk", "dsn", "opj", "mdl", "dat"}) {
+            assertEquals("application/octet-stream",
+                    FileContentInspector.validateLegacyEntry(unknownBinary, ext, null), ext);
+            assertThrows(IllegalArgumentException.class,
+                    () -> FileContentInspector.validatePackageEntry(unknownBinary, ext, null),
+                    "normal package validation must still reject opaque ." + ext);
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateLegacyEntry(unknownBinary, "exe", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateLegacyEntry(
+                        new byte[]{'M', 'Z', 0, 1}, "dat", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateLegacyEntry(
+                        new byte[]{0x7f, 'E', 'L', 'F'}, "dbk", null));
+    }
+
+    @Test
+    void validatesLegacyVisioOleAndRendersCssJavaScriptOnlyAsText() throws Exception {
+        byte[] ole = {(byte)0xd0, (byte)0xcf, 0x11, (byte)0xe0,
+                (byte)0xa1, (byte)0xb1, 0x1a, (byte)0xe1, 0, 0};
+        assertEquals("application/vnd.visio",
+                FileContentInspector.validateLegacyEntry(ole, ".vsd", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileContentInspector.validateLegacyEntry(
+                        "not Visio".getBytes(StandardCharsets.UTF_8), "vsd", null));
+        assertEquals("text/css",
+                FileContentInspector.validateLegacyEntry(
+                        "body { color: red; }".getBytes(StandardCharsets.UTF_8), "css", null));
+        assertEquals("text/javascript",
+                FileContentInspector.validateLegacyEntry(
+                        "console.log('safe to archive');".getBytes(StandardCharsets.UTF_8),
+                        "js", null));
+    }
+
+    @Test
     void acceptsCommonEquivalentExtensions() {
         assertTrue(FileContentInspector.extensionsEquivalent("jpeg", "jpg"));
         assertTrue(FileContentInspector.extensionsEquivalent("tiff", "tif"));
