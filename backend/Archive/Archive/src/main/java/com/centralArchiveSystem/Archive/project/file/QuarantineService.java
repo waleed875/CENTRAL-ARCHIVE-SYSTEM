@@ -40,8 +40,8 @@ public class QuarantineService {
 
     public Page<Entry> list(int page, int size) {
         if (page < 1) throw new IllegalArgumentException("Page must be >= 1");
-        return files.findByStatusAndSourceTypeAndDeletedAtIsNull(
-                "QUARANTINED", "MIGRATION",
+        return files.findAccessibleQuarantined(
+                clearance.currentMaxLevelOrder(),
                 PageRequest.of(page - 1, Math.max(1, Math.min(100, size)),
                         Sort.by(Sort.Direction.DESC, "createdAt")))
                 .map(file -> {
