@@ -668,7 +668,7 @@ public class LegacyMigrationService {
             );
             spool = prepared.path();
 
-            String storedName = UUID.randomUUID() + "." + prepared.extension();
+            String storedName = UUID.randomUUID() + (prepared.quarantined() ? ".bin" : "." + prepared.extension());
             objectKey = minioPrefix + (prepared.quarantined() ? "/quarantine" : "/files") + "/" + targetProjectId + "/" + storedName;
 
             try (InputStream uploadInput = Files.newInputStream(spool)) {
