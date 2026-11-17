@@ -25,7 +25,7 @@ WHERE i.kind = 'FILE'
        OR f.id IS NULL
        OR p.id IS NULL
        OR f.deleted_at IS NOT NULL
-       OR UPPER(f.status) <> 'ACTIVE')
+       OR UPPER(f.status) NOT IN ('ACTIVE', 'QUARANTINED'))
 ORDER BY i.migration_source_id, i.source_key
 LIMIT 1000;
 
@@ -34,7 +34,7 @@ SELECT i.migration_source_id,
        COUNT(*) FILTER (WHERE i.status = 'DONE') AS tracked_done,
        COUNT(*) FILTER (WHERE i.status = 'DONE' AND f.id IS NOT NULL
          AND p.id IS NOT NULL AND f.deleted_at IS NULL
-         AND UPPER(f.status) = 'ACTIVE') AS linked_active,
+         AND UPPER(f.status) IN ('ACTIVE', 'QUARANTINED')) AS linked_active,
        COUNT(*) FILTER (WHERE i.status = 'RUNNING') AS tracked_running,
        COUNT(*) FILTER (WHERE i.status = 'FAILED') AS tracked_failed
 FROM import.legacy_migration_items i
@@ -55,7 +55,7 @@ LIMIT 1000;
 -- 5. Project metadata file counts (not MinIO object inventory).
 SELECT p.id AS project_id, p.project_number, p.name, p.year,
        COUNT(f.id) FILTER (
-           WHERE f.deleted_at IS NULL AND UPPER(f.status) = 'ACTIVE'
+           WHERE f.deleted_at IS NULL AND UPPER(f.status) IN ('ACTIVE', 'QUARANTINED')
        ) AS active_files
 FROM project.projects p
 LEFT JOIN project.files f ON f.project_id = p.id
