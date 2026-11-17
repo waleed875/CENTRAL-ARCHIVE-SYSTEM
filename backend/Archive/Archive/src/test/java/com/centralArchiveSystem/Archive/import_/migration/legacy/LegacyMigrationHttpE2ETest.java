@@ -244,6 +244,40 @@ class LegacyMigrationHttpE2ETest {
         }
     }
 
+    @Test
+    void streamsLargeOpaqueLegacyFileThroughRealPostgresAndMinio() throws Exception {
+        // The legacy column in this fixture is TEXT; production systems can use
+        // either TEXT or BYTEA. The source contains >512 KiB of encoded Base64,
+        // so migration must issue several bounded substring queries.
+        byte[] source = new byte[1_200_000];
+        new java.util.Random(341).nextBytes(source);
+        String encoded = Base64.getEncoder().encodeToString(source);
+        jdbcTemplate.update("UPDATE public.tbl_files SET filename=?, filesuffix=?, filebinary=? WHERE idfile=?",
+                "legacy-big.dat", ".dat", encoded, legacyFileId);
+
+        MigrationSource origin = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(origin)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var summary = migrationService.migrateFiles(connection, workers);
+                assertEquals(1, summary.done());
+                assertEquals(0, summary.failed());
+            }
+            UUID newId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    origin.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + legacyFileId
+            ).orElseThrow().getTargetId();
+            var file = fileRepository.findById(newId).orElseThrow();
+            assertEquals("application/octet-stream", file.getMimeType());
+            assertEquals((long) source.length, file.getSizeBytes());
+            assertEquals(sha256(source), file.getChecksumSha256());
+            assertNotNull(file.getProjectId());
+            try (var input = minioService.downloadFile(file.getBucketName(), file.getObjectKey())) {
+                assertArrayEquals(source, input.readAllBytes());
+            }
+        }
+    }
+
     /**
      * A migrated project arrives INCOMPLETE with a list of fields the legacy row did not supply, so
      * it must be correctable. ARCHIVED would refuse every write -- file upload, metadata edit,
