@@ -110,7 +110,8 @@ public class ExportService {
             int filesCount = 0;
             long bytes = 0;
             for (Project project : entry.getValue()) {
-                for (FileEntity file : fileRepository.findByProjectIdAndStatusAndDeletedAtIsNull(project.getId(), "ACTIVE")) {
+                for (FileEntity file : fileRepository.findByProjectIdAndDeletedAtIsNull(project.getId())) {
+                if (!"ACTIVE".equalsIgnoreCase(file.getStatus())) continue;
                     confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
                     filesCount++;
                     bytes += file.getSizeBytes() == null ? 0 : file.getSizeBytes();
@@ -244,7 +245,8 @@ public class ExportService {
             }
 
             ArrayNode filesNode = projectNode.putArray("files");
-            for (FileEntity file : fileRepository.findByProjectIdAndStatusAndDeletedAtIsNull(projectId, "ACTIVE")) {
+            for (FileEntity file : fileRepository.findByProjectIdAndDeletedAtIsNull(projectId)) {
+                if (!"ACTIVE".equalsIgnoreCase(file.getStatus())) continue;
                 confidentialityAccessService.requireReadAccess(file.getConfidentialityLevelId());
 
                 String checksum = file.getChecksumSha256();
