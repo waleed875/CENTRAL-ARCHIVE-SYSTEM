@@ -457,10 +457,17 @@ public class LegacyMigrationService {
                 return null;
             });
             futures.add(future);
+            // Limit pending tasks. An office with many projects must not
+            // enqueue every migration as a CompletableFuture before the four
+            // workers can finish the first batch, or it can exhaust heap.
+            if (futures.size() >= 16) {
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                futures.clear();
+            }
         }
 
-        // Each project task handles its own exceptional completion above. Joining the aggregate
-        // now waits for every project and does not let one failed project hide the remaining work.
+        // Every task captures its own failure above. Drain the last bounded
+        // batch before returning so the legacy connection can be closed safely.
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info(
                 "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
