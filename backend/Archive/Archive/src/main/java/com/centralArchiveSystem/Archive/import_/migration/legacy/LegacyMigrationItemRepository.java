@@ -128,6 +128,27 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
         """, nativeQuery = true)
     List<Object[]> countFailedFileErrorCategories(@Param("sourceId") UUID sourceId);
 
+    /**
+     * Cursor-based reconciliation of DONE file mappings. An extra row is fetched
+     * by the caller to determine whether another page exists. Results are scoped
+     * by migration source and never include file bytes.
+     */
+    @Query(value = """
+        SELECT i.source_key, i.target_id, f.id, f.project_id, p.id,
+               f.deleted_at, f.status, f.bucket_name, f.object_key
+        FROM import.legacy_migration_items i
+        LEFT JOIN project.files f ON f.id = i.target_id
+        LEFT JOIN project.projects p ON p.id = f.project_id
+        WHERE i.migration_source_id = :sourceId
+          AND i.kind = 'FILE' AND i.status = 'DONE'
+          AND (:afterKey IS NULL OR i.source_key > :afterKey)
+        ORDER BY i.source_key
+        LIMIT :maxRows
+        """, nativeQuery = true)
+    List<Object[]> reconciliationPage(@Param("sourceId") UUID sourceId,
+                                      @Param("afterKey") String afterKey,
+                                      @Param("maxRows") int maxRows);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update LegacyMigrationItem item set item.status = :failedStatus, "
             + "item.error = :error, item.finishedAt = :finishedAt "
