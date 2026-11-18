@@ -66,6 +66,68 @@ class MigrationFileAuditServiceTest {
     }
 
     @Test
+    void reconciliationPagesOnlySourceScopedDoneFilesAndReportsMissingAndUnknown() throws Exception {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+        MinioService minio = mock(MinioService.class);
+        UUID sourceId = UUID.randomUUID();
+        UUID target1 = UUID.randomUUID();
+        UUID target2 = UUID.randomUUID();
+        UUID project = UUID.randomUUID();
+        when(sources.existsById(sourceId)).thenReturn(true);
+        when(items.reconciliationPage(sourceId, null, 3)).thenReturn(java.util.Arrays.asList(
+                new Object[]{"FILE-1", target1, target1, project, project, null,
+                        "ACTIVE", "archive", "legacy/one"},
+                new Object[]{"FILE-2", target2, target2, project, project, null,
+                        "QUARANTINED", "archive", "legacy/two"},
+                new Object[]{"FILE-3", UUID.randomUUID(), null, null, null, null,
+                        null, null, null}));
+        when(minio.objectExists("archive", "legacy/one")).thenReturn(false);
+        when(minio.objectExists("archive", "legacy/two")).thenThrow(new RuntimeException("storage unavailable"));
+
+        var page = new MigrationFileAuditService(sources, items, minio)
+                .reconcilePage(sourceId, null, 2);
+
+        assertEquals(2, page.checked());
+        assertTrue(page.hasMore());
+        assertEquals("FILE-2", page.nextCursor());
+        assertEquals(1, page.missingObjects());
+        assertEquals(1, page.unknown());
+        assertEquals(2, page.findings().size());
+        assertEquals("MISSING_OBJECT", page.findings().get(0).status());
+        assertEquals("UNKNOWN", page.findings().get(1).status());
+        verify(items).reconciliationPage(sourceId, null, 3);
+        verify(minio).objectExists("archive", "legacy/one");
+        verify(minio).objectExists("archive", "legacy/two");
+        verifyNoMoreInteractions(minio);
+    }
+
+    @Test
+    void reconciliationReportsBrokenLinksWithoutReadingMinioAndRejectsBadCursors() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+        MinioService minio = mock(MinioService.class);
+        UUID sourceId = UUID.randomUUID();
+        when(sources.existsById(sourceId)).thenReturn(true);
+        when(items.reconciliationPage(sourceId, "FILE-9", 2)).thenReturn(
+                java.util.Collections.singletonList(
+                        new Object[]{"FILE-10", UUID.randomUUID(), null, null, null, null,
+                                null, null, null}));
+
+        var service = new MigrationFileAuditService(sources, items, minio);
+        var page = service.reconcilePage(sourceId, "FILE-9", 1);
+        assertFalse(page.hasMore());
+        assertNull(page.nextCursor());
+        assertEquals(1, page.invalidLinks());
+        assertEquals("INVALID_LINK", page.findings().getFirst().status());
+        verifyNoInteractions(minio);
+        assertThrows(IllegalArgumentException.class,
+                () -> service.reconcilePage(sourceId, "../other", 10));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.reconcilePage(sourceId, null, 101));
+    }
+
+    @Test
     void rejectsUnknownSourcesBeforeStorageQueries() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
