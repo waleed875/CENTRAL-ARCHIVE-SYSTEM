@@ -34,4 +34,9 @@ public class MigrationExecutionService {
     public void execute(UUID batchId) {
         migrationRunner.runBatch(batchId);
     }
+
+    @Async
+    public void executeSelected(UUID batchId, java.util.List<Integer> fileIds) {
+        migrationRunner.runSelectedFiles(batchId, fileIds);
+    }
 }
