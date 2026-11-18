@@ -236,11 +236,20 @@ public class LegacyMigrationService {
 
     @Transactional
     public int migrateReferences(LegacyConnection connection, MigrationCancellationToken cancellation) {
-        List<Map<String, Object>> rows = connection.jdbc().queryForList(
-                "SELECT idside, name, status FROM " + LEGACY_DB_SCHEMA + ".tbl_side ORDER BY idside");
-
+        // Reference dictionaries are usually small, but a legacy office can
+        // contain many organizations. Read bounded pages to avoid materializing
+        // the entire table before the first tracking row is committed.
+        final int referencePageLimit = Math.max(1, Math.min(200, batchSize));
+        int lastSideId = Integer.MIN_VALUE;
         int created = 0;
-        for (Map<String, Object> row : rows) {
+        while (!cancellation.isCancellationRequested()) {
+            List<Map<String, Object>> rows = connection.jdbc().queryForList(
+                    "SELECT idside, name, status FROM " + LEGACY_DB_SCHEMA
+                            + ".tbl_side WHERE idside > ? ORDER BY idside LIMIT ?",
+                    lastSideId, referencePageLimit);
+            if (rows.isEmpty()) break;
+            lastSideId = ((Number) rows.get(rows.size() - 1).get("idside")).intValue();
+            for (Map<String, Object> row : rows) {
             if (cancellation.isCancellationRequested()) {
                 break;
             }
@@ -283,6 +292,8 @@ public class LegacyMigrationService {
             itemRepository.save(trackingItem(
                     connection, LegacyMigrationItem.Kind.PROJECT, sourceKey, (long) oldId, saved.getId()));
             created++;
+            }
+            if (rows.size() < referencePageLimit) break;
         }
         log.info("Legacy references migrated for office {}: {} organizations created",
                 connection.office(), created);
