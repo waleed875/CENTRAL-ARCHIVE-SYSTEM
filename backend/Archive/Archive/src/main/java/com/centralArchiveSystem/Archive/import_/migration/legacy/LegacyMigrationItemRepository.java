@@ -98,6 +98,36 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
         """, nativeQuery = true)
     List<Object[]> sampleLinkedStorageObjects(@Param("sourceId") UUID sourceId);
 
+    /**
+     * Group FAILED file errors inside PostgreSQL without returning unbounded
+     * exception messages or credentials to the API. Categories are advisory,
+     * not permission to retry an item automatically.
+     */
+    @Query(value = """
+        SELECT CASE
+          WHEN lower(coalesce(i.error,'')) LIKE '%target project mapping%'
+            THEN 'MISSING_PROJECT'
+          WHEN lower(coalesce(i.error,'')) LIKE '%base64%'
+            OR lower(coalesce(i.error,'')) LIKE '%legacy file content is missing%'
+            THEN 'INVALID_CONTENT'
+          WHEN lower(coalesce(i.error,'')) LIKE '%timed out%'
+            OR lower(coalesce(i.error,'')) LIKE '%connection refused%'
+            OR lower(coalesce(i.error,'')) LIKE '%connection reset%'
+            OR lower(coalesce(i.error,'')) LIKE '%temporarily unavailable%'
+            THEN 'TRANSIENT_IO'
+          WHEN lower(coalesce(i.error,'')) LIKE '%permission denied%'
+            OR lower(coalesce(i.error,'')) LIKE '%access denied%'
+            OR lower(coalesce(i.error,'')) LIKE '%forbidden%'
+            THEN 'ACCESS_DENIED'
+          ELSE 'OTHER'
+        END AS category, count(*)
+        FROM import.legacy_migration_items i
+        WHERE i.migration_source_id = :sourceId AND i.kind = 'FILE'
+          AND i.status = 'FAILED'
+        GROUP BY category ORDER BY category
+        """, nativeQuery = true)
+    List<Object[]> countFailedFileErrorCategories(@Param("sourceId") UUID sourceId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update LegacyMigrationItem item set item.status = :failedStatus, "
             + "item.error = :error, item.finishedAt = :finishedAt "
