@@ -50,6 +50,7 @@ class LegacyMigrationServiceOfficeScopeTest {
     private final LegacyMigrationItemRepository itemRepository = mock(LegacyMigrationItemRepository.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final AtomicInteger organizationIds = new AtomicInteger();
+    private final java.util.Set<UUID> savedOrganizationIds = new java.util.HashSet<>();
 
     /** Stands in for the legacy_migration_items table so state carries across phases. */
     private final Map<String, LegacyMigrationItem> items = new HashMap<>();
@@ -75,8 +76,12 @@ class LegacyMigrationServiceOfficeScopeTest {
         when(organizationRepository.save(any(Organization.class))).thenAnswer(invocation -> {
             Organization org = invocation.getArgument(0);
             org.setId(new UUID(organizationIds.incrementAndGet(), 0L));
+            savedOrganizationIds.add(org.getId());
             return org;
         });
+
+        when(organizationRepository.existsById(any(UUID.class)))
+                .thenAnswer(invocation -> savedOrganizationIds.contains(invocation.getArgument(0)));
 
         when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> {
             Project project = invocation.getArgument(0);
@@ -156,6 +161,23 @@ class LegacyMigrationServiceOfficeScopeTest {
 
         // Each project hangs off its own office's organization, not a shared one.
         assertNotEquals(fromA.getOrganizationId(), fromB.getOrganizationId());
+    }
+
+    @Test
+    void missingOrganizationTargetIsRecoveredInsteadOfBlindlySkippingDoneReference() {
+        stubLegacyRows(1, 23, "P-23");
+        var office = connection("ARC1");
+        assertEquals(1, service.migrateReferences(office));
+        LegacyMigrationItem tracked = items.get(key(office.sourceId(),
+                LegacyMigrationItem.Kind.PROJECT, "SIDE-1"));
+        UUID vanishedTarget = tracked.getTargetId();
+        savedOrganizationIds.remove(vanishedTarget);
+
+        assertEquals(1, service.migrateReferences(office));
+        assertNotEquals(vanishedTarget, tracked.getTargetId());
+        assertTrue(savedOrganizationIds.contains(tracked.getTargetId()));
+        assertEquals(0, service.migrateReferences(office),
+                "a valid recovered target must be skipped on subsequent resume");
     }
 
     @Test
