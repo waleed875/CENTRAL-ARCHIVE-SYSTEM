@@ -141,6 +141,50 @@ class MigrationServiceTest {
     }
 
     @Test
+    void partialBatchCanResumeWithoutDiscardingRecordedProgress() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-PARTIAL");
+        batch.setStatus(MigrationBatch.Status.PARTIAL);
+        batch.setFilesCount(7);
+        batch.setTotalFilesCount(10);
+        batch.setRemainingFilesCount(3);
+        batch.setCompletedAt(java.time.LocalDateTime.now());
+
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
+        source.setOfficeName("ARC2");
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+        when(batches.saveAndFlush(batch)).thenReturn(batch);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(),
+                mock(LegacyMigrationItemRepository.class));
+
+        var response = service.runBatch(
+                id, new MigrationRunRequest(new MigrationRunRequest.MigrationConfig(null, null, Map.of(), null)));
+
+        assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
+        assertEquals(7, batch.getFilesCount(), "completed file count must remain during resume");
+        assertEquals(10, batch.getTotalFilesCount());
+        assertEquals(3, batch.getRemainingFilesCount());
+        assertNull(batch.getCompletedAt());
+        verify(batches).saveAndFlush(batch);
+        verify(execution).prepare(id);
+        verify(execution).execute(id);
+    }
+
+    @Test
     void runBatchMovesPlannedBatchToRunningAndDispatchesExecution() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
