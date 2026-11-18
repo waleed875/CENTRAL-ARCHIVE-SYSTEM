@@ -504,32 +504,7 @@ public class LegacyMigrationService {
         if (targetProjectId == null || !projectRepository.existsById(targetProjectId)) {
             log.warn("No valid target project for legacy project {} in office {}; recording its files for retry",
                     legacyProjectId, connection.office());
-            List<Integer> sourceFileIds = connection.jdbc().queryForList(
-                    "SELECT idfile FROM " + LEGACY_DB_SCHEMA
-                            + ".tbl_files WHERE idproject = ? ORDER BY idfile",
-                    Integer.class, legacyProjectId);
-            for (Integer idfile : sourceFileIds) {
-                if (cancellation.isCancellationRequested()) {
-                    break;
-                }
-                String sourceKey = "FILE-" + idfile;
-                LegacyMigrationItem existing = itemRepository
-                        .findByMigrationSourceIdAndKindAndSourceKey(
-                                connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
-                        .orElse(null);
-                if (isValidCompletedFile(existing, null)) {
-                    summary.incrementSkipped();
-                    continue;
-                }
-                LegacyMigrationItem item = trackingItem(
-                        connection, LegacyMigrationItem.Kind.FILE, sourceKey, idfile.longValue(), null);
-                item.setStatus(LegacyMigrationItem.Status.FAILED);
-                item.setError("No target project mapping exists for legacy project " + legacyProjectId
-                        + "; retry after the project is migrated.");
-                item.setFinishedAt(java.time.LocalDateTime.now());
-                itemRepository.save(item);
-                summary.incrementFailed();
-            }
+            recordFilesAwaitingProjectMapping(connection, legacyProjectId, summary, cancellation);
             return;
         }
 
@@ -545,37 +520,96 @@ public class LegacyMigrationService {
         // Bound the tracking and target-file prefetch to one metadata page.
         // Legacy BYTEA is still read separately in fixed-size chunks.
         final int pageLimit = Math.max(1, Math.min(200, batchSize));
-        List<LegacyFileMetadata> pending = new ArrayList<>(pageLimit);
-        connection.jdbc().query(
-                "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
-                        + LEGACY_DB_SCHEMA
-                        + ".tbl_files WHERE idproject = ? ORDER BY idfile",
-                preparedStatement -> {
-                    preparedStatement.setInt(1, legacyProjectId);
-                    preparedStatement.setFetchSize(pageLimit);
-                },
-                resultSet -> {
-                    if (cancellation.isCancellationRequested()) return;
-                    long encodedLength = resultSet.getLong("encoded_length");
-                    boolean missingContent = resultSet.wasNull();
-                    pending.add(new LegacyFileMetadata(
-                            resultSet.getInt("idfile"),
-                            resultSet.getString("filename"),
-                            resultSet.getString("filesuffix"),
-                            encodedLength,
-                            missingContent));
-                    if (pending.size() >= pageLimit) {
-                        migrateFileMetadataPage(connection, List.copyOf(pending), targetProjectId,
-                                summary, defaultCategoryId, defaultTypeId,
-                                projectConfidentialityId, cancellation);
-                        pending.clear();
-                    }
-                }
-        );
-        if (!pending.isEmpty() && !cancellation.isCancellationRequested()) {
-            migrateFileMetadataPage(connection, List.copyOf(pending), targetProjectId,
+        // Seek pagination bounds JDBC memory even when the legacy PostgreSQL connection is
+        // auto-commit (where setFetchSize can otherwise buffer the entire result).
+        // Complete each page before fetching the next so file migration never runs from
+        // inside the metadata ResultSet callback.
+        int lastFileId = Integer.MIN_VALUE;
+        while (!cancellation.isCancellationRequested()) {
+            List<LegacyFileMetadata> page = connection.jdbc().query(
+                    "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
+                            + LEGACY_DB_SCHEMA
+                            + ".tbl_files WHERE idproject = ? AND idfile > ? ORDER BY idfile LIMIT ?",
+                    (rs, rowNum) -> {
+                        long encodedLength = rs.getLong("encoded_length");
+                        boolean missingContent = rs.wasNull();
+                        return new LegacyFileMetadata(
+                                rs.getInt("idfile"), rs.getString("filename"),
+                                rs.getString("filesuffix"), encodedLength, missingContent);
+                    },
+                    legacyProjectId, lastFileId, pageLimit);
+            if (page.isEmpty()) break;
+            lastFileId = page.get(page.size() - 1).idfile();
+            migrateFileMetadataPage(connection, page, targetProjectId,
                     summary, defaultCategoryId, defaultTypeId,
                     projectConfidentialityId, cancellation);
+            if (page.size() < pageLimit) break;
+        }
+    }
+
+    /**
+     * A missing project must not create orphan file rows. Paginate source IDs and
+     * prefetch tracking and existing targets in bounded groups, rather than loading
+     * every source ID and making two database lookups per file.
+     */
+    private void recordFilesAwaitingProjectMapping(LegacyConnection connection,
+                                                   int legacyProjectId,
+                                                   LegacyFileSummary summary,
+                                                   MigrationCancellationToken cancellation) {
+        final int pageLimit = Math.max(1, Math.min(200, batchSize));
+        int lastFileId = Integer.MIN_VALUE;
+        while (!cancellation.isCancellationRequested()) {
+            List<Integer> sourceFileIds = connection.jdbc().query(
+                    "SELECT idfile FROM " + LEGACY_DB_SCHEMA
+                            + ".tbl_files WHERE idproject = ? AND idfile > ? ORDER BY idfile LIMIT ?",
+                    (rs, rowNum) -> rs.getInt("idfile"),
+                    legacyProjectId, lastFileId, pageLimit);
+            if (sourceFileIds.isEmpty()) break;
+            lastFileId = sourceFileIds.get(sourceFileIds.size() - 1);
+
+            List<String> sourceKeys = sourceFileIds.stream().map(id -> "FILE-" + id).toList();
+            Map<String, LegacyMigrationItem> tracked = new HashMap<>();
+            for (LegacyMigrationItem item : itemRepository
+                    .findByMigrationSourceIdAndKindAndSourceKeyIn(
+                            connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKeys)) {
+                tracked.put(item.getSourceKey(), item);
+            }
+            List<UUID> completedTargets = tracked.values().stream()
+                    .filter(item -> item.getStatus() == LegacyMigrationItem.Status.DONE)
+                    .map(LegacyMigrationItem::getTargetId)
+                    .filter(java.util.Objects::nonNull).distinct().toList();
+            Map<UUID, FileEntity> targetFiles = new HashMap<>();
+            if (!completedTargets.isEmpty()) {
+                for (FileEntity file : fileRepository.findAllById(completedTargets)) {
+                    targetFiles.put(file.getId(), file);
+                }
+            }
+
+            for (Integer idfile : sourceFileIds) {
+                if (cancellation.isCancellationRequested()) break;
+                String sourceKey = "FILE-" + idfile;
+                LegacyMigrationItem previous = tracked.get(sourceKey);
+                if (previous != null && previous.getStatus() == LegacyMigrationItem.Status.DONE) {
+                    FileEntity file = targetFiles.get(previous.getTargetId());
+                    if (file != null && file.getDeletedAt() == null
+                            && ("ACTIVE".equalsIgnoreCase(file.getStatus())
+                                || "QUARANTINED".equalsIgnoreCase(file.getStatus()))) {
+                        summary.incrementSkipped();
+                        continue;
+                    }
+                }
+
+                LegacyMigrationItem item = trackingItem(
+                        connection, LegacyMigrationItem.Kind.FILE, sourceKey, idfile.longValue(),
+                        null, previous);
+                item.setStatus(LegacyMigrationItem.Status.FAILED);
+                item.setError("No target project mapping exists for legacy project " + legacyProjectId
+                        + "; retry after the project is migrated.");
+                item.setFinishedAt(java.time.LocalDateTime.now());
+                itemRepository.save(item);
+                summary.incrementFailed();
+            }
+            if (sourceFileIds.size() < pageLimit) break;
         }
     }
 
@@ -652,20 +686,6 @@ public class LegacyMigrationService {
                 }
             }
         }
-    }
-
-    /**
-     * DONE is only valid when the referenced database row still exists and is
-     * attached to the expected project. MinIO objects alone are not file records.
-     */
-    private boolean isValidCompletedFile(LegacyMigrationItem item, UUID expectedProjectId) {
-        if (item == null || item.getStatus() != LegacyMigrationItem.Status.DONE
-                || item.getTargetId() == null) return false;
-        return fileRepository.findById(item.getTargetId())
-                .filter(file -> file.getDeletedAt() == null
-                        && ("ACTIVE".equalsIgnoreCase(file.getStatus()) || "QUARANTINED".equalsIgnoreCase(file.getStatus()))
-                        && (expectedProjectId == null || expectedProjectId.equals(file.getProjectId())))
-                .isPresent();
     }
 
     private void migrateOneFile(LegacyConnection connection,
@@ -799,7 +819,7 @@ public class LegacyMigrationService {
             item.setStatus(LegacyMigrationItem.Status.FAILED);
             item.setError(e.getMessage());
             item.setFinishedAt(java.time.LocalDateTime.now());
-            item.setAttempts((item.getAttempts() == null ? 0 : item.getAttempts()) + 1);
+            // Already incremented when the attempt moved to RUNNING.
             itemRepository.save(item);
             summary.incrementFailed();
         } finally {
