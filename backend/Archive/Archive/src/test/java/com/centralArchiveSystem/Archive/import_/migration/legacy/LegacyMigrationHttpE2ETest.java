@@ -171,6 +171,55 @@ class LegacyMigrationHttpE2ETest {
     }
 
     @Test
+    void reusesBatchedTrackingRowsWhenResumingMultipleFilesWithoutDuplication() throws Exception {
+        int secondFile = legacyFileId + 1;
+        int thirdFile = legacyFileId + 2;
+        for (int id : new int[]{secondFile, thirdFile}) {
+            jdbcTemplate.update("""
+                INSERT INTO public.tbl_files(idfile,filename,filesuffix,idproject,detils,filebinary)
+                VALUES (?, ?, '.txt', ?, 'batch metadata fixture', ?)
+                """, id, "legacy-batch-" + id + ".txt", legacyProjectId,
+                Base64.getEncoder().encodeToString(("batch-file-" + id).getBytes(StandardCharsets.UTF_8)));
+        }
+
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var first = migrationService.migrateFiles(connection, workers);
+                assertEquals(3, first.done());
+                assertEquals(0, first.failed());
+            }
+
+            java.util.Map<Integer, UUID> originalIds = new java.util.HashMap<>();
+            for (int id : new int[]{legacyFileId, secondFile, thirdFile}) {
+                var item = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + id).orElseThrow();
+                assertEquals(LegacyMigrationItem.Status.DONE, item.getStatus());
+                originalIds.put(id, item.getTargetId());
+                var file = fileRepository.findById(item.getTargetId()).orElseThrow();
+                assertNotNull(file.getChecksumSha256());
+                assertEquals("ACTIVE", file.getStatus());
+            }
+
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var resumed = migrationService.migrateFiles(connection, workers);
+                assertEquals(0, resumed.done());
+                assertEquals(0, resumed.failed());
+                assertEquals(3, resumed.skipped());
+            }
+            for (int id : new int[]{legacyFileId, secondFile, thirdFile}) {
+                var item = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + id).orElseThrow();
+                assertEquals(originalIds.get(id), item.getTargetId(),
+                        "resume must preserve the same target file, not duplicate MinIO objects");
+                assertEquals(1, item.getAttempts(), "DONE items must not count another attempt");
+            }
+        }
+    }
+
+    @Test
     void migratesLegacySideProjectAndBase64FileIntoCentralArchive() throws Exception {
         // Every run is bound to one office's database, so the test opens a connection for it.
         MigrationSource source = source();
