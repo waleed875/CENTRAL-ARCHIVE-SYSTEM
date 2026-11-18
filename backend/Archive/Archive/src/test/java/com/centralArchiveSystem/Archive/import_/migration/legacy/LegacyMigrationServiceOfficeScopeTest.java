@@ -199,8 +199,7 @@ class LegacyMigrationServiceOfficeScopeTest {
         Map<String, Object> duplicate = projectRow(5, 1, "6456", "4564");
         Map<String, Object> other = projectRow(9, 2, "999", "2024");
 
-        when(jdbc.queryForList(contains("tbl_project")))
-                .thenReturn(List.of(first, duplicate, other));
+        stubProjectRows(List.of(first, duplicate, other));
         stubTwoSides();
 
         var office = connection("ARC1");
@@ -208,6 +207,8 @@ class LegacyMigrationServiceOfficeScopeTest {
         assertEquals(3, service.migrateProjects(office), "all source projects must be imported");
 
         assertEquals(3, savedProjects.size());
+        // Even a one-project page must advance over all source IDs.
+        verify(jdbc, atLeast(3)).queryForList(contains("tbl_project"), any(), eq(1));
         assertEquals(3, items.values().stream()
                 .filter(item -> item.getKind() == LegacyMigrationItem.Kind.PROJECT
                         && item.getSourceKey().startsWith("PROJECT-")
@@ -228,7 +229,7 @@ class LegacyMigrationServiceOfficeScopeTest {
     @Test
     void cancelledProjectPhaseDoesNotStartAnotherProject() throws Exception {
         stubTwoSides();
-        when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(
+        stubProjectRows(List.of(
                 projectRow(41, 1, "41", "2024"),
                 projectRow(42, 1, "42", "2024")));
 
@@ -247,7 +248,7 @@ class LegacyMigrationServiceOfficeScopeTest {
     @Test
     void aPreviouslyFailedProjectTrackingRowIsRetriedAndUpdatedInPlace() throws Exception {
         Map<String, Object> project = projectRow(42, 1, "3", "2010");
-        when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(project));
+        stubProjectRows(List.of(project));
         stubTwoSides();
 
         var office = connection("ARC1");
@@ -287,6 +288,25 @@ class LegacyMigrationServiceOfficeScopeTest {
         when(jdbc.queryForList(contains("tbl_side"))).thenReturn(List.of(
                 sideRow(1, "Plant One"),
                 sideRow(2, "Plant Two")));
+    }
+
+    /**
+     * Model PostgreSQL keyset pagination instead of the old full-table
+     * queryForList(sql) mock. Records retain numerical ordering across pages.
+     */
+    private void stubProjectRows(List<Map<String, Object>> projects) {
+        List<Map<String, Object>> ordered = projects.stream()
+                .sorted(java.util.Comparator.comparingInt(
+                        row -> ((Number) row.get("idproject")).intValue()))
+                .toList();
+        when(jdbc.queryForList(contains("tbl_project"), any(), any()))
+                .thenAnswer(invocation -> {
+                    int after = ((Number) invocation.getArgument(1)).intValue();
+                    int limit = ((Number) invocation.getArgument(2)).intValue();
+                    return ordered.stream()
+                            .filter(row -> ((Number) row.get("idproject")).intValue() > after)
+                            .limit(limit).toList();
+                });
     }
 
     private static Map<String, Object> sideRow(int sideId, String name) {
@@ -337,7 +357,7 @@ class LegacyMigrationServiceOfficeScopeTest {
         project.put("note", "note");
 
         when(jdbc.queryForList(contains("tbl_side"))).thenReturn(List.of(side));
-        when(jdbc.queryForList(contains("tbl_project"))).thenReturn(List.of(project));
+        stubProjectRows(List.of(project));
     }
 
     /** Stand-in so the constructor receives a usable transaction manager. */
