@@ -154,6 +154,48 @@ class LegacyMigrationServiceFilePreparationTest {
         assertEquals(10_000, summary.skipped());
     }
 
+    @Test
+    void migrationPersistsRecognizedMpegAndIsoBytes() throws Exception {
+        byte[] mpg = {0, 0, 1, (byte) 0xBA, 0, 1, 2, 3};
+        byte[] iso = new byte[32768 + 2048];
+        iso[32768] = 1;
+        System.arraycopy("CD001".getBytes(StandardCharsets.US_ASCII), 0, iso, 32769, 5);
+        iso[32774] = 1;
+        for (Object[] sample : new Object[][] {
+                {"movie.mpg", mpg, "video/mpeg", false},
+                {"disk.iso", iso, "application/x-iso9660-image", true}
+        }) {
+            String name = (String) sample[0];
+            byte[] original = (byte[]) sample[1];
+            var prepared = LegacyMigrationService.prepareLegacyFile(
+                    new ByteArrayInputStream(Base64.getEncoder().encode(original)),
+                    name, name.substring(name.lastIndexOf('.')));
+            try {
+                assertEquals(sample[3], prepared.quarantined());
+                assertEquals(sample[2], prepared.mimeType());
+                assertArrayEquals(original, Files.readAllBytes(prepared.path()));
+                assertEquals(sha256(original), prepared.checksumSha256());
+            } finally {
+                Files.deleteIfExists(prepared.path());
+            }
+        }
+    }
+
+    @Test
+    void unknownIsoIsPreservedInQuarantineRatherThanRejected() throws Exception {
+        byte[] source = {0, 1, 2, 3, 4};
+        var prepared = LegacyMigrationService.prepareLegacyFile(
+                new ByteArrayInputStream(Base64.getEncoder().encode(source)),
+                "unknown.iso", ".iso");
+        try {
+            assertTrue(prepared.quarantined());
+            assertEquals("application/octet-stream", prepared.mimeType());
+            assertArrayEquals(source, Files.readAllBytes(prepared.path()));
+        } finally {
+            Files.deleteIfExists(prepared.path());
+        }
+    }
+
     private String sha256(byte[] content) throws Exception {
         byte[] hash = MessageDigest.getInstance("SHA-256").digest(content);
         StringBuilder hex = new StringBuilder(hash.length * 2);
