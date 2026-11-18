@@ -37,6 +37,9 @@ public class MigrationRunner {
     private final MigrationSourceRepository sourceRepository;
     private final LegacyMigrationItemRepository itemRepository;
     private final MigrationSettingsService migrationSettingsService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MigrationProgressTracker progressTracker;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentMap<UUID, MigrationCancellationToken> cancellationTokens =
             new ConcurrentHashMap<>();
@@ -199,6 +202,12 @@ public class MigrationRunner {
                         projects = legacyMigrationService.migrateProjects(connection, cancellation);
                     }
                     if (!cancellation.isCancellationRequested()) {
+                        if (progressTracker != null) {
+                            long previouslyDone = itemRepository.countByMigrationSourceIdAndKindAndStatus(
+                                    migrationSourceId, LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
+                            progressTracker.start(batchId, migrationSourceId,
+                                    Math.max(0, batch.getTotalFilesCount() - previouslyDone));
+                        }
                         files = legacyMigrationService.migrateFilesAsync(
                                 connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get();
                     }
@@ -258,6 +267,9 @@ public class MigrationRunner {
                     batchRepository.save(batch);
                 }
             } finally {
+                if (progressTracker != null && batch != null) {
+                    progressTracker.finish(batchId, batch.getMigrationSourceId());
+                }
                 activeBatchId.compareAndSet(batchId, null);
                 cancellationTokens.keySet().removeIf(id -> !id.equals(batchId));
                 running.set(false);
