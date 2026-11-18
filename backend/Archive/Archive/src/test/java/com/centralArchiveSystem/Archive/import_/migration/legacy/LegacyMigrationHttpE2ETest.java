@@ -171,6 +171,45 @@ class LegacyMigrationHttpE2ETest {
     }
 
     @Test
+    void selectiveRetryProcessesOnlyChosenFailedFile() throws Exception {
+        int otherId = legacyFileId + 1;
+        jdbcTemplate.update("""
+                INSERT INTO public.tbl_files(idfile,filename,filesuffix,idproject,detils,filebinary)
+                VALUES (?, ?, '.txt', ?, 'selective retry fixture', ?)
+                """, otherId, "another-failed.txt", legacyProjectId, "%%%invalid%%%");
+        jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
+                "%%%invalid%%%", legacyFileId);
+
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+            try (ExecutorService workers = Executors.newFixedThreadPool(1)) {
+                var initial = migrationService.migrateFiles(connection, workers);
+                assertEquals(2, initial.failed());
+            }
+
+            jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
+                    Base64.getEncoder().encodeToString(decodedFile), legacyFileId);
+            var result = migrationService.retrySelectedFiles(connection,
+                    java.util.List.of(legacyFileId), new MigrationCancellationToken());
+            assertEquals(1, result.done());
+            assertEquals(0, result.failed());
+
+            var selected = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + legacyFileId).orElseThrow();
+            var untouched = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + otherId).orElseThrow();
+            assertEquals(LegacyMigrationItem.Status.DONE, selected.getStatus());
+            assertEquals(2, selected.getAttempts());
+            assertEquals(LegacyMigrationItem.Status.FAILED, untouched.getStatus());
+            assertEquals(1, untouched.getAttempts());
+            assertEquals(sha256(decodedFile),
+                    fileRepository.findById(selected.getTargetId()).orElseThrow().getChecksumSha256());
+        }
+    }
+
+    @Test
     void failedFileCountsOneAttemptAndCanResumeAfterContentIsRepaired() throws Exception {
         jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
                 "%%%invalid base64%%%", legacyFileId);
