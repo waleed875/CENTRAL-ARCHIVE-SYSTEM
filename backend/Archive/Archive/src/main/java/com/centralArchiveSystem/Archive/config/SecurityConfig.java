@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -45,13 +45,14 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.headers(headers -> headers.withObjectPostProcessor(
-                    (ObjectPostProcessor<HeaderWriterFilter>) filter -> {
-                        // Security headers must be written before handing a StreamingResponseBody
-                        // to an async worker. Otherwise HeaderWriterFilter can race with a
-                        // worker that commits the response, corrupting Tomcat MimeHeaders.
-                        // Keep every default security header enabled.
-                        filter.setShouldWriteHeadersEagerly(true);
-                        return filter;
+                    new ObjectPostProcessor<HeaderWriterFilter>() {
+                        @Override
+                        public <O extends HeaderWriterFilter> O postProcess(O filter) {
+                            // Emit security headers before the asynchronous streaming worker
+                            // can commit the response. Preserve all default security headers.
+                            filter.setShouldWriteHeadersEagerly(true);
+                            return filter;
+                        }
                     }))
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
