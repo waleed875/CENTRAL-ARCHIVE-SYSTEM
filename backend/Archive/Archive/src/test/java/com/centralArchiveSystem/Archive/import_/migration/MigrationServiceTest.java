@@ -141,6 +141,121 @@ class MigrationServiceTest {
     }
 
     @Test
+    void retryFailedFilesRejectsUntrackedOrCompletedFilesWithoutRunningBatch() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+        UUID batchId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(batchId);
+        batch.setMigrationSourceId(sourceId);
+        batch.setStatus(MigrationBatch.Status.PARTIAL);
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setOfficeName("ARC2");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
+        when(batches.findById(batchId)).thenReturn(Optional.of(batch));
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+        when(items.findByMigrationSourceIdAndKindAndSourceKeyIn(
+                eq(sourceId),
+                eq(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE),
+                anyList())).thenReturn(java.util.List.of());
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(), items);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.retryFailedFiles(batchId, java.util.List.of(227)));
+        assertEquals(MigrationBatch.Status.PARTIAL, batch.getStatus());
+        verify(batches, never()).saveAndFlush(any());
+        verify(execution, never()).executeSelected(any(), anyList());
+    }
+
+    @Test
+    void retryFailedFilesDispatchesOnlySourceScopedFailedIds() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+        UUID batchId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(batchId);
+        batch.setMigrationSourceId(sourceId);
+        batch.setStatus(MigrationBatch.Status.PARTIAL);
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setOfficeName("ARC2");
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
+        when(batches.findById(batchId)).thenReturn(Optional.of(batch));
+        when(batches.saveAndFlush(batch)).thenReturn(batch);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+
+        var failed = new com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem();
+        failed.setMigrationSourceId(sourceId);
+        failed.setKind(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE);
+        failed.setSourceKey("FILE-227");
+        failed.setStatus(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.FAILED);
+        when(items.findByMigrationSourceIdAndKindAndSourceKeyIn(
+                eq(sourceId),
+                eq(com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE),
+                anyList())).thenReturn(java.util.List.of(failed));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(), items);
+        var response = service.retryFailedFiles(batchId, java.util.List.of(227));
+        assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
+        verify(execution).executeSelected(batchId, java.util.List.of(227));
+        verify(execution, never()).execute(batchId);
+    }
+
+    @Test
+    void partialBatchCanResumeWithoutDiscardingRecordedProgress() {
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationExecutionService execution = mock(MigrationExecutionService.class);
+
+        UUID id = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        MigrationBatch batch = new MigrationBatch();
+        batch.setId(id);
+        batch.setMigrationSourceId(sourceId);
+        batch.setBatchNumber("B-PARTIAL");
+        batch.setStatus(MigrationBatch.Status.PARTIAL);
+        batch.setFilesCount(7);
+        batch.setTotalFilesCount(10);
+        batch.setRemainingFilesCount(3);
+        batch.setCompletedAt(java.time.LocalDateTime.now());
+
+        MigrationSource source = new MigrationSource();
+        source.setId(sourceId);
+        source.setSourceType(MigrationSourceType.POSTGRESQL);
+        source.setOfficeName("ARC2");
+
+        when(batches.findById(id)).thenReturn(Optional.of(batch));
+        when(batches.saveAndFlush(batch)).thenReturn(batch);
+        when(sources.findById(sourceId)).thenReturn(Optional.of(source));
+
+        MigrationService service = new MigrationService(
+                sources, batches, execution, migrationSettings(true), crypto(),
+                mock(LegacyMigrationItemRepository.class));
+
+        var response = service.runBatch(
+                id, new MigrationRunRequest(new MigrationRunRequest.MigrationConfig(null, null, Map.of(), null)));
+
+        assertEquals(MigrationBatch.Status.RUNNING.name(), response.status());
+        assertEquals(7, batch.getFilesCount(), "completed file count must remain during resume");
+        assertEquals(10, batch.getTotalFilesCount());
+        assertEquals(3, batch.getRemainingFilesCount());
+        assertNull(batch.getCompletedAt());
+        verify(batches).saveAndFlush(batch);
+        verify(execution).prepare(id);
+        verify(execution).execute(id);
+    }
+
+    @Test
     void runBatchMovesPlannedBatchToRunningAndDispatchesExecution() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
         MigrationBatchRepository batches = mock(MigrationBatchRepository.class);

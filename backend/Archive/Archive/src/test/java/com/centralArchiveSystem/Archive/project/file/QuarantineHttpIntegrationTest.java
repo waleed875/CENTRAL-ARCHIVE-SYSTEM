@@ -67,12 +67,15 @@ class QuarantineHttpIntegrationTest {
         String admin = "Bearer " + token("system_admin");
         String reader = "Bearer " + token("read_only");
 
+        // The full integration suite can preserve other quarantined fixtures.
+        // Verify this entry by its own ID rather than relying on a global count
+        // or assuming it sorts to the first row.
+        String matching = "$.data.data[?(@.id == '" + quarantine + "')]";
         mvc.perform(get("/api/v1/admin/quarantine").header("Authorization", admin))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.total").value(1))
-            .andExpect(jsonPath("$.data.data[0].id").value(quarantine.toString()))
-            .andExpect(jsonPath("$.data.data[0].quarantineReason").exists())
-            .andExpect(jsonPath("$.data.data[0].objectKey").doesNotExist());
+            .andExpect(jsonPath(matching).isNotEmpty())
+            .andExpect(jsonPath(matching + ".quarantineReason").exists())
+            .andExpect(jsonPath("$.data.data[*].objectKey").doesNotExist());
         mvc.perform(get("/api/v1/admin/quarantine/{id}", quarantine)
                     .header("Authorization", admin))
             .andExpect(status().isOk())

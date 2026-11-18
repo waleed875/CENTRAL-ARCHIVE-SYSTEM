@@ -265,20 +265,67 @@ public class MigrationService {
     public MigrationBatchResponse runBatch(UUID batchId, MigrationRunRequest runRequest) {
         MigrationBatch batch = batchRepository.findById(batchId)
                 .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
-
         validateSupportedRunConfiguration(batch, runRequest);
+        return startBatch(batch, List.of());
+    }
 
-        if (batch.getStatus() != MigrationBatch.Status.PLANNED
+    /**
+     * Retry only explicitly selected, currently FAILED source file IDs.
+     * Never retry an arbitrary ID or a DONE file from another office. Successful
+     * records are immutable to this operation and the selection stays bounded.
+     */
+    public MigrationBatchResponse retryFailedFiles(UUID batchId, List<Integer> fileIds) {
+        if (fileIds == null || fileIds.isEmpty() || fileIds.size() > 100
+                || fileIds.stream().anyMatch(id -> id == null || id <= 0)
+                || fileIds.stream().distinct().count() != fileIds.size()) {
+            throw new IllegalArgumentException("Provide 1 to 100 unique positive legacy file IDs");
+        }
+
+        MigrationBatch batch = batchRepository.findById(batchId)
+                .orElseThrow(() -> new NoSuchElementException("Migration batch not found: " + batchId));
+        validateSupportedRunConfiguration(batch,
+                new MigrationRunRequest(new MigrationRunRequest.MigrationConfig(
+                        null, null, java.util.Map.of(), null)));
+        if (batch.getStatus() != MigrationBatch.Status.PARTIAL
                 && batch.getStatus() != MigrationBatch.Status.FAILED
                 && batch.getStatus() != MigrationBatch.Status.CANCELLED) {
+            throw new IllegalStateException("Selective retry requires a PARTIAL, FAILED or CANCELLED batch");
+        }
+
+        List<String> keys = fileIds.stream().map(id -> "FILE-" + id).toList();
+        var items = itemRepository.findByMigrationSourceIdAndKindAndSourceKeyIn(
+                batch.getMigrationSourceId(),
+                com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Kind.FILE,
+                keys);
+        java.util.Set<String> failedKeys = new java.util.HashSet<>();
+        for (var item : items) {
+            if (item.getStatus()
+                    == com.centralArchiveSystem.Archive.import_.migration.legacy.LegacyMigrationItem.Status.FAILED) {
+                failedKeys.add(item.getSourceKey());
+            }
+        }
+        if (failedKeys.size() != keys.size() || !failedKeys.containsAll(keys)) {
+            throw new IllegalArgumentException(
+                    "Every selected file must have a FAILED tracking row in this migration source");
+        }
+        return startBatch(batch, List.copyOf(fileIds));
+    }
+
+    private MigrationBatchResponse startBatch(MigrationBatch batch, List<Integer> retryFileIds) {
+        UUID batchId = batch.getId();
+        // PARTIAL means some source files were not migrated. Re-running the same batch
+        // is safe: completed source-scoped rows are skipped by the legacy adapter.
+        if (batch.getStatus() != MigrationBatch.Status.PLANNED
+                && batch.getStatus() != MigrationBatch.Status.FAILED
+                && batch.getStatus() != MigrationBatch.Status.CANCELLED
+                && batch.getStatus() != MigrationBatch.Status.PARTIAL) {
             throw new IllegalStateException(
-                    "Migration batch can only run from PLANNED, FAILED or CANCELLED status; current status: "
+                    "Migration batch can only run from PLANNED, FAILED, PARTIAL or CANCELLED status; current status: "
                             + batch.getStatus());
         }
 
         if (batchRepository.existsByStatus(MigrationBatch.Status.RUNNING)) {
-            throw new IllegalStateException(
-                    "Another migration batch is already RUNNING");
+            throw new IllegalStateException("Another migration batch is already RUNNING");
         }
 
         batch.setStatus(MigrationBatch.Status.RUNNING);
@@ -287,23 +334,27 @@ public class MigrationService {
         batch.setCancelRequested(false);
         MigrationBatch saved = batchRepository.saveAndFlush(batch);
 
-        // Do not log connection strings or other migration credentials.
-        log.info("Migration batch {} accepted for background execution via legacy staging adapter",
-                batchId);
+        log.info("Migration batch {} accepted for execution (selective retry: {})",
+                batchId, !retryFileIds.isEmpty());
 
+        Runnable dispatch = () -> {
+            migrationExecutionService.prepare(batchId);
+            if (retryFileIds.isEmpty()) {
+                migrationExecutionService.execute(batchId);
+            } else {
+                migrationExecutionService.executeSelected(batchId, retryFileIds);
+            }
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    migrationExecutionService.prepare(batchId);
-                    migrationExecutionService.execute(batchId);
+                    dispatch.run();
                 }
             });
         } else {
-            migrationExecutionService.prepare(batchId);
-            migrationExecutionService.execute(batchId);
+            dispatch.run();
         }
-
         return toBatchResponse(saved);
     }
 

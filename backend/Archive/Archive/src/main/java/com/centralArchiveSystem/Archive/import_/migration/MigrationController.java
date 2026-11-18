@@ -2,6 +2,7 @@ package com.centralArchiveSystem.Archive.import_.migration;
 
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.import_.migration.dto.*;
+import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationProgressTracker;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +22,9 @@ import java.util.UUID;
 public class MigrationController {
 
     private final MigrationService migrationService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MigrationProgressTracker progressTracker;
 
     public MigrationController(MigrationService migrationService) {
         this.migrationService = migrationService;
@@ -110,6 +114,16 @@ public class MigrationController {
                 ApiResponse.success(migrationService.updateBatch(id, request), "Migration batch updated"));
     }
 
+    @GetMapping("/migration-batches/{id}/live-progress")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Lightweight in-process live throughput for the selected migration batch")
+    public ResponseEntity<ApiResponse<MigrationProgressTracker.Snapshot>> liveProgress(
+            @PathVariable UUID id) {
+        MigrationBatchResponse batch = migrationService.getBatchById(id);
+        return ResponseEntity.ok(ApiResponse.success(progressTracker == null
+                ? null : progressTracker.snapshot(id, batch.migrationSourceId())));
+    }
+
     @PostMapping("/migration-batches/{id}/run")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Start a migration batch in the background")
@@ -121,6 +135,22 @@ public class MigrationController {
                 .body(ApiResponse.success(
                     Map.of("message", "Migration batch " + id + " started", "status", "ACCEPTED"),
                     "Migration batch started"));
+    }
+
+    public record FailedFilesRetryRequest(@jakarta.validation.constraints.NotEmpty
+                                          @jakarta.validation.constraints.Size(max = 100)
+                                          List<@jakarta.validation.constraints.NotNull Integer> fileIds) {}
+
+    @PostMapping("/migration-batches/{id}/retry-failed-files")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Retry 1–100 FAILED source files in the selected migration batch")
+    public ResponseEntity<ApiResponse<Map<String, String>>> retryFailedFiles(
+            @PathVariable UUID id,
+            @Valid @RequestBody FailedFilesRetryRequest request) {
+        migrationService.retryFailedFiles(id, request.fileIds());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                Map.of("status", "ACCEPTED", "message", "Selected failed files queued for retry"),
+                "Selective retry accepted"));
     }
 
     @PostMapping("/migration-batches/{id}/stop")

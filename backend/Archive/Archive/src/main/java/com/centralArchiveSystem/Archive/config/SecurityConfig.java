@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -42,7 +44,17 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        http.headers(headers -> headers.withObjectPostProcessor(
+                    new ObjectPostProcessor<HeaderWriterFilter>() {
+                        @Override
+                        public <O extends HeaderWriterFilter> O postProcess(O filter) {
+                            // Emit security headers before the asynchronous streaming worker
+                            // can commit the response. Preserve all default security headers.
+                            filter.setShouldWriteHeadersEagerly(true);
+                            return filter;
+                        }
+                    }))
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             // The authentication created during REQUEST must survive MVC's ASYNC redispatch.

@@ -61,6 +61,10 @@ class ExportStreamingRealServerIntegrationTest {
         assertArrayEquals(expected, ok.body(), "The ASYNC dispatch must not truncate the downloaded archive");
         assertTrue(ok.headers().firstValue("Content-Disposition").orElse("")
                 .contains("export-test.pkg"));
+        // The response must retain security headers even when Tomcat switches
+        // from the REQUEST dispatch to the asynchronous streaming worker.
+        assertEquals("nosniff", ok.headers().firstValue("X-Content-Type-Options").orElse(""));
+        assertTrue(ok.headers().firstValue("Cache-Control").orElse("").contains("no-cache"));
 
         HttpResponse<byte[]> noToken = send(packageId, null);
         assertEquals(401, noToken.statusCode(), "Unauthenticated requests must still be rejected");

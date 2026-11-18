@@ -140,6 +140,17 @@ public interface FileRepository extends JpaRepository<FileEntity, UUID> {
             @Param("sortMode") String sortMode,
             Pageable pageable);
 
+    /**
+     * Orphan inventory must count all file metadata, including soft-deleted and
+     * quarantined entries, before labelling an object as unreferenced.
+     */
+    @Query("""
+        SELECT DISTINCT f.objectKey FROM FileEntity f
+        WHERE f.bucketName = :bucket AND f.objectKey IN :objectKeys
+        """)
+    List<String> findReferencedObjectKeys(@Param("bucket") String bucket,
+                                          @Param("objectKeys") List<String> objectKeys);
+
     List<FileEntity> findByDeletedAtIsNotNull();
     long countByConfidentialityLevelIdAndDeletedAtIsNull(UUID confidentialityLevelId);
     long countByConfidentialityLevelId(UUID confidentialityLevelId);

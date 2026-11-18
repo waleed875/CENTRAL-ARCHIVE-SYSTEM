@@ -17,6 +17,36 @@ import static org.mockito.Mockito.*;
 class MigrationRunnerCancellationTest {
 
     @Test
+    void untrackedSourceRecordsPreventFalseSuccessfulCompletion() {
+        MigrationBatch incomplete = new MigrationBatch();
+        incomplete.setRemainingProjectsCount(1);
+        incomplete.setRemainingFilesCount(3);
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+
+        incomplete.setRemainingProjectsCount(0);
+        incomplete.setRemainingFilesCount(1);
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+
+        incomplete.setRemainingFilesCount(0);
+        assertEquals(MigrationBatch.Status.SUCCESS,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+    }
+
+    @Test
+    void cancellationAndFatalErrorTakePrecedenceOverPartialCounts() {
+        MigrationBatch batch = new MigrationBatch();
+        batch.setRemainingFilesCount(5);
+        assertEquals(MigrationBatch.Status.CANCELLED,
+                MigrationRunner.completionStatus(batch, true, "failure", 1, 1, 1, 1));
+        assertEquals(MigrationBatch.Status.FAILED,
+                MigrationRunner.completionStatus(batch, false, "failure", 1, 1, 1, 1));
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(batch, false, null, 1, 0, 0, 0));
+    }
+
+    @Test
     void cancellationRegistrySignalsOnlyPreparedBatches() {
         MigrationRunner runner = new MigrationRunner(
                 mock(LegacyMigrationService.class),
@@ -32,6 +62,52 @@ class MigrationRunnerCancellationTest {
         assertTrue(runner.requestCancellation(preparedBatch));
         assertTrue(runner.requestCancellation(preparedBatch));
         assertEquals(false, runner.requestCancellation(unknownBatch));
+    }
+
+    @Test
+    void completingOneBatchDoesNotEraseAnotherPreparedCancellation() {
+        LegacyMigrationService legacy = mock(LegacyMigrationService.class);
+        MigrationBatchRepository batches = mock(MigrationBatchRepository.class);
+        MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
+        LegacyMigrationItemRepository items = mock(LegacyMigrationItemRepository.class);
+        MigrationSettingsService settings = mock(MigrationSettingsService.class);
+
+        UUID firstId = UUID.randomUUID(), queuedId = UUID.randomUUID();
+        MigrationBatch first = new MigrationBatch();
+        first.setId(firstId);
+        first.setMigrationSourceId(UUID.randomUUID());
+        first.setStatus(MigrationBatch.Status.RUNNING);
+        when(batches.findById(firstId)).thenReturn(Optional.of(first));
+        when(batches.save(any(MigrationBatch.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MigrationRunner runner = new MigrationRunner(legacy, batches, sources, items, settings);
+        runner.prepareCancellation(queuedId);
+        MigrationCancellationToken cancelled = new MigrationCancellationToken();
+        cancelled.requestCancellation();
+
+        assertTrue(runner.runBatch(firstId, cancelled));
+        assertEquals(MigrationBatch.Status.CANCELLED, first.getStatus());
+        assertTrue(runner.requestCancellation(queuedId),
+                "finishing one batch must not discard another queued batch's stop token");
+        verify(legacy, never()).openConnection(any());
+    }
+
+    @Test
+    void rejectedSelectiveTriggerKeepsItsPreparedCancellationToken() {
+        MigrationRunner runner = new MigrationRunner(
+                mock(LegacyMigrationService.class),
+                mock(MigrationBatchRepository.class),
+                mock(MigrationSourceRepository.class),
+                mock(LegacyMigrationItemRepository.class),
+                mock(MigrationSettingsService.class));
+        var running = (java.util.concurrent.atomic.AtomicBoolean)
+                org.springframework.test.util.ReflectionTestUtils.getField(runner, "running");
+        running.set(true); // another batch owns the worker
+        UUID queuedId = UUID.randomUUID();
+
+        assertEquals(false, runner.runSelectedFiles(queuedId, java.util.List.of(227)));
+        assertTrue(runner.requestCancellation(queuedId),
+                "rejected trigger must retain its cancellation token until the queued job starts");
     }
 
     @Test
