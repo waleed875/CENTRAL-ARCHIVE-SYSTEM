@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -541,82 +542,116 @@ public class LegacyMigrationService {
                 .map(Project::getConfidentialityLevelId)
                 .orElse(null);
 
+        // Bound the tracking and target-file prefetch to one metadata page.
+        // Legacy BYTEA is still read separately in fixed-size chunks.
+        final int pageLimit = Math.max(1, Math.min(200, batchSize));
+        List<LegacyFileMetadata> pending = new ArrayList<>(pageLimit);
         connection.jdbc().query(
-                // Only select metadata: retrieving BYTEA via a JDBC ResultSet can allocate
-                // the whole Base64 payload on the heap even with getBinaryStream().
                 "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
                         + LEGACY_DB_SCHEMA
                         + ".tbl_files WHERE idproject = ? ORDER BY idfile",
                 preparedStatement -> {
                     preparedStatement.setInt(1, legacyProjectId);
-                    preparedStatement.setFetchSize(Math.max(1, batchSize));
+                    preparedStatement.setFetchSize(pageLimit);
                 },
                 resultSet -> {
-                    if (cancellation.isCancellationRequested()) {
-                        return;
-                    }
-                    int idfile = resultSet.getInt("idfile");
-                    String sourceKey = "FILE-" + idfile;
-
-                    LegacyMigrationItem previousFileItem = itemRepository
-                            .findByMigrationSourceIdAndKindAndSourceKey(
-                                    connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKey)
-                            .orElse(null);
-                    if (isValidCompletedFile(previousFileItem, targetProjectId)) {
-                        summary.incrementSkipped();
-                        return;
-                    }
-                    if (previousFileItem != null
-                            && previousFileItem.getStatus() == LegacyMigrationItem.Status.RUNNING
-                            && previousFileItem.getStartedAt() != null
-                            && previousFileItem.getStartedAt().isAfter(
-                                    java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
-                        log.info("Skipping file {} because another migration attempt started recently", idfile);
-                        summary.incrementSkipped();
-                        return;
-                    }
-
-                    String originalName = resultSet.getString("filename");
-                    String suffix = resultSet.getString("filesuffix");
-
-                    if (cancellation.isCancellationRequested()) {
-                        return;
-                    }
-                    // Fetch the potentially large BYTEA through separate bounded substring
-                    // queries. Four metadata cursors plus four chunk readers fit the legacy
-                    // connection pool (8) without loading whole files into Java memory.
+                    if (cancellation.isCancellationRequested()) return;
                     long encodedLength = resultSet.getLong("encoded_length");
-                    InputStream encodedBase64 = resultSet.wasNull() ? null :
-                            new LegacyByteaInputStream(connection.jdbc(), idfile, encodedLength);
-                    try {
-                            migrateOneFile(
-                                    connection,
-                                    idfile,
-                                    sourceKey,
-                                    targetProjectId,
-                                    originalName,
-                                    suffix,
-                                    encodedBase64,
-                                    summary,
-                                    defaultCategoryId,
-                                    defaultTypeId,
-                                    projectConfidentialityId
-                            );
-                    } finally {
-                        if (encodedBase64 != null) {
-                            try {
-                                encodedBase64.close();
-                            } catch (Exception closeError) {
-                                log.warn(
-                                        "Failed to close legacy file stream for id={}",
-                                        idfile,
-                                        closeError
-                                );
-                            }
-                        }
+                    boolean missingContent = resultSet.wasNull();
+                    pending.add(new LegacyFileMetadata(
+                            resultSet.getInt("idfile"),
+                            resultSet.getString("filename"),
+                            resultSet.getString("filesuffix"),
+                            encodedLength,
+                            missingContent));
+                    if (pending.size() >= pageLimit) {
+                        migrateFileMetadataPage(connection, List.copyOf(pending), targetProjectId,
+                                summary, defaultCategoryId, defaultTypeId,
+                                projectConfidentialityId, cancellation);
+                        pending.clear();
                     }
                 }
         );
+        if (!pending.isEmpty() && !cancellation.isCancellationRequested()) {
+            migrateFileMetadataPage(connection, List.copyOf(pending), targetProjectId,
+                    summary, defaultCategoryId, defaultTypeId,
+                    projectConfidentialityId, cancellation);
+        }
+    }
+
+    private record LegacyFileMetadata(int idfile, String originalName, String suffix,
+                                      long encodedLength, boolean missingContent) {}
+
+    /**
+     * Replace per-file tracking/target lookups with two bounded IN queries.
+     * A source ID is mandatory: legacy file numbers overlap across offices.
+     */
+    private void migrateFileMetadataPage(LegacyConnection connection,
+                                         List<LegacyFileMetadata> metadata,
+                                         UUID targetProjectId, LegacyFileSummary summary,
+                                         UUID defaultCategoryId, UUID defaultTypeId,
+                                         UUID projectConfidentialityId,
+                                         MigrationCancellationToken cancellation) {
+        List<String> sourceKeys = metadata.stream()
+                .map(row -> "FILE-" + row.idfile()).toList();
+        Map<String, LegacyMigrationItem> tracked = new HashMap<>();
+        for (LegacyMigrationItem item : itemRepository
+                .findByMigrationSourceIdAndKindAndSourceKeyIn(
+                        connection.sourceId(), LegacyMigrationItem.Kind.FILE, sourceKeys)) {
+            tracked.put(item.getSourceKey(), item);
+        }
+        List<UUID> targetIds = tracked.values().stream()
+                .filter(item -> item.getStatus() == LegacyMigrationItem.Status.DONE)
+                .map(LegacyMigrationItem::getTargetId)
+                .filter(java.util.Objects::nonNull)
+                .distinct().toList();
+        Map<UUID, FileEntity> targetFiles = new HashMap<>();
+        if (!targetIds.isEmpty()) {
+            for (FileEntity file : fileRepository.findAllById(targetIds)) {
+                targetFiles.put(file.getId(), file);
+            }
+        }
+
+        for (LegacyFileMetadata row : metadata) {
+            if (cancellation.isCancellationRequested()) break;
+            String sourceKey = "FILE-" + row.idfile();
+            LegacyMigrationItem previous = tracked.get(sourceKey);
+            if (previous != null && previous.getStatus() == LegacyMigrationItem.Status.DONE
+                    && previous.getTargetId() != null) {
+                FileEntity file = targetFiles.get(previous.getTargetId());
+                if (file != null && file.getDeletedAt() == null
+                        && ("ACTIVE".equalsIgnoreCase(file.getStatus())
+                            || "QUARANTINED".equalsIgnoreCase(file.getStatus()))
+                        && targetProjectId.equals(file.getProjectId())) {
+                    summary.incrementSkipped();
+                    continue;
+                }
+            }
+            if (previous != null && previous.getStatus() == LegacyMigrationItem.Status.RUNNING
+                    && previous.getStartedAt() != null
+                    && previous.getStartedAt().isAfter(
+                        java.time.LocalDateTime.now().minusMinutes(STALE_RUNNING_ITEM_MINUTES))) {
+                log.info("Skipping file {} because another migration attempt started recently", row.idfile());
+                summary.incrementSkipped();
+                continue;
+            }
+
+            InputStream encodedBase64 = row.missingContent() ? null
+                    : new LegacyByteaInputStream(connection.jdbc(), row.idfile(), row.encodedLength());
+            try {
+                migrateOneFile(connection, row.idfile(), sourceKey, targetProjectId,
+                        row.originalName(), row.suffix(), encodedBase64, summary,
+                        defaultCategoryId, defaultTypeId, projectConfidentialityId,
+                        previous);
+            } finally {
+                if (encodedBase64 != null) {
+                    try { encodedBase64.close(); }
+                    catch (Exception closeError) {
+                        log.warn("Failed to close legacy file stream for id={}", row.idfile(), closeError);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -643,13 +678,11 @@ public class LegacyMigrationService {
                                 LegacyFileSummary summary,
                                 UUID defaultCategoryId,
                                 UUID defaultTypeId,
-                                UUID projectConfidentialityId) {
+                                UUID projectConfidentialityId,
+                                LegacyMigrationItem previous) {
         LegacyMigrationItem item = trackingItem(
-                connection,
-                LegacyMigrationItem.Kind.FILE,
-                sourceKey,
-                (long) idfile,
-                null
+                connection, LegacyMigrationItem.Kind.FILE, sourceKey,
+                (long) idfile, null, previous
         );
         item.setStatus(LegacyMigrationItem.Status.RUNNING);
         item.setStartedAt(java.time.LocalDateTime.now());
@@ -892,9 +925,18 @@ public class LegacyMigrationService {
                                              String sourceKey,
                                              Long sourceId,
                                              UUID targetId) {
-        LegacyMigrationItem item = itemRepository
-                .findByMigrationSourceIdAndKindAndSourceKey(connection.sourceId(), kind, sourceKey)
-                .orElseGet(LegacyMigrationItem::new);
+        return trackingItem(connection, kind, sourceKey, sourceId, targetId,
+                itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        connection.sourceId(), kind, sourceKey).orElse(null));
+    }
+
+    private LegacyMigrationItem trackingItem(LegacyConnection connection,
+                                             LegacyMigrationItem.Kind kind,
+                                             String sourceKey,
+                                             Long sourceId,
+                                             UUID targetId,
+                                             LegacyMigrationItem previous) {
+        LegacyMigrationItem item = previous == null ? new LegacyMigrationItem() : previous;
         item.setKind(kind);
         item.setSourceKey(sourceKey);
         // Carries the scope of the unique (source, kind, source_key) index. Reuse an existing
