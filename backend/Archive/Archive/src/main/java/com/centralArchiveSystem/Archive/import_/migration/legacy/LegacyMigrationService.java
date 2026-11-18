@@ -80,6 +80,9 @@ public class LegacyMigrationService {
     private final TransactionTemplate transactionTemplate;
     private final SettingsCrypto settingsCrypto;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MigrationProgressTracker progressTracker;
+
     /**
      * Sentinel stored when the legacy row has no usable year. 1000 is below the 1900 floor that
      * {@link #parseYearSanitized} accepts, so a real year can never collide with it and the
@@ -654,6 +657,10 @@ public class LegacyMigrationService {
         item.setError(null);
         item.setAttempts((item.getAttempts() == null ? 0 : item.getAttempts()) + 1);
         itemRepository.save(item);
+        if (progressTracker != null) {
+            progressTracker.fileStarted(connection.sourceId(), sourceKey);
+        }
+        final long readingStart = System.nanoTime();
 
         Path spool = null;
         String bucket = minioConfig.getBucket();
@@ -667,6 +674,7 @@ public class LegacyMigrationService {
                     suffix
             );
             spool = prepared.path();
+            final long afterRead = System.nanoTime();
 
             String storedName = UUID.randomUUID() + (prepared.quarantined() ? ".bin" : "." + prepared.extension());
             objectKey = minioPrefix + (prepared.quarantined() ? "/quarantine" : "/files") + "/" + targetProjectId + "/" + storedName;
@@ -681,6 +689,7 @@ public class LegacyMigrationService {
                 );
             }
             uploadedToObjectStorage = true;
+            final long afterUpload = System.nanoTime();
 
             FileEntity file = new FileEntity();
             file.setProjectId(targetProjectId);
@@ -728,6 +737,11 @@ public class LegacyMigrationService {
             }
 
             summary.incrementDone();
+            if (progressTracker != null) {
+                progressTracker.completed(connection.sourceId(), prepared.sizeBytes(),
+                        afterRead - readingStart, afterUpload - afterRead,
+                        System.nanoTime() - afterUpload);
+            }
         } catch (Exception e) {
             log.error(
                     "Failed to migrate file {} ({}): {}",
@@ -756,6 +770,9 @@ public class LegacyMigrationService {
             itemRepository.save(item);
             summary.incrementFailed();
         } finally {
+            if (progressTracker != null) {
+                progressTracker.fileFinished(connection.sourceId(), sourceKey);
+            }
             if (spool != null) {
                 try {
                     Files.deleteIfExists(spool);
