@@ -3,6 +3,9 @@ package com.centralArchiveSystem.Archive.import_.migration.legacy;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
+import com.centralArchiveSystem.Archive.project.file.FileRepository;
+import com.centralArchiveSystem.Archive.config.MinioConfig;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,16 +40,36 @@ public class MigrationFileAuditService {
                                      String nextCursor, boolean hasMore,
                                      String limitation) {}
 
+    /**
+     * Candidate inventory, not proof that objects may be deleted. Existing
+     * references in ANY file state keep an object out of the candidate list.
+     */
+    public record OrphanCandidate(String objectKey, String status) {}
+    public record OrphanPage(UUID sourceId, UUID projectId, String area,
+                             int checked, long referenced, long unreferenced,
+                             List<OrphanCandidate> candidates,
+                             String nextCursor, boolean hasMore,
+                             String limitation) {}
+
     private final MigrationSourceRepository sources;
     private final LegacyMigrationItemRepository items;
     private final MinioService minio;
+    private final FileRepository files;
+    private final MinioConfig minioConfig;
+
+    @Value("${legacy.migration.minio-prefix:legacy/migration}")
+    private String migrationPrefix;
 
     public MigrationFileAuditService(MigrationSourceRepository sources,
                                      LegacyMigrationItemRepository items,
-                                     MinioService minio) {
+                                     MinioService minio,
+                                     FileRepository files,
+                                     MinioConfig minioConfig) {
         this.sources = sources;
         this.items = items;
         this.minio = minio;
+        this.files = files;
+        this.minioConfig = minioConfig;
     }
 
     @Transactional(readOnly = true)
@@ -156,6 +179,67 @@ public class MigrationFileAuditService {
                 List.copyOf(findings), more ? nextCursor : null, more,
                 "This page checks tracked DONE files only. It cannot detect untracked legacy files "
                         + "or orphan objects in MinIO; no data was modified.");
+    }
+
+    /**
+     * Inventory one migration-project prefix with provider-side pagination.
+     * The requested project MUST have a completed migration mapping in the
+     * selected source; arbitrary bucket traversal is intentionally prohibited.
+     * We never delete, attach, or alter any object.
+     */
+    @Transactional(readOnly = true)
+    public OrphanPage orphanCandidates(UUID sourceId, int legacyProjectId,
+                                       String area, String after, int limit) {
+        if (!sources.existsById(sourceId)) {
+            throw new ResourceNotFoundException("MigrationSource", "id", sourceId);
+        }
+        if (legacyProjectId <= 0 || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Project ID must be positive and limit must be 1..100");
+        }
+        if (!"files".equals(area) && !"quarantine".equals(area)) {
+            throw new IllegalArgumentException("Area must be files or quarantine");
+        }
+        LegacyMigrationItem project = items.findByMigrationSourceIdAndKindAndSourceKey(
+                sourceId, LegacyMigrationItem.Kind.PROJECT, "PROJECT-" + legacyProjectId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Project has no migration mapping for this source"));
+        if (project.getStatus() != LegacyMigrationItem.Status.DONE || project.getTargetId() == null) {
+            throw new IllegalArgumentException("Project must have a completed target mapping");
+        }
+        UUID targetProjectId = project.getTargetId();
+        String prefix = migrationPrefix + "/" + area + "/" + targetProjectId + "/";
+        if (after != null && (!after.startsWith(prefix) || after.length() > 1024)) {
+            throw new IllegalArgumentException("Cursor must refer to this migrated project and area");
+        }
+        String bucket = minioConfig.getBucket();
+        if (bucket == null || bucket.isBlank()) {
+            throw new IllegalStateException("MinIO bucket is not configured");
+        }
+
+        // Provider-side maxKeys and startAfter prevent a bucket-wide scan.
+        // Query one extra key to determine whether the page can advance.
+        List<String> keys;
+        try {
+            keys = minio.listObjectKeysPage(bucket, prefix, after, limit + 1);
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not inventory the selected MinIO prefix", e);
+        }
+        boolean more = keys.size() > limit;
+        List<String> current = keys.subList(0, Math.min(limit, keys.size()));
+        java.util.Set<String> referenced = current.isEmpty() ? java.util.Set.of()
+                : new java.util.HashSet<>(files.findReferencedObjectKeys(bucket, current));
+        List<OrphanCandidate> candidates = new ArrayList<>();
+        for (String key : current) {
+            if (!referenced.contains(key)) {
+                candidates.add(new OrphanCandidate(key, "UNREFERENCED_CANDIDATE"));
+            }
+        }
+        return new OrphanPage(sourceId, targetProjectId, area, current.size(),
+                referenced.size(), candidates.size(), List.copyOf(candidates),
+                more && !current.isEmpty() ? current.get(current.size() - 1) : null, more,
+                "Candidates are not safe-to-delete findings. Active migrations, delayed DB commits, "
+                        + "and earlier metadata history require manual reconciliation. "
+                        + "No object or file metadata was modified.");
     }
 
 }
