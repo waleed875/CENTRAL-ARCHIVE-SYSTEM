@@ -171,6 +171,55 @@ class LegacyMigrationHttpE2ETest {
     }
 
     @Test
+    void pagesProjectFileTasksAndResumesWithoutDuplicateFiles() throws Exception {
+        int nextProject = legacyProjectId + 1;
+        int nextFile = legacyFileId + 1;
+        jdbcTemplate.update("""
+                INSERT INTO public.tbl_project(
+                    idproject, idside, name, number, code, year, admin, detils, note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, nextProject, legacySideId, "Legacy Project " + nextProject,
+                "LEG-" + nextProject, "CODE-" + nextProject, "2024",
+                "Legacy Administrator", "second paged project", "test");
+        jdbcTemplate.update("""
+                INSERT INTO public.tbl_files(
+                    idfile, filename, filesuffix, idproject, detils, filebinary
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """, nextFile, "legacy-second-project.txt", ".txt", nextProject,
+                "project pagination fixture", Base64.getEncoder().encodeToString(decodedFile));
+
+        MigrationSource source = source();
+        // Force a single row per project page so a two-project fixture must
+        // advance the seek cursor. Restore the shared Spring service afterward.
+        int originalSize = (int) org.springframework.test.util.ReflectionTestUtils
+                .getField(migrationService, "batchSize");
+        org.springframework.test.util.ReflectionTestUtils.setField(migrationService, "batchSize", 1);
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            assertEquals(2, migrationService.migrateProjects(connection));
+            try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
+                var first = migrationService.migrateFiles(connection, workers);
+                assertEquals(2, first.done());
+                assertEquals(0, first.failed());
+                var resumed = migrationService.migrateFiles(connection, workers);
+                assertEquals(0, resumed.done());
+                assertEquals(0, resumed.failed());
+                assertEquals(2, resumed.skipped());
+            }
+            for (int fileId : new int[]{legacyFileId, nextFile}) {
+                var tracked = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + fileId).orElseThrow();
+                assertEquals(1, tracked.getAttempts());
+                assertEquals(LegacyMigrationItem.Status.DONE, tracked.getStatus());
+                assertNotNull(fileRepository.findById(tracked.getTargetId()).orElseThrow().getProjectId());
+            }
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(
+                    migrationService, "batchSize", originalSize);
+        }
+    }
+
+    @Test
     void selectiveRetryProcessesOnlyChosenFailedFile() throws Exception {
         int otherId = legacyFileId + 1;
         jdbcTemplate.update("""
