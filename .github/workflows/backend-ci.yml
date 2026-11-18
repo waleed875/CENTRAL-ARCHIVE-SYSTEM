@@ -104,6 +104,8 @@ jobs:
                       archive.write(path)
               archive.write('pom.xml')
           PY
+      - name: Verify migration benchmark collector unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_migration_benchmark.py' -v
       - name: Compile and run ALL unit, integration and workflow tests
         run: bash mvnw -B -ntp -DfailIfNoTests=true verify | tee "$RUNNER_TEMP/backend-verify.log"
       - name: Exercise packaged JAR with valid and invalid values against disposable data
