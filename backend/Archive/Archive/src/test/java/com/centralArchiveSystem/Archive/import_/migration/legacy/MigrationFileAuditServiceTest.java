@@ -90,7 +90,8 @@ class MigrationFileAuditServiceTest {
         when(minio.objectExists("archive", "legacy/one")).thenReturn(false);
         when(minio.objectExists("archive", "legacy/two")).thenThrow(new RuntimeException("storage unavailable"));
 
-        var page = new MigrationFileAuditService(sources, items, minio)
+        var page = new MigrationFileAuditService(sources, items, minio,
+                mock(FileRepository.class), mock(MinioConfig.class))
                 .reconcilePage(sourceId, null, 2);
 
         assertEquals(2, page.checked());
@@ -119,7 +120,8 @@ class MigrationFileAuditServiceTest {
                         new Object[]{"FILE-10", UUID.randomUUID(), null, null, null, null,
                                 null, null, null}));
 
-        var service = new MigrationFileAuditService(sources, items, minio);
+        var service = new MigrationFileAuditService(sources, items, minio,
+                mock(FileRepository.class), mock(MinioConfig.class));
         var page = service.reconcilePage(sourceId, "FILE-9", 1);
         assertFalse(page.hasMore());
         assertNull(page.nextCursor());
