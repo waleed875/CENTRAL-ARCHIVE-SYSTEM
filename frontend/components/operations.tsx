@@ -13,6 +13,7 @@ type PackageFileSummary={originalName:string;extension:string;sizeBytes:number|n
 type PackageProjectSummary={projectId:string;projectNumber:string;name:string;year:number|null;versionNo:number|null;projectUid:string;description:string;fileCount:number;truncated:boolean;files:PackageFileSummary[]};
 type PackagePreviewData={packageId:string;packageName:string;schemaVersion:string;packageFormat:string;status:string;projectCount:number;fileCount:number;truncated:boolean;projects:PackageProjectSummary[]};
 type MigrationSettings={migrationEnabled:boolean;environmentDefault:boolean;updatedAt?:string|null};
+type MigrationOrphanInventory={sourceId:string;projectId:string;area:string;checked:number;referenced:number;unreferenced:number;candidates:Array<{objectKey:string;status:string}>;nextCursor:string|null;hasMore:boolean;limitation:string};
 type MigrationReconciliation={sourceId:string;checked:number;present:number;missingObjects:number;invalidLinks:number;unknown:number;findings:Array<{sourceKey:string;targetId:string|null;status:"PRESENT"|"MISSING_OBJECT"|"INVALID_LINK"|"UNKNOWN"}>;nextCursor:string|null;hasMore:boolean;limitation:string};
 type MigrationAudit={sourceId:string;trackingStatuses:Record<string,number>;missingOrInvalidDoneLinks:number;problems:Array<{sourceKey:string;trackingStatus:string;targetId?:string|null;reason:string}>;storageSamples:Array<{sourceKey:string;fileId:string;objectStatus:"PRESENT"|"MISSING"|"UNKNOWN"}>;problemSamplesLimited:boolean;warning:string;failedErrorCategories:Record<string,number>};
 const mappingFields=[["organizations","organization_mapping","ربط الجهات"],["projectTypes","project_type_mapping","ربط أنواع المشاريع"],["confidentialityLevels","confidentiality_mapping","ربط درجات السرية"],["fileCategories","file_category_mapping","ربط فئات الملفات"],["fileTypes","file_type_mapping","ربط أنواع الملفات"]] as const;
@@ -107,6 +108,11 @@ export function ImportExport({mode}:{mode:Mode}){return mode==="imports"?<Import
 export function Migration(){
  const [auditSource,setAuditSource]=useState<string|null>(null);
  const [retryIds,setRetryIds]=useState("");
+ const [inventoryProject,setInventoryProject]=useState("");
+ const [inventoryArea,setInventoryArea]=useState<"files"|"quarantine">("files");
+ const [inventory,setInventory]=useState<MigrationOrphanInventory|null>(null);
+ const [inventoryLoading,setInventoryLoading]=useState(false);
+ const [inventoryError,setInventoryError]=useState("");
  const [reconciliation,setReconciliation]=useState<MigrationReconciliation|null>(null);
  const [reconcileLoading,setReconcileLoading]=useState(false);
  const [reconcileError,setReconcileError]=useState("");
@@ -118,7 +124,20 @@ export function Migration(){
  const audit=useRemote<MigrationAudit>(isAdmin&&selected&&auditSource===selected
    ?"/api/v1/migration-sources/"+selected+"/file-audit":null);
  const hasActiveBatch=!!batches.data?.some(batch=>batch.status==="RUNNING"||batch.cancelRequested);
- useEffect(()=>{setReconciliation(null);setReconcileError("");},[selected]);
+ useEffect(()=>{setReconciliation(null);setReconcileError("");setInventory(null);setInventoryError("");},[selected]);
+ async function inspectOrphanCandidates(after?:string){
+  if(!selected||inventoryLoading)return;
+  const id=Number(inventoryProject.trim());
+  if(!Number.isSafeInteger(id)||id<=0){setInventoryError("أدخل رقم مشروع المصدر القديم بشكل صحيح.");return}
+  setInventoryLoading(true);setInventoryError("");
+  try{
+   const q=new URLSearchParams({legacyProjectId:String(id),area:inventoryArea,limit:"50"});
+   if(after)q.set("after",after);
+   const result=await api<MigrationOrphanInventory>("/api/v1/migration-sources/"+selected+"/orphan-candidates?"+q.toString());
+   setInventory(result);
+  }catch(e){setInventoryError(e instanceof Error?e.message:"تعذر جرد الكائنات")}
+  finally{setInventoryLoading(false)}
+ }
  async function checkReconciliation(nextCursor?:string){
   if(!selected||reconcileLoading)return;
   setReconcileLoading(true);setReconcileError("");
@@ -194,6 +213,19 @@ export function Migration(){
  {!reconciliation.hasMore&&<p className="hint">تم الوصول إلى نهاية سجلات DONE الخاصة بهذا المصدر.</p>}
  </div>}
  </Panel></div>}
+ {selected&&isAdmin&&<div className="section-gap"><Panel title="جرد كائنات MinIO غير المرتبطة" subtitle="جرد يدوي حسب المشروع الأصلي؛ النتائج مرشحة للمراجعة وليست تصريحًا بحذف أي كائن">
+ <div className="form-stack">
+ <div className="toolbar"><input aria-label="رقم المشروع القديم" type="number" min={1} value={inventoryProject} onChange={e=>{setInventoryProject(e.target.value);setInventory(null)}} placeholder="رقم المشروع القديم"/>
+ <select aria-label="منطقة التخزين" value={inventoryArea} onChange={e=>{setInventoryArea(e.target.value as "files"|"quarantine");setInventory(null)}}><option value="files">الملفات</option><option value="quarantine">الحجر الأمني</option></select>
+ <button type="button" className="btn btn-outline btn-sm" disabled={inventoryLoading||!inventoryProject.trim()} onClick={()=>inspectOrphanCandidates()}>فحص أول 50 كائنًا</button></div>
+ {inventoryError&&<Alert message={inventoryError}/>}
+ {inventoryLoading&&<Loading/>}
+ {inventory&&<><div className="chips"><strong>فُحص: {inventory.checked}</strong><span className="hint">مرتبط بقاعدة البيانات: {inventory.referenced}</span><span className="hint">غير مرتبط: {inventory.unreferenced}</span></div>
+ {inventory.candidates.length?<div className="table-scroller"><table className="data-table"><thead><tr><th>مفتاح الكائن المرشح للمراجعة</th></tr></thead><tbody>{inventory.candidates.map(x=><tr key={x.objectKey}><td style={{overflowWrap:"anywhere"}}>{x.objectKey}</td></tr>)}</tbody></table></div>:<p className="hint">لم يُعثر على كائنات غير مرتبطة في هذه الصفحة.</p>}
+ <p className="hint">النتائج خاصة بالصفحة الحالية ومنطقة المشروع المختارة. قد توجد كائنات قيد الرفع أو التسوية؛ لا تحذفها دون مراجعة مستقلة.</p>
+ {inventory.hasMore&&inventory.nextCursor&&<button type="button" className="btn btn-outline btn-sm" disabled={inventoryLoading} onClick={()=>inspectOrphanCandidates(inventory.nextCursor!)}>فحص الصفحة التالية</button>}
+ {!inventory.hasMore&&<p className="hint">نهاية نتائج هذه المنطقة.</p>}</>}
+ </div></Panel></div>}
  {selected&&<div className="section-gap"><Panel title="دفعات الترحيل" subtitle="إنشاء دفعات ومراقبة نتائج التشغيل" action={<div className="chips"><button className="btn btn-quiet btn-sm" onClick={batches.reload}><RefreshCw size={14}/> تحديث</button>{isAdmin&&sources.data?.find(source=>source.id===selected)?.isActive!==false&&<button className="btn btn-gold btn-sm" onClick={()=>{setBatch({batchNumber:"",notes:""});setError("");setModal("batch")}}><Plus size={14}/> دفعة جديدة</button>}</div>}>{batches.error&&<Alert message={batches.error}/>}
  {isAdmin&&batches.data?.some(b=>b.status==="RUNNING")&&<MigrationLiveProgress batchId={batches.data.find(b=>b.status==="RUNNING")!.id}/>}
  {batches.loading?<Loading/>:!batches.data?.length?<Empty title="لا توجد دفعات بعد"/>:<div className="table-scroller"><table className="data-table"><thead><tr><th>رقم الدفعة</th><th>الحالة</th><th>المشاريع</th><th>الملفات</th><th>وقت البدء</th><th></th></tr></thead><tbody>{batches.data.map(b=><tr key={b.id}><td><strong>{b.batchNumber}</strong><small className="table-sub">{b.notes}</small></td><td><Status value={b.status}/></td><td><strong>{b.projectsCount??0} / {b.totalProjectsCount??0}</strong><small className="table-sub">متبقٍ: {b.remainingProjectsCount??0}</small></td><td><strong>{b.filesCount??0} / {b.totalFilesCount??0}</strong><small className="table-sub">متبقٍ: {b.remainingFilesCount??0}</small></td><td>{dateLabel(b.startedAt)}</td><td><div className="chips">{isAdmin&&b.status==="RUNNING"&&<button disabled={saving||!!b.cancelRequested} title={b.cancelRequested?"تم إرسال طلب الإيقاف":"إيقاف آمن للدفعة"} onClick={()=>stop(b.id)} className="btn btn-danger btn-sm"><StopCircle size={14}/>{b.cancelRequested?"جارٍ الإيقاف":"إيقاف"}</button>}{b.cancelRequested&&<small className="table-sub">ينتظر إنهاء الملفات النشطة</small>}{isAdmin&&(b.status==="PARTIAL"||b.status==="FAILED"||b.status==="CANCELLED")&&<><input aria-label="معرّفات الملفات الفاشلة" className="form-input" style={{maxWidth:170}} value={retryIds} onChange={e=>setRetryIds(e.target.value)} placeholder="227, 228, 231" title="أدخل معرّفات ملفات المصدر الفاشلة مفصولة بفواصل"/><button type="button" className="btn btn-outline btn-sm" disabled={saving||!retryIds.trim()||!settings.data?.migrationEnabled||sources.data?.find(source=>source.id===selected)?.isActive===false} onClick={()=>retryFailedFiles(b.id)} title="إعادة محاولة الملفات الفاشلة المحددة فقط"><RefreshCw size={14}/> إعادة ملفات محددة</button></>}{isAdmin&&sources.data?.find(source=>source.id===selected)?.isActive!==false&&(b.status==="PLANNED"||b.status==="FAILED"||b.status==="PARTIAL"||b.status==="CANCELLED")&&<button disabled={saving||settings.loading||!settings.data?.migrationEnabled} title={!settings.data?.migrationEnabled?"فعّل نافذة الترحيل أولاً من إرشادات النقل":b.status==="CANCELLED"||b.status==="PARTIAL"?"استئناف العناصر غير المكتملة":"تشغيل الدفعة"} onClick={()=>run(b.id)} className="btn btn-gold btn-sm"><Play size={14}/>{b.status==="CANCELLED"||b.status==="PARTIAL"?"استئناف":"تشغيل"}</button>}</div></td></tr>)}</tbody></table></div>}</Panel></div>}
