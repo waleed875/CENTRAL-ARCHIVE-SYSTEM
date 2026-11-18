@@ -24,7 +24,7 @@ public class MigrationFileAuditService {
     public record Report(UUID sourceId, Map<String, Long> trackingStatuses,
                          long missingOrInvalidDoneLinks, List<LinkProblem> problems,
                          List<StorageSample> storageSamples, boolean problemSamplesLimited,
-                         String warning) {}
+                         String warning, Map<String, Long> failedErrorCategories) {}
 
     private final MigrationSourceRepository sources;
     private final LegacyMigrationItemRepository items;
@@ -51,6 +51,11 @@ public class MigrationFileAuditService {
             invalidDone += ((Number) row[2]).longValue();
         }
 
+        Map<String, Long> errorCategories = new LinkedHashMap<>();
+        for (Object[] row : items.countFailedFileErrorCategories(sourceId)) {
+            errorCategories.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+        }
+
         List<LinkProblem> problems = new ArrayList<>();
         for (Object[] row : items.sampleFileLinkProblems(sourceId)) {
             problems.add(new LinkProblem(String.valueOf(row[0]), String.valueOf(row[1]),
@@ -71,6 +76,7 @@ public class MigrationFileAuditService {
         return new Report(sourceId, counts, invalidDone, problems, samples,
                 problems.size() >= 50,
                 "DB link counts cover all tracked files. MinIO existence is sampled only; " +
-                "unlinked/orphan MinIO objects cannot be discovered by this API.");
+                "unlinked/orphan MinIO objects cannot be discovered by this API.",
+                errorCategories);
     }
 }
