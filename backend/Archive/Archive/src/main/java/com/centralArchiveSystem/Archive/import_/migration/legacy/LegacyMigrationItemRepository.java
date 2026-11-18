@@ -19,6 +19,14 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
     Optional<LegacyMigrationItem> findByMigrationSourceIdAndKindAndSourceKey(
             UUID migrationSourceId, LegacyMigrationItem.Kind kind, String sourceKey);
 
+    /**
+     * Look up a bounded page of a source's file tracking rows in one query.
+     * Never look up source keys without migrationSourceId: different office
+     * databases reuse the same legacy file IDs.
+     */
+    List<LegacyMigrationItem> findByMigrationSourceIdAndKindAndSourceKeyIn(
+            UUID migrationSourceId, LegacyMigrationItem.Kind kind, List<String> sourceKeys);
+
     boolean existsByMigrationSourceIdAndKindAndSourceKey(
             UUID migrationSourceId, LegacyMigrationItem.Kind kind, String sourceKey);
 
