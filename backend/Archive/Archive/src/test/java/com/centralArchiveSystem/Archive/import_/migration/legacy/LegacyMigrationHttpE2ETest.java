@@ -176,9 +176,9 @@ class LegacyMigrationHttpE2ETest {
         jdbcTemplate.update("""
                 INSERT INTO public.tbl_files(idfile,filename,filesuffix,idproject,detils,filebinary)
                 VALUES (?, ?, '.txt', ?, 'selective retry fixture', ?)
-                """, otherId, "another-failed.txt", legacyProjectId, "%%%invalid%%%");
+                """, otherId, "another-failed.txt", legacyProjectId, "A");
         jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
-                "%%%invalid%%%", legacyFileId);
+                "A", legacyFileId);
 
         MigrationSource source = source();
         try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
