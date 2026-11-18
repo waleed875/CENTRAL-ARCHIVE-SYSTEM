@@ -483,6 +483,68 @@ public class LegacyMigrationService {
         return summary;
     }
 
+    /**
+     * Retry only selected FAILED file IDs. This deliberately bypasses the full
+     * source-project scan and reads metadata in small, parameterized batches.
+     * Every file still passes through the normal checksum, quarantine, MinIO
+     * upload and transactional metadata path.
+     */
+    public LegacyFileSummary retrySelectedFiles(LegacyConnection connection,
+                                                 List<Integer> fileIds,
+                                                 MigrationCancellationToken cancellation) {
+        LegacyFileSummary summary = new LegacyFileSummary();
+        if (cancellation.isCancellationRequested()) return summary;
+        UUID defaultCategoryId = resolveDefaultCategoryId();
+        UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
+        for (int offset = 0; offset < fileIds.size() && !cancellation.isCancellationRequested(); offset += 100) {
+            List<Integer> slice = fileIds.subList(offset, Math.min(offset + 100, fileIds.size()));
+            String placeholders = String.join(",", java.util.Collections.nCopies(slice.size(), "?"));
+            List<Map<String, Object>> rows = connection.jdbc().queryForList(
+                    "SELECT idfile, idproject, filename, filesuffix, "
+                            + "octet_length(filebinary) AS encoded_length FROM "
+                            + LEGACY_DB_SCHEMA + ".tbl_files WHERE idfile IN (" + placeholders + ")",
+                    slice.toArray());
+            for (Map<String, Object> row : rows) {
+                if (cancellation.isCancellationRequested()) break;
+                int fileId = ((Number) row.get("idfile")).intValue();
+                int projectId = ((Number) row.get("idproject")).intValue();
+                String fileKey = "FILE-" + fileId;
+                LegacyMigrationItem previous = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        connection.sourceId(), LegacyMigrationItem.Kind.FILE, fileKey).orElse(null);
+                if (previous == null || previous.getStatus() != LegacyMigrationItem.Status.FAILED) {
+                    summary.incrementSkipped();
+                    continue;
+                }
+                UUID targetProjectId = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                        connection.sourceId(), LegacyMigrationItem.Kind.PROJECT, "PROJECT-" + projectId)
+                        .map(LegacyMigrationItem::getTargetId).orElse(null);
+                Project targetProject = targetProjectId == null ? null :
+                        projectRepository.findById(targetProjectId).orElse(null);
+                if (targetProject == null) {
+                    summary.incrementFailed();
+                    continue;
+                }
+                Object size = row.get("encoded_length");
+                InputStream encoded = size == null ? null :
+                        new LegacyByteaInputStream(connection.jdbc(), fileId, ((Number) size).longValue());
+                try {
+                    migrateOneFile(connection, fileId, fileKey, targetProjectId,
+                            (String) row.get("filename"), (String) row.get("filesuffix"), encoded,
+                            summary, defaultCategoryId, defaultTypeId,
+                            targetProject.getConfidentialityLevelId(), previous);
+                } finally {
+                    if (encoded != null) {
+                        try { encoded.close(); }
+                        catch (Exception e) { log.warn("Could not close source stream for {}", fileId, e); }
+                    }
+                }
+            }
+            // IDs deleted from the source are not silently counted as completed.
+            summary.addFailed(slice.size() - rows.size());
+        }
+        return summary;
+    }
+
     private void migrateFilesForProject(LegacyConnection connection,
                                         int legacyProjectId,
                                         LegacyFileSummary summary,
@@ -1142,6 +1204,9 @@ public class LegacyMigrationService {
 
         public void incrementFailed() {
             failed.incrementAndGet();
+        }
+        public void addFailed(int count) {
+            failed.addAndGet(count);
         }
 
         public void incrementSkipped() {
