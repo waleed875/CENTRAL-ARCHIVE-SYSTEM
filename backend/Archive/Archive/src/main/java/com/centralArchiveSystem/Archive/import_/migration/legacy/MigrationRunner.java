@@ -268,16 +268,11 @@ public class MigrationRunner {
                     long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
                             batch.getMigrationSourceId(), LegacyMigrationItem.Status.SKIPPED);
 
-                    if (cancelled) {
-                        batch.setStatus(MigrationBatch.Status.CANCELLED);
-                    } else if (failureMessage != null) {
-                        batch.setStatus(MigrationBatch.Status.FAILED);
-                    } else if (files.failed() > 0 || failedItems > 0
-                            || pendingItems > 0 || runningItems > 0) {
-                        batch.setStatus(MigrationBatch.Status.PARTIAL);
-                    } else {
-                        batch.setStatus(MigrationBatch.Status.SUCCESS);
-                    }
+                    // Do not claim SUCCESS when some source records were never tracked.
+                    // A missing source-project mapping may leave no FAILED tracking rows,
+                    // but refreshBatchProgress still knows files/projects are outstanding.
+                    batch.setStatus(completionStatus(batch, cancelled, failureMessage,
+                            files.failed(), failedItems, pendingItems, runningItems));
 
                     batch.setCancelRequested(false);
                     batch.setCompletedAt(LocalDateTime.now());
@@ -308,6 +303,18 @@ public class MigrationRunner {
             }
         }
         return true;
+    }
+
+    static MigrationBatch.Status completionStatus(
+            MigrationBatch batch, boolean cancelled, String failureMessage,
+            long failedThisRun, long failedItems, long pendingItems, long runningItems) {
+        if (cancelled) return MigrationBatch.Status.CANCELLED;
+        if (failureMessage != null) return MigrationBatch.Status.FAILED;
+        if (failedThisRun > 0 || failedItems > 0 || pendingItems > 0 || runningItems > 0
+                || batch.getRemainingProjectsCount() > 0 || batch.getRemainingFilesCount() > 0) {
+            return MigrationBatch.Status.PARTIAL;
+        }
+        return MigrationBatch.Status.SUCCESS;
     }
 
     private long queryLegacyCount(LegacyMigrationService.LegacyConnection connection, String sql) {
