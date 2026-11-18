@@ -14,20 +14,32 @@ import java.util.Objects;
  * Each query returns at most one chunk, including any TOASTed BYTEA value.
  */
 final class LegacyByteaInputStream extends InputStream {
-    static final int CHUNK_BYTES = 512 * 1024;
+    static final int CHUNK_BYTES = 2 * 1024 * 1024;
+    static final int MIN_CHUNK_BYTES = 256 * 1024;
+    static final int MAX_CHUNK_BYTES = 4 * 1024 * 1024;
     private static final String CHUNK_SQL =
             "SELECT substring(filebinary FROM ? FOR ?) FROM public.tbl_files WHERE idfile = ?";
 
     private final JdbcTemplate jdbc;
     private final int legacyFileId;
     private final long encodedLength;
+    private final int chunkBytes;
     private long offset;
     private byte[] current = new byte[0];
     private int position;
     private boolean closed;
 
     LegacyByteaInputStream(JdbcTemplate jdbc, int legacyFileId, long encodedLength) {
+        this(jdbc, legacyFileId, encodedLength, CHUNK_BYTES);
+    }
+
+    LegacyByteaInputStream(JdbcTemplate jdbc, int legacyFileId, long encodedLength,
+                           int chunkBytes) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        if (chunkBytes < MIN_CHUNK_BYTES || chunkBytes > MAX_CHUNK_BYTES) {
+            throw new IllegalArgumentException("Legacy BYTEA chunk must be between 256 KiB and 4 MiB");
+        }
+        this.chunkBytes = chunkBytes;
         this.legacyFileId = legacyFileId;
         if (encodedLength < 0) {
             throw new IllegalArgumentException("Legacy BYTEA length cannot be negative");
@@ -39,7 +51,7 @@ final class LegacyByteaInputStream extends InputStream {
         if (closed) throw new IOException("Legacy BYTEA stream is closed");
         if (position < current.length) return true;
         if (offset >= encodedLength) return false;
-        int requestSize = (int) Math.min(CHUNK_BYTES, encodedLength - offset);
+        int requestSize = (int) Math.min(chunkBytes, encodedLength - offset);
         // PostgreSQL substring offsets are 1-based. Each individual JDBC
         // result fits within the fixed chunk budget, irrespective of file size.
         try {
