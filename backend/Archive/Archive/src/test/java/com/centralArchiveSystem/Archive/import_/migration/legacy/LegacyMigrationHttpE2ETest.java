@@ -171,6 +171,45 @@ class LegacyMigrationHttpE2ETest {
     }
 
     @Test
+    void failedFileCountsOneAttemptAndCanResumeAfterContentIsRepaired() throws Exception {
+        jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
+                "%%%invalid base64%%%", legacyFileId);
+        MigrationSource source = source();
+        try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
+            migrationService.migrateReferences(connection);
+            migrationService.migrateProjects(connection);
+
+            try (ExecutorService workers = Executors.newFixedThreadPool(1)) {
+                var failed = migrationService.migrateFiles(connection, workers);
+                assertEquals(0, failed.done());
+                assertEquals(1, failed.failed());
+            }
+
+            var first = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + legacyFileId).orElseThrow();
+            assertEquals(LegacyMigrationItem.Status.FAILED, first.getStatus());
+            assertEquals(1, first.getAttempts(), "a failed transfer is one attempt, not two");
+
+            jdbcTemplate.update("UPDATE public.tbl_files SET filebinary = ? WHERE idfile = ?",
+                    Base64.getEncoder().encodeToString(decodedFile), legacyFileId);
+            try (ExecutorService workers = Executors.newFixedThreadPool(1)) {
+                var repaired = migrationService.migrateFiles(connection, workers);
+                assertEquals(1, repaired.done());
+                assertEquals(0, repaired.failed());
+            }
+
+            var retried = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.FILE, "FILE-" + legacyFileId).orElseThrow();
+            assertEquals(first.getId(), retried.getId(), "retry reuses the source-scoped tracking row");
+            assertEquals(2, retried.getAttempts());
+            assertEquals(LegacyMigrationItem.Status.DONE, retried.getStatus());
+            var file = fileRepository.findById(retried.getTargetId()).orElseThrow();
+            assertEquals(sha256(decodedFile), file.getChecksumSha256());
+            assertEquals(source.getOfficeName() + ":tbl_files:" + legacyFileId, file.getSourceReference());
+        }
+    }
+
+    @Test
     void reusesBatchedTrackingRowsWhenResumingMultipleFilesWithoutDuplication() throws Exception {
         int secondFile = legacyFileId + 1;
         int thirdFile = legacyFileId + 2;
