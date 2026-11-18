@@ -139,6 +139,33 @@ public class MinioService {
         return keys;
     }
 
+    /**
+     * Bounded, read-only S3 listing for project-scoped migration inventory.
+     * startAfter uses the provider's pagination rather than scanning the
+     * bucket from the beginning on every request.
+     */
+    public List<String> listObjectKeysPage(String bucket, String prefix,
+                                           String afterKey, int limit) throws Exception {
+        if (prefix == null || prefix.isBlank() || limit < 1 || limit > 101) {
+            throw new IllegalArgumentException("A nonempty prefix and a bounded page size are required");
+        }
+        if (afterKey != null && !afterKey.startsWith(prefix)) {
+            throw new IllegalArgumentException("Object cursor must belong to the requested prefix");
+        }
+        ListObjectsArgs.Builder args = ListObjectsArgs.builder()
+                .bucket(bucket)
+                .prefix(prefix)
+                .recursive(true)
+                .maxKeys(limit);
+        if (afterKey != null) args.startAfter(afterKey);
+        List<String> keys = new ArrayList<>(limit);
+        for (Result<Item> result : minioClient.listObjects(args.build())) {
+            keys.add(result.get().objectName());
+            if (keys.size() >= limit) break;
+        }
+        return keys;
+    }
+
     public String getPresignedUrl(String bucket, String objectKey, int expiryMinutes) throws Exception {
         return minioClient.getPresignedObjectUrl(
                 GetPresignedObjectUrlArgs.builder()

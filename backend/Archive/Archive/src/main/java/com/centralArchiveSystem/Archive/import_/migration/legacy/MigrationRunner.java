@@ -37,6 +37,9 @@ public class MigrationRunner {
     private final MigrationSourceRepository sourceRepository;
     private final LegacyMigrationItemRepository itemRepository;
     private final MigrationSettingsService migrationSettingsService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MigrationProgressTracker progressTracker;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final ConcurrentMap<UUID, MigrationCancellationToken> cancellationTokens =
             new ConcurrentHashMap<>();
@@ -145,7 +148,28 @@ public class MigrationRunner {
         return started;
     }
 
+    /**
+     * A bounded, source-scoped retry of FAILED legacy files. Full migration
+     * and the scheduler continue using the original overload.
+     */
+    public boolean runSelectedFiles(UUID batchId, java.util.List<Integer> fileIds) {
+        MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
+                batchId, ignored -> new MigrationCancellationToken());
+        boolean started = runBatch(batchId, token, java.util.List.copyOf(fileIds));
+        // A rejected trigger can be queued while another worker owns the runner.
+        // Preserve its token, including any cancellation request, until it starts.
+        if (started) {
+            cancellationTokens.remove(batchId, token);
+        }
+        return started;
+    }
+
     public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
+        return runBatch(batchId, cancellation, java.util.List.of());
+    }
+
+    private boolean runBatch(UUID batchId, MigrationCancellationToken cancellation,
+                             java.util.List<Integer> selectedFileIds) {
         if (!running.compareAndSet(false, true)) {
             log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
@@ -194,13 +218,29 @@ public class MigrationRunner {
                     // counts rather than only the rows that happened to be tracked before the crash.
                     batchRepository.saveAndFlush(batch);
 
-                    refs = legacyMigrationService.migrateReferences(connection, cancellation);
-                    if (!cancellation.isCancellationRequested()) {
-                        projects = legacyMigrationService.migrateProjects(connection, cancellation);
+                    // Selective retries must never rewrite references/projects.
+                    if (selectedFileIds.isEmpty()) {
+                        refs = legacyMigrationService.migrateReferences(connection, cancellation);
+                        if (!cancellation.isCancellationRequested()) {
+                            projects = legacyMigrationService.migrateProjects(connection, cancellation);
+                        }
                     }
                     if (!cancellation.isCancellationRequested()) {
-                        files = legacyMigrationService.migrateFilesAsync(
-                                connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get();
+                        if (progressTracker != null) {
+                            long previouslyDone = itemRepository.countByMigrationSourceIdAndKindAndStatus(
+                                    migrationSourceId, LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
+                            // Selective retry ETA must reflect only the explicitly requested
+                            // failed IDs, not every unfinished file in the source.
+                            long filesInThisRun = selectedFileIds.isEmpty()
+                                    ? Math.max(0, batch.getTotalFilesCount() - previouslyDone)
+                                    : selectedFileIds.size();
+                            progressTracker.start(batchId, migrationSourceId, filesInThisRun);
+                        }
+                        files = selectedFileIds.isEmpty()
+                                ? legacyMigrationService.migrateFilesAsync(
+                                    connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get()
+                                : legacyMigrationService.retrySelectedFiles(
+                                    connection, selectedFileIds, cancellation);
                     }
                     // migrateFilesAsync joins every project task before returning. At this point no
                     // upload is still running, so the legacy connection can be closed safely.
@@ -228,16 +268,11 @@ public class MigrationRunner {
                     long skippedItems = itemRepository.countByMigrationSourceIdAndStatus(
                             batch.getMigrationSourceId(), LegacyMigrationItem.Status.SKIPPED);
 
-                    if (cancelled) {
-                        batch.setStatus(MigrationBatch.Status.CANCELLED);
-                    } else if (failureMessage != null) {
-                        batch.setStatus(MigrationBatch.Status.FAILED);
-                    } else if (files.failed() > 0 || failedItems > 0
-                            || pendingItems > 0 || runningItems > 0) {
-                        batch.setStatus(MigrationBatch.Status.PARTIAL);
-                    } else {
-                        batch.setStatus(MigrationBatch.Status.SUCCESS);
-                    }
+                    // Do not claim SUCCESS when some source records were never tracked.
+                    // A missing source-project mapping may leave no FAILED tracking rows,
+                    // but refreshBatchProgress still knows files/projects are outstanding.
+                    batch.setStatus(completionStatus(batch, cancelled, failureMessage,
+                            files.failed(), failedItems, pendingItems, runningItems));
 
                     batch.setCancelRequested(false);
                     batch.setCompletedAt(LocalDateTime.now());
@@ -258,12 +293,28 @@ public class MigrationRunner {
                     batchRepository.save(batch);
                 }
             } finally {
+                if (progressTracker != null && batch != null) {
+                    progressTracker.finish(batchId, batch.getMigrationSourceId());
+                }
                 activeBatchId.compareAndSet(batchId, null);
-                cancellationTokens.keySet().removeIf(id -> !id.equals(batchId));
+                // Do not erase prepared cancellation tokens of other queued batches.
+                // The accepted batch removes its own token in the public entry point.
                 running.set(false);
             }
         }
         return true;
+    }
+
+    static MigrationBatch.Status completionStatus(
+            MigrationBatch batch, boolean cancelled, String failureMessage,
+            long failedThisRun, long failedItems, long pendingItems, long runningItems) {
+        if (cancelled) return MigrationBatch.Status.CANCELLED;
+        if (failureMessage != null) return MigrationBatch.Status.FAILED;
+        if (failedThisRun > 0 || failedItems > 0 || pendingItems > 0 || runningItems > 0
+                || batch.getRemainingProjectsCount() > 0 || batch.getRemainingFilesCount() > 0) {
+            return MigrationBatch.Status.PARTIAL;
+        }
+        return MigrationBatch.Status.SUCCESS;
     }
 
     private long queryLegacyCount(LegacyMigrationService.LegacyConnection connection, String sql) {
