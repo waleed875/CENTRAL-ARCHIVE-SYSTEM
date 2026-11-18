@@ -171,6 +171,37 @@ class LegacyMigrationHttpE2ETest {
     }
 
     @Test
+    void reconciliationCursorUsesNumericFileOrderingAndNeverMixesSources() {
+        MigrationSource source = source();
+        MigrationSource other = source();
+        for (int id : new int[]{9, 10, 11}) {
+            LegacyMigrationItem item = new LegacyMigrationItem();
+            item.setMigrationSourceId(source.getId());
+            item.setKind(LegacyMigrationItem.Kind.FILE);
+            item.setSourceId((long) id);
+            item.setSourceKey("FILE-" + id);
+            item.setStatus(LegacyMigrationItem.Status.DONE);
+            itemRepository.save(item);
+        }
+        LegacyMigrationItem fromOtherOffice = new LegacyMigrationItem();
+        fromOtherOffice.setMigrationSourceId(other.getId());
+        fromOtherOffice.setKind(LegacyMigrationItem.Kind.FILE);
+        fromOtherOffice.setSourceId(12L);
+        fromOtherOffice.setSourceKey("FILE-12");
+        fromOtherOffice.setStatus(LegacyMigrationItem.Status.DONE);
+        itemRepository.saveAndFlush(fromOtherOffice);
+
+        var first = itemRepository.reconciliationPage(source.getId(), null, 3);
+        assertEquals(java.util.List.of("FILE-9", "FILE-10", "FILE-11"),
+                first.stream().map(row -> (String) row[0]).toList());
+        var afterNine = itemRepository.reconciliationPage(source.getId(), "FILE-9", 3);
+        assertEquals(java.util.List.of("FILE-10", "FILE-11"),
+                afterNine.stream().map(row -> (String) row[0]).toList(),
+                "FILE-10 must follow FILE-9 numerically, not sort ahead of it");
+        assertTrue(itemRepository.reconciliationPage(source.getId(), "FILE-11", 3).isEmpty());
+    }
+
+    @Test
     void pagesProjectFileTasksAndResumesWithoutDuplicateFiles() throws Exception {
         int nextProject = legacyProjectId + 1;
         int nextFile = legacyFileId + 1;
