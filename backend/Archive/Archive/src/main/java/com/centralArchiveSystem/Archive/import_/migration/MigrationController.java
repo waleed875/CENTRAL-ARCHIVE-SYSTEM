@@ -137,6 +137,22 @@ public class MigrationController {
                     "Migration batch started"));
     }
 
+    public record FailedFilesRetryRequest(@jakarta.validation.constraints.NotEmpty
+                                          @jakarta.validation.constraints.Size(max = 100)
+                                          List<@jakarta.validation.constraints.NotNull Integer> fileIds) {}
+
+    @PostMapping("/migration-batches/{id}/retry-failed-files")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Retry 1–100 FAILED source files in the selected migration batch")
+    public ResponseEntity<ApiResponse<Map<String, String>>> retryFailedFiles(
+            @PathVariable UUID id,
+            @Valid @RequestBody FailedFilesRetryRequest request) {
+        migrationService.retryFailedFiles(id, request.fileIds());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                Map.of("status", "ACCEPTED", "message", "Selected failed files queued for retry"),
+                "Selective retry accepted"));
+    }
+
     @PostMapping("/migration-batches/{id}/stop")
     @PreAuthorize("hasRole('system_admin')")
     @Operation(summary = "Request a safe stop for a running migration batch")
