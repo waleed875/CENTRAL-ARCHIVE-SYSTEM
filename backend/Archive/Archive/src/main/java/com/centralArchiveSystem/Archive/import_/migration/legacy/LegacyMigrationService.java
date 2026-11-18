@@ -267,7 +267,8 @@ public class LegacyMigrationService {
                     .orElse(null);
             if (previousProjectItem != null
                     && previousProjectItem.getStatus() == LegacyMigrationItem.Status.DONE
-                    && previousProjectItem.getTargetId() != null) {
+                    && previousProjectItem.getTargetId() != null
+                    && organizationRepository.existsById(previousProjectItem.getTargetId())) {
                 continue;
             }
 
