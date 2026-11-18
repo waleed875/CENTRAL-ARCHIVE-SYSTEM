@@ -155,11 +155,13 @@ public class MigrationRunner {
     public boolean runSelectedFiles(UUID batchId, java.util.List<Integer> fileIds) {
         MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
                 batchId, ignored -> new MigrationCancellationToken());
-        try {
-            return runBatch(batchId, token, java.util.List.copyOf(fileIds));
-        } finally {
+        boolean started = runBatch(batchId, token, java.util.List.copyOf(fileIds));
+        // A rejected trigger can be queued while another worker owns the runner.
+        // Preserve its token, including any cancellation request, until it starts.
+        if (started) {
             cancellationTokens.remove(batchId, token);
         }
+        return started;
     }
 
     public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
@@ -300,7 +302,8 @@ public class MigrationRunner {
                     progressTracker.finish(batchId, batch.getMigrationSourceId());
                 }
                 activeBatchId.compareAndSet(batchId, null);
-                cancellationTokens.keySet().removeIf(id -> !id.equals(batchId));
+                // Do not erase prepared cancellation tokens of other queued batches.
+                // The accepted batch removes its own token in the public entry point.
                 running.set(false);
             }
         }
