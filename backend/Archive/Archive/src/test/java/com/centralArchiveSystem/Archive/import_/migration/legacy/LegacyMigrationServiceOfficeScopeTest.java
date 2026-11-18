@@ -204,6 +204,8 @@ class LegacyMigrationServiceOfficeScopeTest {
 
         var office = connection("ARC1");
         assertEquals(2, service.migrateReferences(office));
+        assertEquals(0, service.migrateReferences(office),
+                "a repeated paged reference migration must skip existing source-scoped mappings");
         assertEquals(3, service.migrateProjects(office), "all source projects must be imported");
 
         assertEquals(3, savedProjects.size());
@@ -285,15 +287,28 @@ class LegacyMigrationServiceOfficeScopeTest {
     }
 
     private void stubTwoSides() {
-        when(jdbc.queryForList(contains("tbl_side"))).thenReturn(List.of(
-                sideRow(1, "Plant One"),
-                sideRow(2, "Plant Two")));
+        stubSideRows(List.of(sideRow(1, "Plant One"), sideRow(2, "Plant Two")));
     }
 
     /**
      * Model PostgreSQL keyset pagination instead of the old full-table
      * queryForList(sql) mock. Records retain numerical ordering across pages.
      */
+    private void stubSideRows(List<Map<String, Object>> sides) {
+        List<Map<String, Object>> ordered = sides.stream()
+                .sorted(java.util.Comparator.comparingInt(
+                        row -> ((Number) row.get("idside")).intValue()))
+                .toList();
+        when(jdbc.queryForList(contains("tbl_side"), anyInt(), anyInt()))
+                .thenAnswer(invocation -> {
+                    int after = ((Number) invocation.getArgument(1)).intValue();
+                    int limit = ((Number) invocation.getArgument(2)).intValue();
+                    return ordered.stream()
+                            .filter(row -> ((Number) row.get("idside")).intValue() > after)
+                            .limit(limit).toList();
+                });
+    }
+
     private void stubProjectRows(List<Map<String, Object>> projects) {
         List<Map<String, Object>> ordered = projects.stream()
                 .sorted(java.util.Comparator.comparingInt(
@@ -356,7 +371,7 @@ class LegacyMigrationServiceOfficeScopeTest {
         project.put("detils", "details");
         project.put("note", "note");
 
-        when(jdbc.queryForList(contains("tbl_side"))).thenReturn(List.of(side));
+        stubSideRows(List.of(side));
         stubProjectRows(List.of(project));
     }
 
