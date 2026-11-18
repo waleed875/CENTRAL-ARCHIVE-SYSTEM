@@ -91,6 +91,9 @@ public final class FileContentInspector {
             Map.entry("rar", "application/vnd.rar"),
             Map.entry("rtf", "application/rtf"),
             Map.entry("dwg", "application/acad"),
+            Map.entry("mpg", "video/mpeg"),
+            Map.entry("mpeg", "video/mpeg"),
+            Map.entry("iso", "application/x-iso9660-image"),
             Map.entry("mp4", "video/mp4"),
             Map.entry("mov", "video/quicktime"),
             Map.entry("mp3", "audio/mpeg"),
@@ -177,6 +180,9 @@ public final class FileContentInspector {
             case "rtf" -> startsWithIgnoringBomAndWhitespace(prefix, "{\\rtf");
             case "dwg" -> startsWith(prefix, "AC10".getBytes(StandardCharsets.US_ASCII));
             case "rar" -> startsWith(prefix, RAR4_SIGNATURE) || startsWith(prefix, RAR5_SIGNATURE);
+            case "mpg", "mpeg" -> prefix.length >= 4
+                    && prefix[0] == 0 && prefix[1] == 0 && prefix[2] == 1
+                    && (prefix[3] == (byte) 0xBA || prefix[3] == (byte) 0xB3);
             case "mp4", "mov" -> prefix.length >= 12
                     && matchesAt(prefix, 4, "ftyp".getBytes(StandardCharsets.US_ASCII));
             // Additional media and archive types are inspected by file signature rather than
@@ -233,6 +239,13 @@ public final class FileContentInspector {
     public static String validateLegacyEntry(byte[] prefix, String expectedExtension,
                                              Path spool) throws IOException {
         String expected = normalizeExtension(expectedExtension);
+        if ("iso".equals(expected)) {
+            rejectExecutableContent(prefix);
+            if (!isIso9660Image(spool)) {
+                throw new IllegalArgumentException("ISO 9660 volume descriptor is missing or invalid");
+            }
+            return "application/x-iso9660-image";
+        }
         if (expected != null && LEGACY_OPAQUE_EXTENSIONS.contains(expected)) {
             if (prefix == null || prefix.length == 0) {
                 throw new IllegalArgumentException("File content is empty");
@@ -266,6 +279,12 @@ public final class FileContentInspector {
         }
         try {
             String detected = validateLegacyEntry(prefix, ext, spool);
+            // Disk images may contain executables; keep even valid
+            // ISO 9660 images in the admin-only quarantine inventory.
+            if ("iso".equals(ext)) {
+                return new LegacyAssessment(detected, true,
+                        "Disk image requires offline security review");
+            }
             return new LegacyAssessment(detected, false, null);
         } catch (IllegalArgumentException | IOException rejected) {
             String reason = rejected.getMessage();
@@ -274,6 +293,28 @@ public final class FileContentInspector {
             if (reason.length() > 300) reason = reason.substring(0, 300);
             return new LegacyAssessment("application/octet-stream", true, reason);
         }
+    }
+
+    /**
+     * ISO 9660's Primary Volume Descriptor lives at byte offset 32768,
+     * beyond the 8192-byte signature prefix. Check the already-spooled file
+     * without allocating the image in memory. Unknown/UDF-only images are
+     * still preserved by the caller, but quarantined for review.
+     */
+    private static boolean isIso9660Image(Path spool) throws IOException {
+        if (spool == null || Files.size(spool) < 32775) return false;
+        byte[] descriptor = new byte[7];
+        try (var file = Files.newByteChannel(spool, java.nio.file.StandardOpenOption.READ)) {
+            file.position(32768);
+            ByteBuffer buffer = ByteBuffer.wrap(descriptor);
+            while (buffer.hasRemaining()) {
+                int count = file.read(buffer);
+                if (count <= 0) return false;
+            }
+        }
+        return descriptor[0] == 1 && descriptor[1] == 'C' && descriptor[2] == 'D'
+                && descriptor[3] == '0' && descriptor[4] == '0'
+                && descriptor[5] == '1' && descriptor[6] == 1;
     }
 
     public static boolean hasZipSignature(byte[] prefix) {

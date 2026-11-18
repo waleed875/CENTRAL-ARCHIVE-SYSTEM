@@ -46,6 +46,10 @@ public class MigrationRunner {
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
 
+    // One worker limits concurrent large Base64 source reads and MinIO uploads.
+    @Value("${legacy.migration.file-workers:1}")
+    private int fileWorkers;
+
     @Value("${legacy.migration.source-name:ARC2}")
     private String sourceName;
 
@@ -195,7 +199,8 @@ public class MigrationRunner {
                         projects = legacyMigrationService.migrateProjects(connection, cancellation);
                     }
                     if (!cancellation.isCancellationRequested()) {
-                        files = legacyMigrationService.migrateFilesAsync(connection, 4, cancellation).get();
+                        files = legacyMigrationService.migrateFilesAsync(
+                                connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get();
                     }
                     // migrateFilesAsync joins every project task before returning. At this point no
                     // upload is still running, so the legacy connection can be closed safely.

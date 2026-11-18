@@ -293,6 +293,42 @@ class FileContentInspectorTest {
                         "video/webm", ebml("matroska")), "webm"));
     }
 
+    @Test
+    void validatesMpegProgramAndElementaryStreamsWithoutAcceptingSpoofing() {
+        for (String extension : new String[]{"mpg", "mpeg"}) {
+            for (byte marker : new byte[]{(byte) 0xBA, (byte) 0xB3}) {
+                var sample = new MockMultipartFile("file", "video." + extension,
+                        "application/octet-stream", new byte[]{0, 0, 1, marker, 2, 3});
+                assertEquals("video/mpeg", FileContentInspector.validateMultipart(sample, extension));
+            }
+            var spoofed = new MockMultipartFile("file", "video." + extension,
+                    "application/octet-stream", new byte[]{'M', 'Z', 0, 0, 0});
+            assertThrows(IllegalArgumentException.class,
+                    () -> FileContentInspector.validateMultipart(spoofed, extension));
+        }
+    }
+
+    @Test
+    void validatesIso9660DescriptorWithoutLoadingDiskImage() throws Exception {
+        byte[] iso = new byte[32768 + 2048];
+        iso[32768] = 1;
+        System.arraycopy("CD001".getBytes(StandardCharsets.US_ASCII), 0, iso, 32769, 5);
+        iso[32774] = 1;
+        var spool = java.nio.file.Files.createTempFile("iso-test-", ".iso");
+        try {
+            java.nio.file.Files.write(spool, iso);
+            assertEquals("application/x-iso9660-image",
+                    FileContentInspector.validateLegacyEntry(
+                            new byte[]{0, 0, 0, 0}, "iso", spool));
+            iso[32770] = 'X';
+            java.nio.file.Files.write(spool, iso);
+            assertTrue(FileContentInspector.assessLegacyEntry(
+                    new byte[]{0, 0, 0, 0}, "iso", spool).quarantined());
+        } finally {
+            java.nio.file.Files.deleteIfExists(spool);
+        }
+    }
+
     private static byte[] riff(String format) {
         byte[] bytes = new byte[16];
         System.arraycopy("RIFF".getBytes(StandardCharsets.US_ASCII), 0, bytes, 0, 4);
