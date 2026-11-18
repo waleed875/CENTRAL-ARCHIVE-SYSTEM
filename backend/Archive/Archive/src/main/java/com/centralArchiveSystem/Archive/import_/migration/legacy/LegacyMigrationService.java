@@ -299,12 +299,23 @@ public class LegacyMigrationService {
 
     @Transactional
     public int migrateProjects(LegacyConnection connection, MigrationCancellationToken cancellation) throws Exception {
-        List<Map<String, Object>> rows = connection.jdbc().queryForList(
-                "SELECT idproject, idside, name, number, code, year, admin, detils, note FROM "
-                        + LEGACY_DB_SCHEMA + ".tbl_project ORDER BY idproject");
-
+        // A long-running migration can contain hundreds of thousands of projects.
+        // Bounded seek pagination prevents queryForList from loading all legacy
+        // project metadata into JVM heap before the first row is processed.
+        final int projectPageLimit = Math.max(1, Math.min(200, batchSize));
+        int lastProjectId = Integer.MIN_VALUE;
         int created = 0;
-        for (Map<String, Object> row : rows) {
+        while (!cancellation.isCancellationRequested()) {
+            List<Map<String, Object>> rows = connection.jdbc().queryForList(
+                    "SELECT idproject, idside, name, number, code, year, admin, detils, note FROM "
+                            + LEGACY_DB_SCHEMA
+                            + ".tbl_project WHERE idproject > ? ORDER BY idproject LIMIT ?",
+                    lastProjectId, projectPageLimit);
+            if (rows.isEmpty()) break;
+            // Advance before processing the page; cancellation resumes safely by
+            // walking from the beginning and skipping durable DONE mappings.
+            lastProjectId = ((Number) rows.get(rows.size() - 1).get("idproject")).intValue();
+            for (Map<String, Object> row : rows) {
             if (cancellation.isCancellationRequested()) {
                 break;
             }
@@ -394,6 +405,8 @@ public class LegacyMigrationService {
                                 + " violated a unique constraint even though the conflict was checked"
                                 + " first. The legacy row is: " + dke.getMostSpecificCause().getMessage(), dke);
             }
+            }
+            if (rows.size() < projectPageLimit) break;
         }
         log.info("Legacy projects migrated for office {}: {} projects created or recovered",
                 connection.office(), created);
