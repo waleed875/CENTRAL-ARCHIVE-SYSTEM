@@ -2,6 +2,7 @@ package com.centralArchiveSystem.Archive.import_.migration;
 
 import com.centralArchiveSystem.Archive.common.dto.ApiResponse;
 import com.centralArchiveSystem.Archive.import_.migration.dto.*;
+import com.centralArchiveSystem.Archive.import_.migration.legacy.MigrationProgressTracker;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +22,9 @@ import java.util.UUID;
 public class MigrationController {
 
     private final MigrationService migrationService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MigrationProgressTracker progressTracker;
 
     public MigrationController(MigrationService migrationService) {
         this.migrationService = migrationService;
@@ -108,6 +112,16 @@ public class MigrationController {
             @Valid @RequestBody MigrationBatchUpdateRequest request) {
         return ResponseEntity.ok(
                 ApiResponse.success(migrationService.updateBatch(id, request), "Migration batch updated"));
+    }
+
+    @GetMapping("/migration-batches/{id}/live-progress")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Lightweight in-process live throughput for the selected migration batch")
+    public ResponseEntity<ApiResponse<MigrationProgressTracker.Snapshot>> liveProgress(
+            @PathVariable UUID id) {
+        MigrationBatchResponse batch = migrationService.getBatchById(id);
+        return ResponseEntity.ok(ApiResponse.success(progressTracker == null
+                ? null : progressTracker.snapshot(id, batch.migrationSourceId())));
     }
 
     @PostMapping("/migration-batches/{id}/run")
