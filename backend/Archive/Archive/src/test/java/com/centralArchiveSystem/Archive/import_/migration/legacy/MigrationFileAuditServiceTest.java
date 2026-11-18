@@ -27,6 +27,9 @@ class MigrationFileAuditServiceTest {
         when(items.sampleFileLinkProblems(source)).thenReturn(
                 java.util.Collections.singletonList(
                         new Object[]{"FILE-42", "DONE", target, "File metadata row is missing"}));
+        when(items.countFailedFileErrorCategories(source)).thenReturn(
+                java.util.Arrays.asList(new Object[]{"INVALID_CONTENT", 2L},
+                        new Object[]{"TRANSIENT_IO", 1L}));
         when(items.sampleLinkedStorageObjects(source)).thenReturn(
                 java.util.Collections.singletonList(
                         new Object[]{"FILE-5", target, "archive", "legacy/test.pdf"}));
@@ -36,6 +39,8 @@ class MigrationFileAuditServiceTest {
         assertEquals(8, report.trackingStatuses().get("DONE"));
         assertEquals(3, report.trackingStatuses().get("FAILED"));
         assertEquals(2, report.missingOrInvalidDoneLinks());
+        assertEquals(2L, report.failedErrorCategories().get("INVALID_CONTENT"));
+        assertEquals(1L, report.failedErrorCategories().get("TRANSIENT_IO"));
         assertEquals("FILE-42", report.problems().getFirst().sourceKey());
         assertEquals("MISSING", report.storageSamples().getFirst().objectStatus());
         verify(storage).objectExists("archive", "legacy/test.pdf");
