@@ -208,7 +208,7 @@ class LegacyMigrationServiceOfficeScopeTest {
 
         assertEquals(3, savedProjects.size());
         // Even a one-project page must advance over all source IDs.
-        verify(jdbc, atLeast(3)).queryForList(contains("tbl_project"), any(), eq(1));
+        verify(jdbc, atLeast(3)).queryForList(contains("tbl_project"), anyInt(), eq(1));
         assertEquals(3, items.values().stream()
                 .filter(item -> item.getKind() == LegacyMigrationItem.Kind.PROJECT
                         && item.getSourceKey().startsWith("PROJECT-")
@@ -299,7 +299,7 @@ class LegacyMigrationServiceOfficeScopeTest {
                 .sorted(java.util.Comparator.comparingInt(
                         row -> ((Number) row.get("idproject")).intValue()))
                 .toList();
-        when(jdbc.queryForList(contains("tbl_project"), any(), any()))
+        when(jdbc.queryForList(contains("tbl_project"), anyInt(), anyInt()))
                 .thenAnswer(invocation -> {
                     int after = ((Number) invocation.getArgument(1)).intValue();
                     int limit = ((Number) invocation.getArgument(2)).intValue();
