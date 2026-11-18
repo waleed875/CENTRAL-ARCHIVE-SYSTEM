@@ -40,4 +40,19 @@ public class MigrationFileAuditController {
                 .body(ApiResponse.success(service.reconcilePage(sourceId, after, limit)));
     }
 
+    @GetMapping("/{sourceId}/orphan-candidates")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Read-only source/project-scoped MinIO orphan candidate inventory")
+    public ResponseEntity<ApiResponse<MigrationFileAuditService.OrphanPage>> orphanCandidates(
+            @PathVariable UUID sourceId,
+            @RequestParam int legacyProjectId,
+            @RequestParam(defaultValue = "files") String area,
+            @RequestParam(required = false) String after,
+            @RequestParam(defaultValue = "50") int limit) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(service.orphanCandidates(
+                        sourceId, legacyProjectId, area, after, limit)));
+    }
+
 }
