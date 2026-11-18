@@ -268,11 +268,15 @@ public class MigrationService {
 
         validateSupportedRunConfiguration(batch, runRequest);
 
+        // PARTIAL means some source files were not migrated. Re-running the same batch
+        // is safe: completed source-scoped rows are skipped by the legacy adapter,
+        // while missing/failed rows can be retried after the source is corrected.
         if (batch.getStatus() != MigrationBatch.Status.PLANNED
                 && batch.getStatus() != MigrationBatch.Status.FAILED
-                && batch.getStatus() != MigrationBatch.Status.CANCELLED) {
+                && batch.getStatus() != MigrationBatch.Status.CANCELLED
+                && batch.getStatus() != MigrationBatch.Status.PARTIAL) {
             throw new IllegalStateException(
-                    "Migration batch can only run from PLANNED, FAILED or CANCELLED status; current status: "
+                    "Migration batch can only run from PLANNED, FAILED, PARTIAL or CANCELLED status; current status: "
                             + batch.getStatus());
         }
 
