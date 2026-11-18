@@ -13,6 +13,7 @@ type PackageFileSummary={originalName:string;extension:string;sizeBytes:number|n
 type PackageProjectSummary={projectId:string;projectNumber:string;name:string;year:number|null;versionNo:number|null;projectUid:string;description:string;fileCount:number;truncated:boolean;files:PackageFileSummary[]};
 type PackagePreviewData={packageId:string;packageName:string;schemaVersion:string;packageFormat:string;status:string;projectCount:number;fileCount:number;truncated:boolean;projects:PackageProjectSummary[]};
 type MigrationSettings={migrationEnabled:boolean;environmentDefault:boolean;updatedAt?:string|null};
+type MigrationReconciliation={sourceId:string;checked:number;present:number;missingObjects:number;invalidLinks:number;unknown:number;findings:Array<{sourceKey:string;targetId:string|null;status:"PRESENT"|"MISSING_OBJECT"|"INVALID_LINK"|"UNKNOWN"}>;nextCursor:string|null;hasMore:boolean;limitation:string};
 type MigrationAudit={sourceId:string;trackingStatuses:Record<string,number>;missingOrInvalidDoneLinks:number;problems:Array<{sourceKey:string;trackingStatus:string;targetId?:string|null;reason:string}>;storageSamples:Array<{sourceKey:string;fileId:string;objectStatus:"PRESENT"|"MISSING"|"UNKNOWN"}>;problemSamplesLimited:boolean;warning:string;failedErrorCategories:Record<string,number>};
 const mappingFields=[["organizations","organization_mapping","ربط الجهات"],["projectTypes","project_type_mapping","ربط أنواع المشاريع"],["confidentialityLevels","confidentiality_mapping","ربط درجات السرية"],["fileCategories","file_category_mapping","ربط فئات الملفات"],["fileTypes","file_type_mapping","ربط أنواع الملفات"]] as const;
 function Imports(){
@@ -106,6 +107,9 @@ export function ImportExport({mode}:{mode:Mode}){return mode==="imports"?<Import
 export function Migration(){
  const [auditSource,setAuditSource]=useState<string|null>(null);
  const [retryIds,setRetryIds]=useState("");
+ const [reconciliation,setReconciliation]=useState<MigrationReconciliation|null>(null);
+ const [reconcileLoading,setReconcileLoading]=useState(false);
+ const [reconcileError,setReconcileError]=useState("");
  const [selected,setSelected]=useState<string|null>(null),[modal,setModal]=useState<"source"|"batch"|null>(null),[editingSource,setEditingSource]=useState<MigrationSource|null>(null),[form,setForm]=useState({name:"",officeName:"",databaseName:"",host:"",port:"5432",username:"",password:"",description:""}),[batch,setBatch]=useState({batchNumber:"",notes:""}),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
  const sources=useRemote<MigrationSource[]>("/api/v1/migration-sources");
  const current=useRemote<UserInfo>("/api/v1/auth/me");const isAdmin=!!current.data?.roles.includes("system_admin");
@@ -114,6 +118,17 @@ export function Migration(){
  const audit=useRemote<MigrationAudit>(isAdmin&&selected&&auditSource===selected
    ?"/api/v1/migration-sources/"+selected+"/file-audit":null);
  const hasActiveBatch=!!batches.data?.some(batch=>batch.status==="RUNNING"||batch.cancelRequested);
+ useEffect(()=>{setReconciliation(null);setReconcileError("");},[selected]);
+ async function checkReconciliation(nextCursor?:string){
+  if(!selected||reconcileLoading)return;
+  setReconcileLoading(true);setReconcileError("");
+  try{
+   const cursor=nextCursor?"?after="+encodeURIComponent(nextCursor)+"&limit=50":"?limit=50";
+   const result=await api<MigrationReconciliation>("/api/v1/migration-sources/"+selected+"/file-reconciliation"+cursor);
+   setReconciliation(result);
+  }catch(e){setReconcileError(e instanceof Error?e.message:"تعذر فحص ملفات الترحيل")}
+  finally{setReconcileLoading(false)}
+ }
  useEffect(()=>{
   if(!selected||!hasActiveBatch)return;
   const timer=window.setInterval(()=>batches.reload(),2500);
@@ -168,6 +183,17 @@ export function Migration(){
  {audit.data.storageSamples.length?<div className="table-scroller"><table className="data-table"><thead><tr><th>ملف المصدر</th><th>وجود الكائن</th></tr></thead><tbody>{audit.data.storageSamples.map((row,i)=><tr key={i}><td>{row.sourceKey}</td><td>{row.objectStatus==="PRESENT"?"موجود":row.objectStatus==="MISSING"?"غير موجود":"تعذر التحقق"}</td></tr>)}</tbody></table></div>:<p className="hint">لا توجد عينة من الملفات المرتبطة.</p>}
  <p className="hint">{audit.data.problemSamplesLimited?"عُرضت أول 50 مشكلة فقط. ":""}الفحص لا يعثر على كائنات MinIO التي ليس لها سجل في PostgreSQL. لا تُعد تشغيل الترحيل دون نسخة احتياطية ومراجعة.</p>
  </div>:null}</Panel></div>}
+ {selected&&isAdmin&&<div className="section-gap"><Panel title="المطابقة التدريجية مع MinIO" subtitle="يفحص حتى 50 ملفًا مكتملًا في كل صفحة، دون تنزيل المحتوى أو تعديل أي ملف" action={<button type="button" className="btn btn-outline btn-sm" disabled={reconcileLoading} onClick={()=>checkReconciliation()}><ShieldCheck size={15}/> بدء الفحص من أول صفحة</button>}>
+ {reconcileError&&<Alert message={reconcileError}/>}
+ {reconcileLoading&&<Loading/>}
+ {reconciliation&&reconciliation.sourceId===selected&&<div className="form-stack">
+ <div className="chips"><strong>تم فحص {reconciliation.checked}</strong><span className="hint">موجود: {reconciliation.present}</span><span className="hint">كائن مفقود: {reconciliation.missingObjects}</span><span className="hint">رابط غير صالح: {reconciliation.invalidLinks}</span><span className="hint">تعذر التحقق: {reconciliation.unknown}</span></div>
+ {reconciliation.findings.length?<div className="table-scroller"><table className="data-table"><thead><tr><th>ملف المصدر</th><th>النتيجة</th></tr></thead><tbody>{reconciliation.findings.map(f=><tr key={f.sourceKey}><td>{f.sourceKey}</td><td>{f.status==="MISSING_OBJECT"?"كائن غير موجود":f.status==="INVALID_LINK"?"ربط غير صالح":"تعذر التحقق"}</td></tr>)}</tbody></table></div>:<p className="hint">لم تظهر مشكلات ضمن الصفحة الحالية.</p>}
+ <p className="hint">النتائج تخص الصفحة الحالية فقط. لا يكشف هذا الفحص كائنات MinIO غير المرتبطة أو ملفات المصدر التي لم تُسجّل في الترحيل.</p>
+ {reconciliation.hasMore&&reconciliation.nextCursor&&<button className="btn btn-outline btn-sm" disabled={reconcileLoading} onClick={()=>checkReconciliation(reconciliation.nextCursor!)}>فحص الصفحة التالية</button>}
+ {!reconciliation.hasMore&&<p className="hint">تم الوصول إلى نهاية سجلات DONE الخاصة بهذا المصدر.</p>}
+ </div>}
+ </Panel></div>}
  {selected&&<div className="section-gap"><Panel title="دفعات الترحيل" subtitle="إنشاء دفعات ومراقبة نتائج التشغيل" action={<div className="chips"><button className="btn btn-quiet btn-sm" onClick={batches.reload}><RefreshCw size={14}/> تحديث</button>{isAdmin&&sources.data?.find(source=>source.id===selected)?.isActive!==false&&<button className="btn btn-gold btn-sm" onClick={()=>{setBatch({batchNumber:"",notes:""});setError("");setModal("batch")}}><Plus size={14}/> دفعة جديدة</button>}</div>}>{batches.error&&<Alert message={batches.error}/>}
  {isAdmin&&batches.data?.some(b=>b.status==="RUNNING")&&<MigrationLiveProgress batchId={batches.data.find(b=>b.status==="RUNNING")!.id}/>}
  {batches.loading?<Loading/>:!batches.data?.length?<Empty title="لا توجد دفعات بعد"/>:<div className="table-scroller"><table className="data-table"><thead><tr><th>رقم الدفعة</th><th>الحالة</th><th>المشاريع</th><th>الملفات</th><th>وقت البدء</th><th></th></tr></thead><tbody>{batches.data.map(b=><tr key={b.id}><td><strong>{b.batchNumber}</strong><small className="table-sub">{b.notes}</small></td><td><Status value={b.status}/></td><td><strong>{b.projectsCount??0} / {b.totalProjectsCount??0}</strong><small className="table-sub">متبقٍ: {b.remainingProjectsCount??0}</small></td><td><strong>{b.filesCount??0} / {b.totalFilesCount??0}</strong><small className="table-sub">متبقٍ: {b.remainingFilesCount??0}</small></td><td>{dateLabel(b.startedAt)}</td><td><div className="chips">{isAdmin&&b.status==="RUNNING"&&<button disabled={saving||!!b.cancelRequested} title={b.cancelRequested?"تم إرسال طلب الإيقاف":"إيقاف آمن للدفعة"} onClick={()=>stop(b.id)} className="btn btn-danger btn-sm"><StopCircle size={14}/>{b.cancelRequested?"جارٍ الإيقاف":"إيقاف"}</button>}{b.cancelRequested&&<small className="table-sub">ينتظر إنهاء الملفات النشطة</small>}{isAdmin&&(b.status==="PARTIAL"||b.status==="FAILED"||b.status==="CANCELLED")&&<><input aria-label="معرّفات الملفات الفاشلة" className="form-input" style={{maxWidth:170}} value={retryIds} onChange={e=>setRetryIds(e.target.value)} placeholder="227, 228, 231" title="أدخل معرّفات ملفات المصدر الفاشلة مفصولة بفواصل"/><button type="button" className="btn btn-outline btn-sm" disabled={saving||!retryIds.trim()||!settings.data?.migrationEnabled||sources.data?.find(source=>source.id===selected)?.isActive===false} onClick={()=>retryFailedFiles(b.id)} title="إعادة محاولة الملفات الفاشلة المحددة فقط"><RefreshCw size={14}/> إعادة ملفات محددة</button></>}{isAdmin&&sources.data?.find(source=>source.id===selected)?.isActive!==false&&(b.status==="PLANNED"||b.status==="FAILED"||b.status==="PARTIAL"||b.status==="CANCELLED")&&<button disabled={saving||settings.loading||!settings.data?.migrationEnabled} title={!settings.data?.migrationEnabled?"فعّل نافذة الترحيل أولاً من إرشادات النقل":b.status==="CANCELLED"||b.status==="PARTIAL"?"استئناف العناصر غير المكتملة":"تشغيل الدفعة"} onClick={()=>run(b.id)} className="btn btn-gold btn-sm"><Play size={14}/>{b.status==="CANCELLED"||b.status==="PARTIAL"?"استئناف":"تشغيل"}</button>}</div></td></tr>)}</tbody></table></div>}</Panel></div>}
