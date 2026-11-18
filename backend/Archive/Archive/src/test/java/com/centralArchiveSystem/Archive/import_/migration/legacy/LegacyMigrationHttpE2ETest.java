@@ -228,6 +228,17 @@ class LegacyMigrationHttpE2ETest {
         try (LegacyMigrationService.LegacyConnection connection = migrationService.openConnection(source)) {
             migrationService.migrateReferences(connection);
             assertEquals(2, migrationService.migrateProjects(connection));
+            assertEquals(0, migrationService.migrateProjects(connection),
+                    "resuming bounded project pages must skip durable DONE mappings");
+            var firstProject = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.PROJECT,
+                    "PROJECT-" + legacyProjectId).orElseThrow();
+            var secondProject = itemRepository.findByMigrationSourceIdAndKindAndSourceKey(
+                    source.getId(), LegacyMigrationItem.Kind.PROJECT,
+                    "PROJECT-" + nextProject).orElseThrow();
+            assertEquals(LegacyMigrationItem.Status.DONE, firstProject.getStatus());
+            assertEquals(LegacyMigrationItem.Status.DONE, secondProject.getStatus());
+            assertNotEquals(firstProject.getTargetId(), secondProject.getTargetId());
             try (ExecutorService workers = Executors.newFixedThreadPool(2)) {
                 var first = migrationService.migrateFiles(connection, workers);
                 assertEquals(2, first.done());
