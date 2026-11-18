@@ -28,4 +28,16 @@ public class MigrationFileAuditController {
                 .cacheControl(CacheControl.noStore())
                 .body(ApiResponse.success(service.audit(sourceId)));
     }
+    @GetMapping("/{sourceId}/file-reconciliation")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Read-only paged verification of DONE migration file links and MinIO objects")
+    public ResponseEntity<ApiResponse<MigrationFileAuditService.ReconciliationPage>> reconcile(
+            @PathVariable UUID sourceId,
+            @RequestParam(required = false) String after,
+            @RequestParam(defaultValue = "50") int limit) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(service.reconcilePage(sourceId, after, limit)));
+    }
+
 }
