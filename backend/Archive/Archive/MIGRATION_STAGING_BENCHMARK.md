@@ -1,6 +1,6 @@
 # Legacy migration performance and memory benchmark (staging only)
 
-The migration PR includes process-local throughput telemetry, while the separate draft PR #45 explores larger but still bounded PostgreSQL Base64 chunks. **Do not merge or deploy based on a CI pass alone.** Compare representative staging runs and record both speed and peak memory before adjusting transfer settings.
+The migration PR includes process-local throughput telemetry, while the historical direct-stream fallback trades fewer queries for significantly higher heap risk. **Do not merge or deploy based on a CI pass alone.** Compare representative staging runs and record both speed and peak memory before adjusting transfer settings.
 
 ## Prerequisites
 

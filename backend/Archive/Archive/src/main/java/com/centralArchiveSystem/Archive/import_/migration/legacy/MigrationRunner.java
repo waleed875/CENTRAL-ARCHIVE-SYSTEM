@@ -49,8 +49,8 @@ public class MigrationRunner {
     @Value("${legacy.migration.schedule-enabled:false}")
     private boolean scheduleEnabled;
 
-    // One worker limits concurrent large Base64 source reads and MinIO uploads.
-    @Value("${legacy.migration.file-workers:1}")
+    // Restore historical four-worker migration throughput; large BYTEA values can exhaust heap.
+    @Value("${legacy.migration.file-workers:4}")
     private int fileWorkers;
 
     @Value("${legacy.migration.source-name:ARC2}")

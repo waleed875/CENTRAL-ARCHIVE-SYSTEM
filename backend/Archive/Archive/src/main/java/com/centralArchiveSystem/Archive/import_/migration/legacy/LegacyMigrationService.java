@@ -100,9 +100,6 @@ public class LegacyMigrationService {
     @Value("${legacy.migration.batch-size:200}")
     private int batchSize;
 
-    @Value("${legacy.migration.bytea-chunk-bytes:2097152}")
-    private int byteaChunkBytes;
-
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
 
@@ -535,8 +532,7 @@ public class LegacyMigrationService {
             List<Integer> slice = fileIds.subList(offset, Math.min(offset + 100, fileIds.size()));
             String placeholders = String.join(",", java.util.Collections.nCopies(slice.size(), "?"));
             List<Map<String, Object>> rows = connection.jdbc().queryForList(
-                    "SELECT idfile, idproject, filename, filesuffix, "
-                            + "octet_length(filebinary) AS encoded_length FROM "
+                    "SELECT idfile, idproject, filename, filesuffix FROM "
                             + LEGACY_DB_SCHEMA + ".tbl_files WHERE idfile IN (" + placeholders + ")",
                     slice.toArray());
             for (Map<String, Object> row : rows) {
@@ -559,22 +555,10 @@ public class LegacyMigrationService {
                     summary.incrementFailed();
                     continue;
                 }
-                Object size = row.get("encoded_length");
-                InputStream encoded = size == null ? null :
-                        new LegacyByteaInputStream(connection.jdbc(), fileId, ((Number) size).longValue(),
-                                Math.max(LegacyByteaInputStream.MIN_CHUNK_BYTES,
-                                Math.min(LegacyByteaInputStream.MAX_CHUNK_BYTES, byteaChunkBytes)));
-                try {
-                    migrateOneFile(connection, fileId, fileKey, targetProjectId,
-                            (String) row.get("filename"), (String) row.get("filesuffix"), encoded,
-                            summary, defaultCategoryId, defaultTypeId,
-                            targetProject.getConfidentialityLevelId(), previous);
-                } finally {
-                    if (encoded != null) {
-                        try { encoded.close(); }
-                        catch (Exception e) { log.warn("Could not close source stream for {}", fileId, e); }
-                    }
-                }
+                migrateFileWithDirectSourceStream(connection, fileId, fileKey, targetProjectId,
+                        (String) row.get("filename"), (String) row.get("filesuffix"), summary,
+                        defaultCategoryId, defaultTypeId, targetProject.getConfidentialityLevelId(),
+                        previous);
             }
             // IDs deleted from the source are not silently counted as completed.
             summary.addFailed(slice.size() - rows.size());
@@ -617,7 +601,7 @@ public class LegacyMigrationService {
                 .orElse(null);
 
         // Bound the tracking and target-file prefetch to one metadata page.
-        // Legacy BYTEA is still read separately in fixed-size chunks.
+        // File content is fetched as one direct JDBC binary stream only for rows needing migration.
         final int pageLimit = Math.max(1, Math.min(200, batchSize));
         // Seek pagination bounds JDBC memory even when the legacy PostgreSQL connection is
         // auto-commit (where setFetchSize can otherwise buffer the entire result).
@@ -626,15 +610,13 @@ public class LegacyMigrationService {
         int lastFileId = Integer.MIN_VALUE;
         while (!cancellation.isCancellationRequested()) {
             List<LegacyFileMetadata> page = connection.jdbc().query(
-                    "SELECT idfile, filename, filesuffix, octet_length(filebinary) AS encoded_length FROM "
+                    "SELECT idfile, filename, filesuffix FROM "
                             + LEGACY_DB_SCHEMA
                             + ".tbl_files WHERE idproject = ? AND idfile > ? ORDER BY idfile LIMIT ?",
                     (rs, rowNum) -> {
-                        long encodedLength = rs.getLong("encoded_length");
-                        boolean missingContent = rs.wasNull();
                         return new LegacyFileMetadata(
                                 rs.getInt("idfile"), rs.getString("filename"),
-                                rs.getString("filesuffix"), encodedLength, missingContent);
+                                rs.getString("filesuffix"));
                     },
                     legacyProjectId, lastFileId, pageLimit);
             if (page.isEmpty()) break;
@@ -712,8 +694,7 @@ public class LegacyMigrationService {
         }
     }
 
-    private record LegacyFileMetadata(int idfile, String originalName, String suffix,
-                                      long encodedLength, boolean missingContent) {}
+    private record LegacyFileMetadata(int idfile, String originalName, String suffix) {}
 
     /**
      * Replace per-file tracking/target lookups with two bounded IN queries.
@@ -769,24 +750,46 @@ public class LegacyMigrationService {
                 continue;
             }
 
-            InputStream encodedBase64 = row.missingContent() ? null
-                    : new LegacyByteaInputStream(connection.jdbc(), row.idfile(), row.encodedLength(),
-                                Math.max(LegacyByteaInputStream.MIN_CHUNK_BYTES,
-                                Math.min(LegacyByteaInputStream.MAX_CHUNK_BYTES, byteaChunkBytes)));
-            try {
-                migrateOneFile(connection, row.idfile(), sourceKey, targetProjectId,
-                        row.originalName(), row.suffix(), encodedBase64, summary,
-                        defaultCategoryId, defaultTypeId, projectConfidentialityId,
-                        previous);
-            } finally {
-                if (encodedBase64 != null) {
-                    try { encodedBase64.close(); }
-                    catch (Exception closeError) {
-                        log.warn("Failed to close legacy file stream for id={}", row.idfile(), closeError);
-                    }
-                }
-            }
+            migrateFileWithDirectSourceStream(connection, row.idfile(), sourceKey, targetProjectId,
+                    row.originalName(), row.suffix(), summary, defaultCategoryId,
+                    defaultTypeId, projectConfidentialityId, previous);
         }
+    }
+
+    /**
+     * Restore the pre-17-November direct JDBC source read. Unlike substring-based
+     * LegacyByteaInputStream, this performs one query per file and hands the
+     * driver-backed stream directly to the existing decode/checksum/quarantine/
+     * upload pipeline. The ResultSet stays open until the file is processed.
+     *
+     * IMPORTANT: pgJDBC can materialize a large BYTEA in JVM heap even when
+     * getBinaryStream is used. Four simultaneous files can exhaust memory.
+     */
+    private void migrateFileWithDirectSourceStream(
+            LegacyConnection connection, int fileId, String sourceKey, UUID targetProjectId,
+            String originalName, String suffix, LegacyFileSummary summary,
+            UUID defaultCategoryId, UUID defaultTypeId,
+            UUID projectConfidentialityId, LegacyMigrationItem previous) {
+        connection.jdbc().query(
+                "SELECT filebinary FROM " + LEGACY_DB_SCHEMA + ".tbl_files WHERE idfile = ?",
+                (org.springframework.jdbc.core.ResultSetExtractor<Void>) rs -> {
+                    InputStream encodedBase64 = rs.next() ? rs.getBinaryStream(1) : null;
+                    try {
+                        migrateOneFile(connection, fileId, sourceKey, targetProjectId,
+                                originalName, suffix, encodedBase64, summary,
+                                defaultCategoryId, defaultTypeId, projectConfidentialityId, previous);
+                    } finally {
+                        if (encodedBase64 != null) {
+                            try {
+                                encodedBase64.close();
+                            } catch (Exception closeError) {
+                                log.warn("Failed to close legacy file stream for id={}", fileId, closeError);
+                            }
+                        }
+                    }
+                    return null;
+                },
+                fileId);
     }
 
     private void migrateOneFile(LegacyConnection connection,
