@@ -17,6 +17,36 @@ import static org.mockito.Mockito.*;
 class MigrationRunnerCancellationTest {
 
     @Test
+    void untrackedSourceRecordsPreventFalseSuccessfulCompletion() {
+        MigrationBatch incomplete = new MigrationBatch();
+        incomplete.setRemainingProjectsCount(1);
+        incomplete.setRemainingFilesCount(3);
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+
+        incomplete.setRemainingProjectsCount(0);
+        incomplete.setRemainingFilesCount(1);
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+
+        incomplete.setRemainingFilesCount(0);
+        assertEquals(MigrationBatch.Status.SUCCESS,
+                MigrationRunner.completionStatus(incomplete, false, null, 0, 0, 0, 0));
+    }
+
+    @Test
+    void cancellationAndFatalErrorTakePrecedenceOverPartialCounts() {
+        MigrationBatch batch = new MigrationBatch();
+        batch.setRemainingFilesCount(5);
+        assertEquals(MigrationBatch.Status.CANCELLED,
+                MigrationRunner.completionStatus(batch, true, "failure", 1, 1, 1, 1));
+        assertEquals(MigrationBatch.Status.FAILED,
+                MigrationRunner.completionStatus(batch, false, "failure", 1, 1, 1, 1));
+        assertEquals(MigrationBatch.Status.PARTIAL,
+                MigrationRunner.completionStatus(batch, false, null, 1, 0, 0, 0));
+    }
+
+    @Test
     void cancellationRegistrySignalsOnlyPreparedBatches() {
         MigrationRunner runner = new MigrationRunner(
                 mock(LegacyMigrationService.class),
