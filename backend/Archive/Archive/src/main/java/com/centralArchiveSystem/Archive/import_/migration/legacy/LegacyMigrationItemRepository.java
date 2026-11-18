@@ -141,8 +141,26 @@ public interface LegacyMigrationItemRepository extends JpaRepository<LegacyMigra
         LEFT JOIN project.projects p ON p.id = f.project_id
         WHERE i.migration_source_id = :sourceId
           AND i.kind = 'FILE' AND i.status = 'DONE'
-          AND (:afterKey IS NULL OR i.source_key > :afterKey)
-        ORDER BY i.source_key
+          AND i.source_key ~ '^FILE-[0-9]{1,18}(@Param("sourceId") UUID sourceId,
+                                      @Param("afterKey") String afterKey,
+                                      @Param("maxRows") int maxRows);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update LegacyMigrationItem item set item.status = :failedStatus, "
+            + "item.error = :error, item.finishedAt = :finishedAt "
+            + "where item.migrationSourceId = :sourceId and item.status = :runningStatus")
+    int markAbandonedRunningItemsFailed(
+            @Param("sourceId") UUID sourceId,
+            @Param("runningStatus") LegacyMigrationItem.Status runningStatus,
+            @Param("failedStatus") LegacyMigrationItem.Status failedStatus,
+            @Param("finishedAt") LocalDateTime finishedAt,
+            @Param("error") String error);
+}
+
+          AND (:afterKey IS NULL OR
+              CAST(SUBSTRING(i.source_key FROM 6) AS BIGINT) >
+              CAST(SUBSTRING(CAST(:afterKey AS TEXT) FROM 6) AS BIGINT))
+        ORDER BY CAST(SUBSTRING(i.source_key FROM 6) AS BIGINT)
         LIMIT :maxRows
         """, nativeQuery = true)
     List<Object[]> reconciliationPage(@Param("sourceId") UUID sourceId,
