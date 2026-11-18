@@ -35,7 +35,39 @@ class LegacyByteaInputStreamTest {
              var decoded = Base64.getMimeDecoder().wrap(input)) {
             assertArrayEquals(original, decoded.readAllBytes());
         }
-        assertTrue(calls[0] >= 3, "large Base64 must be read through multiple bounded queries");
+        assertEquals(1, calls[0], "2 MiB default chunk must avoid unnecessary extra round trips for a 2MB Base64 file");
+    }
+
+    @Test
+    void configurableChunkSizeKeepsLargeInputBounded() throws Exception {
+        byte[] original = new byte[2_100_000];
+        new java.util.Random(341).nextBytes(original);
+        byte[] encoded = Base64.getEncoder().encode(original);
+        int[] chunks = {0};
+        JdbcTemplate jdbc = new JdbcTemplate() {
+            @Override
+            public <T> T queryForObject(String sql, Class<T> type, Object... args) {
+                int offset = ((Number) args[0]).intValue() - 1;
+                int size = ((Number) args[1]).intValue();
+                assertTrue(size <= 512 * 1024);
+                chunks[0]++;
+                return type.cast(Arrays.copyOfRange(encoded, offset, offset + size));
+            }
+        };
+        try (var input = new LegacyByteaInputStream(jdbc, 341, encoded.length, 512 * 1024);
+             var decoded = Base64.getMimeDecoder().wrap(input)) {
+            assertArrayEquals(original, decoded.readAllBytes());
+        }
+        assertTrue(chunks[0] >= 6);
+    }
+
+    @Test
+    void rejectsOutOfRangeChunkSize() {
+        JdbcTemplate jdbc = new JdbcTemplate();
+        assertThrows(IllegalArgumentException.class,
+                () -> new LegacyByteaInputStream(jdbc, 341, 10, 128 * 1024));
+        assertThrows(IllegalArgumentException.class,
+                () -> new LegacyByteaInputStream(jdbc, 341, 10, 5 * 1024 * 1024));
     }
 
     @Test
