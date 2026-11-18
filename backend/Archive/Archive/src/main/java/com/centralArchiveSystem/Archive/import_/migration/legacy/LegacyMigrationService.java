@@ -96,6 +96,9 @@ public class LegacyMigrationService {
     @Value("${legacy.migration.batch-size:200}")
     private int batchSize;
 
+    @Value("${legacy.migration.bytea-chunk-bytes:2097152}")
+    private int byteaChunkBytes;
+
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
 
@@ -584,7 +587,9 @@ public class LegacyMigrationService {
                     // connection pool (8) without loading whole files into Java memory.
                     long encodedLength = resultSet.getLong("encoded_length");
                     InputStream encodedBase64 = resultSet.wasNull() ? null :
-                            new LegacyByteaInputStream(connection.jdbc(), idfile, encodedLength);
+                            new LegacyByteaInputStream(connection.jdbc(), idfile, encodedLength,
+                                    Math.max(LegacyByteaInputStream.MIN_CHUNK_BYTES,
+                                            Math.min(LegacyByteaInputStream.MAX_CHUNK_BYTES, byteaChunkBytes)));
                     try {
                             migrateOneFile(
                                     connection,
