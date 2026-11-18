@@ -2,6 +2,9 @@ package com.centralArchiveSystem.Archive.import_.migration.legacy;
 
 import com.centralArchiveSystem.Archive.import_.migration.MigrationSourceRepository;
 import com.centralArchiveSystem.Archive.project.file.MinioService;
+import com.centralArchiveSystem.Archive.project.file.FileRepository;
+import com.centralArchiveSystem.Archive.config.MinioConfig;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -35,7 +38,8 @@ class MigrationFileAuditServiceTest {
                         new Object[]{"FILE-5", target, "archive", "legacy/test.pdf"}));
         when(storage.objectExists("archive", "legacy/test.pdf")).thenReturn(false);
 
-        var report = new MigrationFileAuditService(sources, items, storage).audit(source);
+        var report = new MigrationFileAuditService(sources, items, storage,
+                mock(FileRepository.class), mock(MinioConfig.class)).audit(source);
         assertEquals(8, report.trackingStatuses().get("DONE"));
         assertEquals(3, report.trackingStatuses().get("FAILED"));
         assertEquals(2, report.missingOrInvalidDoneLinks());
@@ -61,7 +65,8 @@ class MigrationFileAuditServiceTest {
                         new Object[]{"FILE-1", UUID.randomUUID(), "archive", "old/1"}));
         when(storage.objectExists("archive", "old/1")).thenThrow(new RuntimeException("down"));
 
-        var report = new MigrationFileAuditService(sources, items, storage).audit(source);
+        var report = new MigrationFileAuditService(sources, items, storage,
+                mock(FileRepository.class), mock(MinioConfig.class)).audit(source);
         assertEquals("UNKNOWN", report.storageSamples().getFirst().objectStatus());
     }
 
@@ -127,6 +132,73 @@ class MigrationFileAuditServiceTest {
                 () -> service.reconcilePage(sourceId, null, 101));
     }
 
+    private static MigrationFileAuditService inventoryService(
+            MigrationSourceRepository sources, LegacyMigrationItemRepository items,
+            MinioService storage, FileRepository files, MinioConfig config) {
+        var service = new MigrationFileAuditService(sources, items, storage, files, config);
+        ReflectionTestUtils.setField(service, "migrationPrefix", "legacy/migration");
+        return service;
+    }
+
+    @Test
+    void orphanInventoryFindsOnlyUnreferencedKeysInMappedProjectPrefix() throws Exception {
+        var sources = mock(MigrationSourceRepository.class);
+        var items = mock(LegacyMigrationItemRepository.class);
+        var storage = mock(MinioService.class);
+        var files = mock(FileRepository.class);
+        var config = mock(MinioConfig.class);
+        UUID sourceId = UUID.randomUUID(), targetProjectId = UUID.randomUUID();
+        var project = new LegacyMigrationItem();
+        project.setStatus(LegacyMigrationItem.Status.DONE);
+        project.setTargetId(targetProjectId);
+        when(sources.existsById(sourceId)).thenReturn(true);
+        when(items.findByMigrationSourceIdAndKindAndSourceKey(
+                sourceId, LegacyMigrationItem.Kind.PROJECT, "PROJECT-42"))
+                .thenReturn(java.util.Optional.of(project));
+        when(config.getBucket()).thenReturn("archive");
+        String prefix = "legacy/migration/files/" + targetProjectId + "/";
+        String a = prefix + "a.pdf", b = prefix + "b.pdf", c = prefix + "c.pdf";
+        when(storage.listObjectKeysPage("archive", prefix, null, 3))
+                .thenReturn(List.of(a, b, c));
+        when(files.findReferencedObjectKeys("archive", List.of(a, b)))
+                .thenReturn(List.of(a));
+
+        var result = inventoryService(sources, items, storage, files, config)
+                .orphanCandidates(sourceId, 42, "files", null, 2);
+        assertEquals(2, result.checked());
+        assertEquals(1, result.referenced());
+        assertEquals(1, result.unreferenced());
+        assertEquals(b, result.candidates().getFirst().objectKey());
+        assertTrue(result.hasMore());
+        assertEquals(b, result.nextCursor());
+        verify(files).findReferencedObjectKeys("archive", List.of(a, b));
+        verify(storage).listObjectKeysPage("archive", prefix, null, 3);
+        verifyNoMoreInteractions(storage);
+    }
+
+    @Test
+    void orphanInventoryRejectsUnmappedProjectAndCrossPrefixCursor() {
+        var sources = mock(MigrationSourceRepository.class);
+        var items = mock(LegacyMigrationItemRepository.class);
+        var storage = mock(MinioService.class);
+        var files = mock(FileRepository.class);
+        var config = mock(MinioConfig.class);
+        UUID sourceId = UUID.randomUUID(), targetId = UUID.randomUUID();
+        when(sources.existsById(sourceId)).thenReturn(true);
+        var service = inventoryService(sources, items, storage, files, config);
+        assertThrows(IllegalArgumentException.class,
+                () -> service.orphanCandidates(sourceId, 42, "files", null, 10));
+        var project = new LegacyMigrationItem();
+        project.setStatus(LegacyMigrationItem.Status.DONE);
+        project.setTargetId(targetId);
+        when(items.findByMigrationSourceIdAndKindAndSourceKey(
+                sourceId, LegacyMigrationItem.Kind.PROJECT, "PROJECT-42"))
+                .thenReturn(java.util.Optional.of(project));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.orphanCandidates(sourceId, 42, "files", "other/secret", 10));
+        verifyNoInteractions(storage, files);
+    }
+
     @Test
     void rejectsUnknownSourcesBeforeStorageQueries() {
         MigrationSourceRepository sources = mock(MigrationSourceRepository.class);
@@ -135,7 +207,8 @@ class MigrationFileAuditServiceTest {
         UUID source = UUID.randomUUID();
 
         assertThrows(RuntimeException.class,
-                () -> new MigrationFileAuditService(sources, items, storage).audit(source));
+                () -> new MigrationFileAuditService(sources, items, storage,
+                mock(FileRepository.class), mock(MinioConfig.class)).audit(source));
         verifyNoInteractions(items, storage);
     }
 }
