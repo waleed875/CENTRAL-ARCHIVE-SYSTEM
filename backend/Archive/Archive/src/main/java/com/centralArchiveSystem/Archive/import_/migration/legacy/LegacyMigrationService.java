@@ -435,43 +435,50 @@ public class LegacyMigrationService {
         UUID defaultCategoryId = resolveDefaultCategoryId();
         UUID defaultTypeId = resolveDefaultTypeId(defaultCategoryId);
 
-        List<Map<String, Object>> projects = connection.jdbc().queryForList(
-                "SELECT idproject FROM " + LEGACY_DB_SCHEMA + ".tbl_project");
-
+        // Page source project IDs with an ordered seek cursor. The bounded
+        // CompletableFuture window alone did not prevent queryForList from
+        // materializing every project in a large legacy office in heap.
+        final int projectPageLimit = Math.max(1, Math.min(200, batchSize));
+        int lastProjectId = Integer.MIN_VALUE;
         java.util.List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
-        for (Map<String, Object> projectRow : projects) {
-            if (cancellation.isCancellationRequested()) {
-                break;
+        while (!cancellation.isCancellationRequested()) {
+            List<Integer> projects = connection.jdbc().query(
+                    "SELECT idproject FROM " + LEGACY_DB_SCHEMA
+                            + ".tbl_project WHERE idproject > ? ORDER BY idproject LIMIT ?",
+                    (rs, rowNum) -> rs.getInt("idproject"),
+                    lastProjectId, projectPageLimit);
+            if (projects.isEmpty()) break;
+            // Advance the cursor only after the page has been obtained. Stopped
+            // batches are restarted from the beginning and skip DONE file rows.
+            lastProjectId = projects.get(projects.size() - 1);
+            for (Integer legacyProjectId : projects) {
+                if (cancellation.isCancellationRequested()) break;
+                CompletableFuture<Void> future = CompletableFuture.runAsync(
+                        () -> migrateFilesForProject(
+                                connection,
+                                legacyProjectId,
+                                summary,
+                                defaultCategoryId,
+                                defaultTypeId,
+                                cancellation
+                        ),
+                        pool
+                ).exceptionally(error -> {
+                    log.error("File migration task failed for legacy project {} in office {}",
+                            legacyProjectId, connection.office(), error);
+                    summary.incrementFailed();
+                    return null;
+                });
+                futures.add(future);
+                if (futures.size() >= 16) {
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                    futures.clear();
+                }
             }
-            int legacyProjectId = ((Number) projectRow.get("idproject")).intValue();
-            CompletableFuture<Void> future = CompletableFuture.runAsync(
-                    () -> migrateFilesForProject(
-                            connection,
-                            legacyProjectId,
-                            summary,
-                            defaultCategoryId,
-                            defaultTypeId,
-                            cancellation
-                    ),
-                    pool
-            ).exceptionally(error -> {
-                log.error("File migration task failed for legacy project {} in office {}",
-                        legacyProjectId, connection.office(), error);
-                summary.incrementFailed();
-                return null;
-            });
-            futures.add(future);
-            // Limit pending tasks. An office with many projects must not
-            // enqueue every migration as a CompletableFuture before the four
-            // workers can finish the first batch, or it can exhaust heap.
-            if (futures.size() >= 16) {
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-                futures.clear();
-            }
+            if (projects.size() < projectPageLimit) break;
         }
 
-        // Every task captures its own failure above. Drain the last bounded
-        // batch before returning so the legacy connection can be closed safely.
+        // Drain active tasks before the legacy connection or pool is closed.
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         log.info(
                 "Legacy files migrated for office {}: {} done, {} failed, {} skipped",
