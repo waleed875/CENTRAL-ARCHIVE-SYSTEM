@@ -100,6 +100,9 @@ public class LegacyMigrationService {
     @Value("${legacy.migration.batch-size:200}")
     private int batchSize;
 
+    @Value("${legacy.migration.bytea-chunk-bytes:2097152}")
+    private int byteaChunkBytes;
+
     @Value("${legacy.migration.minio-prefix:legacy/migration}")
     private String minioPrefix;
 
@@ -558,7 +561,9 @@ public class LegacyMigrationService {
                 }
                 Object size = row.get("encoded_length");
                 InputStream encoded = size == null ? null :
-                        new LegacyByteaInputStream(connection.jdbc(), fileId, ((Number) size).longValue());
+                        new LegacyByteaInputStream(connection.jdbc(), fileId, ((Number) size).longValue(),
+                                Math.max(LegacyByteaInputStream.MIN_CHUNK_BYTES,
+                                Math.min(LegacyByteaInputStream.MAX_CHUNK_BYTES, byteaChunkBytes)));
                 try {
                     migrateOneFile(connection, fileId, fileKey, targetProjectId,
                             (String) row.get("filename"), (String) row.get("filesuffix"), encoded,
@@ -765,7 +770,9 @@ public class LegacyMigrationService {
             }
 
             InputStream encodedBase64 = row.missingContent() ? null
-                    : new LegacyByteaInputStream(connection.jdbc(), row.idfile(), row.encodedLength());
+                    : new LegacyByteaInputStream(connection.jdbc(), row.idfile(), row.encodedLength(),
+                                Math.max(LegacyByteaInputStream.MIN_CHUNK_BYTES,
+                                Math.min(LegacyByteaInputStream.MAX_CHUNK_BYTES, byteaChunkBytes)));
             try {
                 migrateOneFile(connection, row.idfile(), sourceKey, targetProjectId,
                         row.originalName(), row.suffix(), encodedBase64, summary,
