@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LegacyByteaInputStreamTest {
     @Test
-    void readsMultiChunkBase64WithoutFetchingWholeBytea() throws Exception {
+    void avoidsExcessRoundTripsForModerateBase64WhilePreservingBytes() throws Exception {
         byte[] original = new byte[1_500_000];
         new java.util.Random(2026).nextBytes(original);
         byte[] encoded = Base64.getEncoder().encode(original);
