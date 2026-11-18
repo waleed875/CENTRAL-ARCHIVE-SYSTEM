@@ -148,7 +148,26 @@ public class MigrationRunner {
         return started;
     }
 
+    /**
+     * A bounded, source-scoped retry of FAILED legacy files. Full migration
+     * and the scheduler continue using the original overload.
+     */
+    public boolean runSelectedFiles(UUID batchId, java.util.List<Integer> fileIds) {
+        MigrationCancellationToken token = cancellationTokens.computeIfAbsent(
+                batchId, ignored -> new MigrationCancellationToken());
+        try {
+            return runBatch(batchId, token, java.util.List.copyOf(fileIds));
+        } finally {
+            cancellationTokens.remove(batchId, token);
+        }
+    }
+
     public boolean runBatch(UUID batchId, MigrationCancellationToken cancellation) {
+        return runBatch(batchId, cancellation, java.util.List.of());
+    }
+
+    private boolean runBatch(UUID batchId, MigrationCancellationToken cancellation,
+                             java.util.List<Integer> selectedFileIds) {
         if (!running.compareAndSet(false, true)) {
             log.info("Legacy migration already running, skipped trigger for batch={}", batchId);
             return false;
@@ -197,9 +216,12 @@ public class MigrationRunner {
                     // counts rather than only the rows that happened to be tracked before the crash.
                     batchRepository.saveAndFlush(batch);
 
-                    refs = legacyMigrationService.migrateReferences(connection, cancellation);
-                    if (!cancellation.isCancellationRequested()) {
-                        projects = legacyMigrationService.migrateProjects(connection, cancellation);
+                    // Selective retries must never rewrite references/projects.
+                    if (selectedFileIds.isEmpty()) {
+                        refs = legacyMigrationService.migrateReferences(connection, cancellation);
+                        if (!cancellation.isCancellationRequested()) {
+                            projects = legacyMigrationService.migrateProjects(connection, cancellation);
+                        }
                     }
                     if (!cancellation.isCancellationRequested()) {
                         if (progressTracker != null) {
@@ -208,8 +230,11 @@ public class MigrationRunner {
                             progressTracker.start(batchId, migrationSourceId,
                                     Math.max(0, batch.getTotalFilesCount() - previouslyDone));
                         }
-                        files = legacyMigrationService.migrateFilesAsync(
-                                connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get();
+                        files = selectedFileIds.isEmpty()
+                                ? legacyMigrationService.migrateFilesAsync(
+                                    connection, Math.max(1, Math.min(4, fileWorkers)), cancellation).get()
+                                : legacyMigrationService.retrySelectedFiles(
+                                    connection, selectedFileIds, cancellation);
                     }
                     // migrateFilesAsync joins every project task before returning. At this point no
                     // upload is still running, so the legacy connection can be closed safely.
