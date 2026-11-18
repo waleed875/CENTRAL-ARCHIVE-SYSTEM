@@ -227,8 +227,12 @@ public class MigrationRunner {
                         if (progressTracker != null) {
                             long previouslyDone = itemRepository.countByMigrationSourceIdAndKindAndStatus(
                                     migrationSourceId, LegacyMigrationItem.Kind.FILE, LegacyMigrationItem.Status.DONE);
-                            progressTracker.start(batchId, migrationSourceId,
-                                    Math.max(0, batch.getTotalFilesCount() - previouslyDone));
+                            // Selective retry ETA must reflect only the explicitly requested
+                            // failed IDs, not every unfinished file in the source.
+                            long filesInThisRun = selectedFileIds.isEmpty()
+                                    ? Math.max(0, batch.getTotalFilesCount() - previouslyDone)
+                                    : selectedFileIds.size();
+                            progressTracker.start(batchId, migrationSourceId, filesInThisRun);
                         }
                         files = selectedFileIds.isEmpty()
                                 ? legacyMigrationService.migrateFilesAsync(
