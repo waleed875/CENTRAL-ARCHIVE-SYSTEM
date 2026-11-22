@@ -116,4 +116,77 @@ class DiscardedDraftWithDeletedFilesHttpIntegrationTest {
                 "SELECT COUNT(*) FROM project.projects WHERE id=? AND discarded_at IS NULL",
                 Long.class, project));
     }
+
+    @Test
+    void administratorCanDiscardImportedMigrationProjectWithoutDestroyingFileReferences() throws Exception {
+        UUID organization = UUID.randomUUID(), project = UUID.randomUUID(), file = UUID.randomUUID();
+        jdbc.update("INSERT INTO core.organizations(id,name,code,type) VALUES (?,?,?,'COMPANY')",
+                organization, "Migration Office", organization.toString());
+        jdbc.update("""
+                INSERT INTO project.projects(id,project_uid,organization_id,project_number,name,year,
+                                             status,source_type)
+                VALUES (?,?,?,?,?,2026,'IMPORTED','MIGRATION')
+                """, project, UUID.randomUUID(), organization, "MIG-DISCARD", "Migrated Imported Project");
+        jdbc.update("""
+                INSERT INTO project.files(id,project_id,original_name,stored_name,
+                                          bucket_name,object_key,status,source_type)
+                VALUES (?,?, 'legacy.pdf','legacy.pdf','archive-files','legacy/provenance/a.pdf','ACTIVE','MIGRATION')
+                """, file, project);
+        String token = adminToken();
+        mvc.perform(delete("/api/v1/projects/{id}/migration-draft", project)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Historical duplicate retained for source integrity\"}"))
+                .andExpect(status().isOk());
+        entityManager.flush();
+        assertEquals(1L, jdbc.queryForObject(
+                "SELECT count(*) FROM project.files WHERE id=? AND project_id=?", Long.class, file, project));
+        assertEquals("legacy/provenance/a.pdf", jdbc.queryForObject(
+                "SELECT object_key FROM project.files WHERE id=?", String.class, file));
+        assertEquals(1L, jdbc.queryForObject("""
+                SELECT count(*) FROM project.projects
+                WHERE id=? AND discarded_at IS NOT NULL AND is_latest_version=false
+                    AND discard_reason='Historical duplicate retained for source integrity'
+                """, Long.class, project));
+        mvc.perform(get("/api/v1/projects/{id}", project)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/projects/search").param("searchTerm", "MIG-DISCARD")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+        mvc.perform(delete("/api/v1/projects/{id}/migration-draft", project)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Repeat attempts must never discard twice\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void migrationDraftDiscardRejectsReviewedOrManualProjects() throws Exception {
+        UUID organization = UUID.randomUUID(), manualId = UUID.randomUUID(), reviewedId = UUID.randomUUID();
+        jdbc.update("INSERT INTO core.organizations(id,name,code,type) VALUES (?,?,?,'COMPANY')",
+                organization, "Fixture Org", organization.toString());
+        jdbc.update("""
+                INSERT INTO project.projects(id,project_uid,organization_id,project_number,name,year,
+                                             status,source_type)
+                VALUES (?,?,?,?,?,2026,'DRAFT','MANUAL')
+                """, manualId, UUID.randomUUID(), organization, "MANUAL-DELETE", "Manual draft");
+        jdbc.update("""
+                INSERT INTO project.projects(id,project_uid,organization_id,project_number,name,year,
+                                             status,source_type)
+                VALUES (?,?,?,?,?,2026,'APPROVED','MIGRATION')
+                """, reviewedId, UUID.randomUUID(), organization, "MIG-REVIEWED", "Reviewed Migration");
+        String token = adminToken();
+        for (UUID id : new UUID[]{manualId,reviewedId}) {
+            mvc.perform(delete("/api/v1/projects/{id}/migration-draft", id)
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                            .content("{\"reason\":\"Cannot remove unrelated reviewed project\"}"))
+                    .andExpect(status().isUnprocessableEntity());
+            assertEquals(1L,jdbc.queryForObject(
+                    "SELECT count(*) FROM project.projects WHERE id=? AND discarded_at IS NULL",
+                    Long.class,id));
+        }
+    }
 }

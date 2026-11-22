@@ -23,6 +23,80 @@ import static org.mockito.Mockito.*;
 class UserServiceTest {
 
     @Test
+    void removingAccountAnonymizesIdentityButKeepsAuditId() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        UUID target = UUID.randomUUID(), administrator = UUID.randomUUID();
+        User user = new User();
+        user.setId(target);
+        user.setUsername("oldlogin");
+        user.setFullName("Historical Employee");
+        user.setEmail("employee@example.invalid");
+        user.setPasswordHash("oldhash");
+        user.setOrganizationId(UUID.randomUUID());
+        user.setMaxConfidentialityLevelId(UUID.randomUUID());
+        user.setStatus(User.UserStatus.ACTIVE);
+        when(users.findForUpdate(target)).thenReturn(Optional.of(user));
+        when(encoder.encode(anyString())).thenReturn("tombstonehash");
+
+        new UserService(users, roles, imports, encoder)
+                .removeAccount(target, administrator, "Required under administration retention policy");
+
+        assertEquals(target, user.getId());
+        assertEquals(User.UserStatus.DELETED, user.getStatus());
+        assertTrue(user.getUsername().startsWith("deleted_"));
+        assertEquals("حساب محذوف", user.getFullName());
+        assertNull(user.getEmail());
+        assertNull(user.getOrganizationId());
+        assertNull(user.getMaxConfidentialityLevelId());
+        assertEquals("tombstonehash", user.getPasswordHash());
+        assertNotNull(user.getDeletedAt());
+        assertEquals(administrator, user.getDeletedBy());
+        assertNotNull(user.getTokenValidAfter());
+        verify(users).save(user);
+        verify(users).lockAdministration();
+    }
+
+    @Test
+    void accountRemovalRejectsSelfAndActiveImports() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        UUID id = UUID.randomUUID();
+        User user = new User();
+        user.setId(id);
+        user.setStatus(User.UserStatus.ACTIVE);
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
+        when(imports.countByImportedByAndStatus(id, ImportOperation.Status.STARTED)).thenReturn(1L);
+        UserService service = new UserService(users, roles, imports, encoder);
+        assertThrows(BusinessRuleException.class, () ->
+                service.removeAccount(id, id, "Account requested to be deleted"));
+        assertThrows(BusinessRuleException.class, () ->
+                service.removeAccount(id, UUID.randomUUID(), "Account requested to be deleted"));
+        verify(users, never()).save(any());
+    }
+
+    @Test
+    void deletedAccountCannotBeUpdatedOrHavePasswordReset() {
+        UserRepository users = mock(UserRepository.class);
+        User user = new User();
+        UUID id = UUID.randomUUID();
+        user.setId(id);
+        user.setStatus(User.UserStatus.DELETED);
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
+        UserService service = new UserService(users, mock(RoleRepository.class),
+                mock(ImportOperationRepository.class), mock(PasswordEncoder.class));
+        assertThrows(BusinessRuleException.class, () ->
+                service.update(id, new UserUpdateRequest("useragain",null,null,null,null,null,false)));
+        assertThrows(BusinessRuleException.class, () ->
+                service.resetPassword(id, new com.centralArchiveSystem.Archive.core.user.dto.ResetPasswordRequest("Strong-password123!")));
+        verify(users, never()).save(any());
+    }
+
+    @Test
     void deleteRejectsUserWithActiveImportOperation() {
         UserRepository users = mock(UserRepository.class);
         RoleRepository roles = mock(RoleRepository.class);
