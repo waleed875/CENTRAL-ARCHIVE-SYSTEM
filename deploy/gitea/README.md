@@ -33,9 +33,25 @@ Keep a verified backup of PostgreSQL **and** MinIO before upgrading. Save the or
 ## 2. Configure Gitea and a dedicated runner
 
 1. Enable Actions for the repository in Gitea (repository Settings → Actions).
-2. On a dedicated Linux runner VM, install Docker Engine, Git, Bash, and the matching Gitea `act_runner` release.
+2. On a dedicated Linux runner VM, install Docker Engine, Git 2.34.1+, Bash, Node.js for the checkout JavaScript action, and the matching Gitea `act_runner` release.
 3. Obtain a **runner registration token** under Gitea's relevant admin/repository Actions → Runners settings; register a runner with label **`archive-builder:host`** (the workflow requests `archive-builder`). The host label runs jobs with the runner user's permissions; isolate this VM and do not use it for untrusted repositories or pull requests.
 4. Keep Runner as a restricted system service and give Docker access only to the dedicated build identity. Docker daemon access is effectively root-equivalent on that host.
+Example registration for the current `gitea-runner` CLI (use the compatible stable binary for your Gitea version). Execute on the **dedicated builder VM**, not on Portainer or the production Docker Engine:
+
+```bash
+# Place a Gitea-issued registration token in a private file (mode 600) first.
+gitea-runner register --no-interactive \
+  --instance https://gitea.example.internal/ \
+  --token-file /etc/gitea-runner/registration-token \
+  --name archive-builder-01 \
+  --labels archive-builder:host
+
+# Initial foreground smoke test; convert to a systemd service afterwards.
+gitea-runner daemon
+```
+
+`gitea.example.internal` is a placeholder. Do not paste registration tokens into terminal command arguments, logs, or Git. The registered runner must show **online** in Gitea Actions settings. Use a dedicated builder identity and restrict branch permissions.
+
 5. Gitea Actions `actions/checkout@v4` needs a reachable source for the action. In an offline network, configure Gitea's Actions default action URL or an approved internal mirror of checkout; **do not blindly add public Internet access**.
 6. Configure protected `main` branch, PR review and CI gates; only trusted merges should trigger this privileged publish pipeline.
 
