@@ -14,6 +14,10 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 
@@ -27,11 +31,15 @@ import java.util.concurrent.Semaphore;
 public class PdfPreviewService {
     public record PdfInfo(int pageCount) {}
 
-    static final int MAX_PDF_BYTES = 50 * 1024 * 1024;
+    static final long MAX_PDF_BYTES = 512L * 1024 * 1024;
+    static final int PDF_COPY_BUFFER_BYTES = 64 * 1024;
     static final int MAX_PAGES = 500;
     static final int MAX_IMAGE_SIDE = 2200;
     static final long MAX_RENDER_PIXELS = 3_000_000L;
     private static final Semaphore RENDER_SLOTS = new Semaphore(2);
+
+    @org.springframework.beans.factory.annotation.Value("${archive.storage.temp-dir:}")
+    private String storageTempDir;
 
     private final FileService files;
 
@@ -40,14 +48,31 @@ public class PdfPreviewService {
     }
 
     public PdfInfo inspect(UUID id, Long declaredSize) {
-        byte[] bytes = readPdf(id, declaredSize);
-        try (PDDocument document = Loader.loadPDF(bytes)) {
-            return pageInfo(document);
+        if (!RENDER_SLOTS.tryAcquire()) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "يوجد عدد كبير من معاينات PDF قيد التنفيذ؛ حاول مجددًا");
+        }
+        try {
+            Path spool = spoolPdf(id, declaredSize);
+            try {
+                try (PDDocument document = Loader.loadPDF(spool.toFile())) {
+                    return pageInfo(document);
+                }
+            } catch (ResponseStatusException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "تعذر فتح PDF، قد يكون مشفرًا أو تالفًا", e);
+            } finally {
+                Files.deleteIfExists(spool);
+            }
         } catch (ResponseStatusException e) {
             throw e;
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "تعذر فتح PDF، قد يكون مشفرًا أو تالفًا", e);
+        } catch (java.io.IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "تعذر تنظيف ملف معاينة PDF المؤقت", e);
+        } finally {
+            RENDER_SLOTS.release();
         }
     }
 
@@ -60,29 +85,81 @@ public class PdfPreviewService {
                     "يوجد عدد كبير من معاينات PDF قيد التنفيذ؛ حاول مجددًا");
         }
         try {
-            return renderPdf(readPdf(id, declaredSize), pageNumber);
+            Path spool = spoolPdf(id, declaredSize);
+            try {
+                try (PDDocument document = Loader.loadPDF(spool.toFile())) {
+                    return renderDocument(document, pageNumber);
+                } catch (ResponseStatusException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "تعذر عرض صفحة PDF، قد يكون الملف تالفًا أو محميًا بكلمة مرور", e);
+                }
+            } finally {
+                Files.deleteIfExists(spool);
+            }
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (java.io.IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "تعذر تنظيف ملف معاينة PDF المؤقت", e);
         } finally {
             RENDER_SLOTS.release();
         }
     }
 
-    private byte[] readPdf(UUID id, Long declaredSize) {
+    /**
+     * Stage authorized PDF data to an isolated temporary file. A large document
+     * is never converted into one JVM byte array before PDFBox opens it.
+     * Keep a strict disk budget as a second check against forged size metadata.
+     */
+    private Path spoolPdf(UUID id, Long declaredSize) {
         if (declaredSize != null && declaredSize > MAX_PDF_BYTES) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
-                    "ملف PDF أكبر من الحد المسموح للمعاينة (50 ميغابايت)");
+                    "ملف PDF أكبر من حد المعاينة المؤقتة (512 ميغابايت)");
         }
-        try (InputStream stream = files.downloadFile(id)) {
-            byte[] bytes = stream.readNBytes(MAX_PDF_BYTES + 1);
-            if (bytes.length > MAX_PDF_BYTES) {
-                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
-                        "ملف PDF أكبر من الحد المسموح للمعاينة (50 ميغابايت)");
+        Path spool = null;
+        try {
+            Path tempDirectory = (storageTempDir == null || storageTempDir.isBlank())
+                    ? Path.of(System.getProperty("java.io.tmpdir"))
+                    : Path.of(storageTempDir);
+            Files.createDirectories(tempDirectory);
+            spool = Files.createTempFile(tempDirectory, "archive-pdf-preview-", ".pdf");
+            try (InputStream input = files.downloadFile(id);
+                 OutputStream output = Files.newOutputStream(spool, StandardOpenOption.TRUNCATE_EXISTING)) {
+                copyBounded(input, output, MAX_PDF_BYTES);
             }
-            return bytes;
+            return spool;
         } catch (ResponseStatusException e) {
+            cleanup(spool);
             throw e;
         } catch (Exception e) {
+            cleanup(spool);
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "تعذر قراءة PDF من مخزن الملفات", e);
+        }
+    }
+
+    static long copyBounded(InputStream input, OutputStream output, long maxBytes) throws java.io.IOException {
+        long copied = 0;
+        byte[] buffer = new byte[PDF_COPY_BUFFER_BYTES];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            if (read == 0) continue;
+            if (copied > maxBytes - read) {
+                throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+                        "ملف PDF أكبر من حد المعاينة المؤقتة (512 ميغابايت)");
+            }
+            output.write(buffer, 0, read);
+            copied += read;
+        }
+        return copied;
+    }
+
+    private static void cleanup(Path spool) {
+        if (spool != null) {
+            try { Files.deleteIfExists(spool); }
+            catch (java.io.IOException ignored) { /* spool remains OS-managed */ }
         }
     }
 
@@ -128,6 +205,16 @@ public class PdfPreviewService {
 
     static byte[] renderPdf(byte[] bytes, int pageNumber) {
         try (PDDocument document = Loader.loadPDF(bytes)) {
+            return renderDocument(document, pageNumber);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "تعذر عرض صفحة PDF، قد يكون الملف تالفًا أو محميًا بكلمة مرور", e);
+        }
+    }
+
+    private static byte[] renderDocument(PDDocument document, int pageNumber) throws java.io.IOException {
             PdfInfo info = pageInfo(document);
             if (pageNumber < 1 || pageNumber > info.pageCount()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "رقم صفحة PDF غير موجود");
@@ -161,11 +248,5 @@ public class PdfPreviewService {
             } finally {
                 image.flush();
             }
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "تعذر عرض صفحة PDF، قد يكون الملف تالفًا أو محميًا بكلمة مرور", e);
-        }
     }
 }
