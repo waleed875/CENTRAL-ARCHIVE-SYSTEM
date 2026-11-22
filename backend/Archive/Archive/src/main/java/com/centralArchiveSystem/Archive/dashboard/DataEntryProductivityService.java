@@ -124,7 +124,7 @@ public class DataEntryProductivityService {
                 .addValue("limit", size)
                 .addValue("offset", (long) (page - 1) * size);
 
-        String where = VISIBLE_LATEST + " AND original.created_by = :userId";
+        String where = VISIBLE_LATEST + " AND original.created_by = :userId\n";
         Long total = jdbc.queryForObject(
                 "SELECT COUNT(DISTINCT latest.project_uid) " + where,
                 params, Long.class
