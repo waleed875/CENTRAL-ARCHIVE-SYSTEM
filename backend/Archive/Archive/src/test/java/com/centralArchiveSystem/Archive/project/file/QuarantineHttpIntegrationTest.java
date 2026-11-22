@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
@@ -85,6 +87,30 @@ class QuarantineHttpIntegrationTest {
         mvc.perform(get("/api/v1/admin/quarantine/{id}/download", quarantine)
                     .header("Authorization", reader))
             .andExpect(status().isForbidden());
+
+        // A reviewer may document a keep decision, without changing the file bytes or status.
+        mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
+                .header("Authorization", reader)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\\"decision\\":\\"KEEP\\",\\"note\\":\\"Manual review is required\\"}"))
+            .andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
+                .header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\\"decision\\":\\"KEEP\\",\\"note\\":\\"Executable signature requires isolation\\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.fileStatus").value("QUARANTINED"));
+        assertEquals(1, jdbc.queryForObject(
+                "SELECT count(*) FROM project.quarantine_reviews WHERE file_id=?",
+                Integer.class, quarantine));
+        // An unsafe executable cannot be released, even by an administrator.
+        mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
+                .header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\\"decision\\":\\"RELEASE\\",\\"note\\":\\"Attempt release without validation\\"}"))
+            .andExpect(status().is4xxClientError());
+        assertEquals("QUARANTINED", jdbc.queryForObject(
+                "SELECT status FROM project.files WHERE id=?", String.class, quarantine));
 
         // Even an administrator cannot accidentally access quarantined bytes
         // through the normal metadata, preview, or download API.
