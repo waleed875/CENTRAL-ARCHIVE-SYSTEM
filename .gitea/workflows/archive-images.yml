@@ -1,0 +1,27 @@
+name: Build and publish archive images
+
+# Publish is deliberately separate from Portainer deployment.
+# Do not build from untrusted pull requests with a privileged Docker runner.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publish:
+    # Register this exact label on a dedicated trusted host-mode Gitea act_runner.
+    runs-on: archive-builder
+    steps:
+      - name: Check out the commit being built
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build and publish immutable images
+        env:
+          ARCHIVE_REGISTRY_HOST: ${{ vars.ARCHIVE_REGISTRY_HOST }}
+          ARCHIVE_IMAGE_OWNER: ${{ vars.ARCHIVE_IMAGE_OWNER }}
+          ARCHIVE_REGISTRY_USERNAME: ${{ secrets.ARCHIVE_REGISTRY_USERNAME }}
+          ARCHIVE_REGISTRY_TOKEN: ${{ secrets.ARCHIVE_REGISTRY_TOKEN }}
+        run: bash deploy/gitea/build-and-push.sh
