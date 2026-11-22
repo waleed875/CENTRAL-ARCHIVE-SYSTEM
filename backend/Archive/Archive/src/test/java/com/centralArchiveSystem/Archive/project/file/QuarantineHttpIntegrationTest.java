@@ -92,12 +92,12 @@ class QuarantineHttpIntegrationTest {
         mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
                 .header("Authorization", reader)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\\"decision\\":\\"KEEP\\",\\"note\\":\\"Manual review is required\\"}"))
+                .content("{\"decision\":\"KEEP\",\"note\":\"Manual review is required\"}"))
             .andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
                 .header("Authorization", admin)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\\"decision\\":\\"KEEP\\",\\"note\\":\\"Executable signature requires isolation\\"}"))
+                .content("{\"decision\":\"KEEP\",\"note\":\"Executable signature requires isolation\"}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.fileStatus").value("QUARANTINED"));
         assertEquals(1, jdbc.queryForObject(
@@ -107,7 +107,7 @@ class QuarantineHttpIntegrationTest {
         mvc.perform(post("/api/v1/admin/quarantine/{id}/review", quarantine)
                 .header("Authorization", admin)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\\"decision\\":\\"RELEASE\\",\\"note\\":\\"Attempt release without validation\\"}"))
+                .content("{\"decision\":\"RELEASE\",\"note\":\"Attempt release without validation\"}"))
             .andExpect(status().is4xxClientError());
         assertEquals("QUARANTINED", jdbc.queryForObject(
                 "SELECT status FROM project.files WHERE id=?", String.class, quarantine));
