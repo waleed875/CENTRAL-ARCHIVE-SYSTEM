@@ -105,6 +105,40 @@ class UserServiceTest {
     }
 
     @Test
+    void adminUsernameChangeRevokesExistingTokens() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        UUID id = UUID.randomUUID();
+        User user = new User(); user.setId(id); user.setUsername("oldname");
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
+        when(users.save(user)).thenReturn(user);
+        UserService service = new UserService(users, roles, imports, encoder);
+        service.update(id, new UserUpdateRequest("newname", null, null, null, null, null, false));
+        assertEquals("newname", user.getUsername());
+        assertNotNull(user.getTokenValidAfter());
+        verify(users).existsByUsernameAndIdNot("newname", id);
+    }
+
+    @Test
+    void adminCanRemoveClearanceAndRevokesTokens() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        UUID id = UUID.randomUUID();
+        User user = new User(); user.setId(id); user.setUsername("employee");
+        user.setMaxConfidentialityLevelId(UUID.randomUUID());
+        when(users.findForUpdate(id)).thenReturn(Optional.of(user));
+        when(users.save(user)).thenReturn(user);
+        UserService service = new UserService(users, roles, imports, encoder);
+        service.update(id, new UserUpdateRequest(null, null, null, null, null, null, true));
+        assertNull(user.getMaxConfidentialityLevelId());
+        assertNotNull(user.getTokenValidAfter());
+    }
+
+    @Test
     void patchRejectsDuplicateEmail() {
         UserRepository users = mock(UserRepository.class);
         RoleRepository roles = mock(RoleRepository.class);
@@ -126,7 +160,7 @@ class UserServiceTest {
         assertThrows(ConflictException.class,
                 () -> service.update(
                         id,
-                        new UserUpdateRequest(null, "duplicate@example.com", null, null, null)
+                        new UserUpdateRequest(null, null, "duplicate@example.com", null, null, null, false)
                 ));
         verify(users, never()).save(any());
     }

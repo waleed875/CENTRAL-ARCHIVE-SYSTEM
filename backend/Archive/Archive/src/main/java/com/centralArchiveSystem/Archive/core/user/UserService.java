@@ -132,7 +132,15 @@ public class UserService {
             user.setOrganizationId(request.organizationId());
         }
 
-        if (request.maxConfidentialityLevelId() != null
+        if (Boolean.TRUE.equals(request.clearConfidentialityLevel()) && request.maxConfidentialityLevelId() != null) {
+            throw new BusinessRuleException("لا يمكن تحديد مستوى سرية وإزالته في الطلب نفسه");
+        }
+        if (Boolean.TRUE.equals(request.clearConfidentialityLevel())) {
+            if (user.getMaxConfidentialityLevelId() != null) {
+                user.setMaxConfidentialityLevelId(null);
+                TokenRevocation.advance(user);
+            }
+        } else if (request.maxConfidentialityLevelId() != null
                 && !request.maxConfidentialityLevelId().equals(user.getMaxConfidentialityLevelId())) {
             user.setMaxConfidentialityLevelId(request.maxConfidentialityLevelId());
             TokenRevocation.advance(user);

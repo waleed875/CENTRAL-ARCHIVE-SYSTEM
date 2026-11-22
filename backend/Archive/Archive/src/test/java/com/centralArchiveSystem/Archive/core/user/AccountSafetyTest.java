@@ -31,7 +31,7 @@ class AccountSafetyTest {
         User user = administrator(); UUID role = user.getRoles().iterator().next().getId();
         assertThrows(BusinessRuleException.class, () -> service.delete(user.getId()));
         assertThrows(BusinessRuleException.class, () -> service.update(user.getId(),
-                new UserUpdateRequest(null,null,null,null,User.UserStatus.DISABLED)));
+                new UserUpdateRequest(null,null,null,null,null,User.UserStatus.DISABLED,false)));
         assertThrows(BusinessRuleException.class, () -> service.removeRole(user.getId(), role));
         assertEquals(User.UserStatus.ACTIVE, user.getStatus());
         verify(users, never()).save(any());
@@ -54,7 +54,7 @@ class AccountSafetyTest {
         when(users.findForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(imports.countByImportedByAndStatus(user.getId(), ImportOperation.Status.STARTED)).thenReturn(1L);
         assertThrows(BusinessRuleException.class, () -> service.update(user.getId(),
-                new UserUpdateRequest(null,null,null,null,User.UserStatus.LOCKED)));
+                new UserUpdateRequest(null,null,null,null,null,User.UserStatus.LOCKED,false)));
         verify(users, never()).save(any());
     }
 

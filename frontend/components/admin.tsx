@@ -21,7 +21,8 @@ function Users(){
   try{
    await api("/api/v1/users/"+target.id,{method:"PATCH",...jsonBody({
     username:edit.username,fullName:edit.fullName,
-    maxConfidentialityLevelId:edit.maxConfidentialityLevelId||null
+    maxConfidentialityLevelId:edit.maxConfidentialityLevelId||null,
+    clearConfidentialityLevel:!edit.maxConfidentialityLevelId
    })});
    setSuccess("تم تحديث بيانات الحساب. تغييرات اسم الدخول/مستوى السرية تبطل الجلسات السابقة.");
    setModal(null);users.reload();
@@ -39,7 +40,7 @@ function Users(){
  <form className="form-stack" onSubmit={saveEdit}>
  <Field label="اسم الدخول"><input required minLength={3} maxLength={50} pattern="[A-Za-z0-9._-]+" value={edit.username} onChange={e=>setEdit(v=>({...v,username:e.target.value}))}/></Field>
  <Field label="الاسم الظاهر"><input required maxLength={200} value={edit.fullName} onChange={e=>setEdit(v=>({...v,fullName:e.target.value}))}/></Field>
- <Field label="أعلى مستوى سرية"><select value={edit.maxConfidentialityLevelId} onChange={e=>setEdit(v=>({...v,maxConfidentialityLevelId:e.target.value}))}><option value="">الإبقاء على المستوى الحالي إن لم يحدد</option>{levels.data?.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
+ <Field label="أعلى مستوى سرية"><select value={edit.maxConfidentialityLevelId} onChange={e=>setEdit(v=>({...v,maxConfidentialityLevelId:e.target.value}))}><option value="">إزالة تصريح السرية الخاص بالمستخدم</option>{levels.data?.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
  {error&&<Alert message={error}/>}<div className="form-actions"><button className="btn btn-gold" disabled={saving}>حفظ التعديلات</button></div></form></Modal>}
  {modal==="reset"&&target&&<Modal title={"إعادة تعيين كلمة مرور "+target.fullName} subtitle="سيُطلب من المستخدم تسجيل الدخول مرة أخرى بعد إبطال الرموز السابقة." onClose={()=>setModal(null)}><form className="form-stack" onSubmit={reset}><Field label="كلمة المرور الجديدة"><input type="password" minLength={8} required value={password} onChange={e=>setPassword(e.target.value)}/></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">تغيير كلمة المرور</button></div></form></Modal>}</>;
 }

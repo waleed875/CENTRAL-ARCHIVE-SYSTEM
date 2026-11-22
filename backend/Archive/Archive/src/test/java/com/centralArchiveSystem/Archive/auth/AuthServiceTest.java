@@ -42,7 +42,8 @@ class AuthServiceTest {
                 authenticationManager,
                 tokenProvider,
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                mock(com.centralArchiveSystem.Archive.core.user.UserService.class)
         );
 
         service.logout();
@@ -73,7 +74,8 @@ class AuthServiceTest {
                 authenticationManager,
                 tokenProvider,
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                mock(com.centralArchiveSystem.Archive.core.user.UserService.class)
         );
 
         assertThrows(IllegalArgumentException.class,

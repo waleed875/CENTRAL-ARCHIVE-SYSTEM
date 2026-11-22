@@ -13,5 +13,6 @@ public record UserUpdateRequest(
     @Size(max = 200, message = "تجاوز طول الحقل الحد المسموح") @Email(message = "صيغة البريد الإلكتروني غير صالحة") String email,
     UUID organizationId,
     UUID maxConfidentialityLevelId,
-    User.UserStatus status
+    User.UserStatus status,
+    Boolean clearConfidentialityLevel
 ) {}
