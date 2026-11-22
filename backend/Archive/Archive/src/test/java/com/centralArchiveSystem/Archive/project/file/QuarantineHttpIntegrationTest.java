@@ -161,7 +161,7 @@ class QuarantineHttpIntegrationTest {
             mvc.perform(post("/api/v1/admin/quarantine/{id}/review", fileId)
                             .header("Authorization", admin)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"decision\":\"RELEASE\",\"note\":\"Verified legacy PDF and checksum\\"}"))
+                            .content("{\"decision\":\"RELEASE\",\"note\":\"Verified legacy PDF and checksum\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.fileStatus").value("ACTIVE"));
             assertEquals("ACTIVE", jdbc.queryForObject(
@@ -214,7 +214,7 @@ class QuarantineHttpIntegrationTest {
             mvc.perform(post("/api/v1/admin/quarantine/{id}/review", fileId)
                             .header("Authorization", admin)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"decision\":\"RELEASE\",\"note\":\"Forensic recheck of stored file\\"}"))
+                            .content("{\"decision\":\"RELEASE\",\"note\":\"Forensic recheck of stored file\"}"))
                     .andExpect(status().is4xxClientError());
             assertEquals("QUARANTINED", jdbc.queryForObject(
                     "SELECT status FROM project.files WHERE id=?", String.class, fileId));
