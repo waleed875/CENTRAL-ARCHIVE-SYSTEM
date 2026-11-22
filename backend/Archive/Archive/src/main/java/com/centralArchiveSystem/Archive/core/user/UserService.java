@@ -162,6 +162,22 @@ public class UserService {
             user.setStatus(request.status());
         }
 
+        if (request.roleIds() != null) {
+            Set<Role> nextRoles = request.roleIds().isEmpty()
+                    ? new HashSet<>() : resolveRoles(request.roleIds());
+            Set<UUID> currentRoleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
+            Set<UUID> nextRoleIds = nextRoles.stream().map(Role::getId).collect(Collectors.toSet());
+            if (!currentRoleIds.equals(nextRoleIds)) {
+                user.getRoles().stream()
+                        .filter(role -> "system_admin".equals(role.getCode()))
+                        .filter(role -> !nextRoleIds.contains(role.getId()))
+                        .findFirst()
+                        .ifPresent(role -> requireAnotherAdministrator(user, role.getId()));
+                user.setRoles(nextRoles);
+                TokenRevocation.advance(user);
+            }
+        }
+
         user = userRepository.save(user);
         return toResponse(user);
     }

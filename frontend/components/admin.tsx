@@ -9,7 +9,7 @@ type RoleRow={id:string;code:string;name:string;isActive?:boolean};
 type LogRow={id:string;action:string;entityType:string;entityId:string;description:string;userId:string;createdAt:string};
 function Users(){
  const router=useRouter();
- const [search,setSearch]=useState(""),[page,setPage]=useState(1),[modal,setModal]=useState<"create"|"reset"|"edit"|"remove"|null>(null),[target,setTarget]=useState<UserRow|null>(null),[password,setPassword]=useState(""),[removeReason,setRemoveReason]=useState(""),[form,setForm]=useState({username:"",password:"",organizationId:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[edit,setEdit]=useState({username:"",fullName:"",maxConfidentialityLevelId:""}),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
+ const [search,setSearch]=useState(""),[page,setPage]=useState(1),[modal,setModal]=useState<"create"|"reset"|"edit"|"remove"|null>(null),[target,setTarget]=useState<UserRow|null>(null),[password,setPassword]=useState(""),[removeReason,setRemoveReason]=useState(""),[form,setForm]=useState({username:"",password:"",organizationId:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[edit,setEdit]=useState({username:"",fullName:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
  const users=useRemote<PageData<UserRow>>("/api/v1/users"+qs({page,size:15,search}));
  const currentUser=useRemote<UserInfo>("/api/v1/auth/me");
  const orgs=useRemote<Organization[]>("/api/v1/organizations/all?isActive=true");
@@ -20,19 +20,23 @@ function Users(){
  async function saveEdit(event:FormEvent){
   event.preventDefault();if(!target)return;
   setSaving(true);setError("");setSuccess("");
+  const nextRoles=[...edit.roleIds].sort();
+  const currentRoles=(target.roles??[]).map(role=>role.id).sort();
+  const rolesChanged=nextRoles.length!==currentRoles.length||nextRoles.some((roleId,index)=>roleId!==currentRoles[index]);
   const mustSignOut=target.id===currentUser.data?.id &&
-   (edit.username!==target.username || edit.maxConfidentialityLevelId!==(target.maxConfidentialityLevelId??""));
+   (edit.username!==target.username || edit.maxConfidentialityLevelId!==(target.maxConfidentialityLevelId??"") || rolesChanged);
   try{
    await api("/api/v1/users/"+target.id,{method:"PATCH",...jsonBody({
     username:edit.username,fullName:edit.fullName,
     maxConfidentialityLevelId:edit.maxConfidentialityLevelId||null,
-    clearConfidentialityLevel:!edit.maxConfidentialityLevelId
+    clearConfidentialityLevel:!edit.maxConfidentialityLevelId,
+    roleIds:edit.roleIds
    })});
    if(mustSignOut){
     await fetch("/api/session/logout",{method:"POST"});
     router.replace("/login");router.refresh();return;
    }
-   setSuccess("تم تحديث بيانات الحساب. تغييرات اسم الدخول/مستوى السرية تبطل الجلسات السابقة.");
+   setSuccess("تم تحديث بيانات الحساب والصلاحيات. تغييرات الوصول تبطل الجلسات السابقة.");
    setModal(null);users.reload();
   }catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الحساب")}finally{setSaving(false)}
  }
@@ -50,7 +54,7 @@ function Users(){
  async function disableUser(user:UserRow){if(user.id===currentUser.data?.id){setError("لا يمكنك تعطيل حسابك الحالي من هذه الشاشة");return}if(!window.confirm("سيتم تعطيل حساب "+user.username+" وإبطال جلساته الحالية. هل تريد المتابعة؟"))return;setSaving(true);setError("");try{await api("/api/v1/users/"+user.id,{method:"DELETE"});setSuccess("تم تعطيل المستخدم وإبطال جلساته");users.reload()}catch(e){setError(e instanceof Error?e.message:"تعذر تعطيل المستخدم")}finally{setSaving(false)}}
  return <><PageHeader eyebrow="إدارة الوصول" title="المستخدمون والصلاحيات" description="تحكم في حسابات الوصول إلى الأرشيف حسب الدور والجهة ومستوى السرية." action={<button className="btn btn-primary" onClick={()=>{setError("");setModal("create")}}><Plus size={17}/> إضافة مستخدم</button>}/>{success&&<Alert kind="success" message={success}/>}
  <Panel title="حسابات النظام" subtitle="أسماء المستخدمين وأدوارهم وحالتهم الحالية"><div className="toolbar"><input value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="البحث باسم المستخدم..." aria-label="بحث المستخدمين"/></div>{users.error&&<Alert message={users.error}/>}
- {users.loading?<Loading/>:!users.data?.data?.length?<Empty title="لا توجد حسابات"/>:<div className="table-scroller"><table className="data-table"><thead><tr><th>المستخدم</th><th>الجهة</th><th>الأدوار</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody>{users.data.data.map(u=><tr key={u.id}><td><strong>{u.fullName||u.username}</strong><span className="table-sub">@{u.username}</span></td><td>{u.organization?.name??"—"}</td><td>{u.roles?.map(r=>r.name).join("، ")??"—"}</td><td><Status value={u.status}/></td><td><div className="chips"><button className="btn btn-quiet btn-sm" onClick={()=>{setTarget(u);setEdit({username:u.username,fullName:u.fullName,maxConfidentialityLevelId:u.maxConfidentialityLevelId??""});setError("");setModal("edit")}}>تعديل الحساب</button><button className="btn btn-quiet btn-sm" onClick={()=>{setTarget(u);setPassword("");setError("");setModal("reset")}}><KeyRound size={15}/> كلمة المرور</button>{u.status==="ACTIVE"&&u.id!==currentUser.data?.id&&<button className="btn btn-danger btn-sm" disabled={saving} onClick={()=>disableUser(u)}><Trash2 size={14}/> تعطيل</button>}{u.id!==currentUser.data?.id&&u.status!=="DELETED"&&<button type="button" className="btn btn-danger btn-sm" disabled={saving} onClick={()=>{setTarget(u);setRemoveReason("");setError("");setModal("remove")}}>حذف الحساب</button>}</div></td></tr>)}</tbody></table></div>}<Pagination page={page} totalPages={users.data?.totalPages??0} onChange={setPage}/></Panel>
+ {users.loading?<Loading/>:!users.data?.data?.length?<Empty title="لا توجد حسابات"/>:<div className="table-scroller"><table className="data-table"><thead><tr><th>المستخدم</th><th>الجهة</th><th>الأدوار</th><th>الحالة</th><th>الإجراءات</th></tr></thead><tbody>{users.data.data.map(u=><tr key={u.id}><td><strong>{u.fullName||u.username}</strong><span className="table-sub">@{u.username}</span></td><td>{u.organization?.name??"—"}</td><td>{u.roles?.map(r=>r.name).join("، ")??"—"}</td><td><Status value={u.status}/></td><td><div className="chips"><button className="btn btn-quiet btn-sm" onClick={()=>{setTarget(u);setEdit({username:u.username,fullName:u.fullName,maxConfidentialityLevelId:u.maxConfidentialityLevelId??"",roleIds:(u.roles??[]).map(role=>role.id)});setError("");setModal("edit")}}>تعديل الحساب</button><button className="btn btn-quiet btn-sm" onClick={()=>{setTarget(u);setPassword("");setError("");setModal("reset")}}><KeyRound size={15}/> كلمة المرور</button>{u.status==="ACTIVE"&&u.id!==currentUser.data?.id&&<button className="btn btn-danger btn-sm" disabled={saving} onClick={()=>disableUser(u)}><Trash2 size={14}/> تعطيل</button>}{u.id!==currentUser.data?.id&&u.status!=="DELETED"&&<button type="button" className="btn btn-danger btn-sm" disabled={saving} onClick={()=>{setTarget(u);setRemoveReason("");setError("");setModal("remove")}}>حذف الحساب</button>}</div></td></tr>)}</tbody></table></div>}<Pagination page={page} totalPages={users.data?.totalPages??0} onChange={setPage}/></Panel>
  {modal==="create"&&<Modal title="إضافة مستخدم جديد" subtitle="أدخل اسم المستخدم وكلمة المرور وحدد أدواره في النظام." onClose={()=>setModal(null)}><form className="form-stack" onSubmit={create}><Field label="اسم المستخدم *"><input required minLength={3} value={form.username} onChange={e=>setForm({...form,username:e.target.value})}/></Field><Field label="كلمة المرور *"><input type="password" autoComplete="new-password" required minLength={8} value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></Field>
  <div className="form-grid"><Field label="الجهة"><select value={form.organizationId} onChange={e=>setForm({...form,organizationId:e.target.value})}><option value="">بدون جهة</option>{orgs.data?.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field><Field label="أعلى مستوى سرية"><select value={form.maxConfidentialityLevelId} onChange={e=>setForm({...form,maxConfidentialityLevelId:e.target.value})}><option value="">دون تصريح إضافي</option>{levels.data?.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></Field></div>
  <Field label="الصلاحيات"><div className="checkbox-list">{roles.data?.map(r=><label className="checkbox-row" key={r.id}><input type="checkbox" checked={form.roleIds.includes(r.id)} onChange={e=>setForm(v=>({...v,roleIds:e.target.checked?[...v.roleIds,r.id]:v.roleIds.filter(x=>x!==r.id)}))}/><span>{r.name}<small className="table-sub">{r.code}</small></span></label>)}</div></Field>
@@ -60,6 +64,7 @@ function Users(){
  <Field label="اسم الدخول"><input required minLength={3} maxLength={50} pattern="[A-Za-z0-9._-]+" value={edit.username} onChange={e=>setEdit(v=>({...v,username:e.target.value}))}/></Field>
  <Field label="الاسم الظاهر"><input required maxLength={200} value={edit.fullName} onChange={e=>setEdit(v=>({...v,fullName:e.target.value}))}/></Field>
  <Field label="أعلى مستوى سرية"><select value={edit.maxConfidentialityLevelId} onChange={e=>setEdit(v=>({...v,maxConfidentialityLevelId:e.target.value}))}><option value="">إزالة تصريح السرية الخاص بالمستخدم</option>{levels.data?.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></Field>
+ <Field label="الأدوار والصلاحيات"><div className="checkbox-list">{roles.data?.map(role=><label className="checkbox-row" key={role.id}><input type="checkbox" checked={edit.roleIds.includes(role.id)} onChange={e=>setEdit(v=>({...v,roleIds:e.target.checked?[...new Set([...v.roleIds,role.id])]:v.roleIds.filter(id=>id!==role.id)}))}/><span>{role.name}<small className="table-sub">{role.code}</small></span></label>)}</div><small className="hint">حفظ تغييرات الأدوار يبطل الجلسات الحالية للمستخدم. لا يمكن سحب دور آخر مدير نظام نشط.</small></Field>
  {error&&<Alert message={error}/>}<div className="form-actions"><button className="btn btn-gold" disabled={saving}>حفظ التعديلات</button></div></form></Modal>}
  {modal==="remove"&&target&&<Modal title={"حذف الحساب: "+target.username} subtitle="ستُمحى بيانات الدخول والاسم والبريد وتُبطل الجلسات، مع إبقاء سجلات الأرشيف والتدقيق المرتبطة بالمعرف." onClose={()=>setModal(null)}>
  <form className="form-stack" onSubmit={removeAccount}>

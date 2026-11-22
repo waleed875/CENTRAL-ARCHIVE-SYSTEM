@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import com.centralArchiveSystem.Archive.core.user.User;
 
+import jakarta.validation.constraints.NotNull;
+import java.util.Set;
 import java.util.UUID;
 
 public record UserUpdateRequest(
@@ -14,11 +16,20 @@ public record UserUpdateRequest(
     UUID organizationId,
     UUID maxConfidentialityLevelId,
     User.UserStatus status,
-    Boolean clearConfidentialityLevel
+    Boolean clearConfidentialityLevel,
+    Set<@NotNull(message = "لا تُقبل عناصر فارغة داخل القائمة") UUID> roleIds
 ) {
+    /** Keep existing request-construction tests and internal integrations source-compatible. */
+    public UserUpdateRequest(String username, String fullName, String email, UUID organizationId,
+                             UUID maxConfidentialityLevelId, User.UserStatus status,
+                             Boolean clearConfidentialityLevel) {
+        this(username, fullName, email, organizationId, maxConfidentialityLevelId,
+                status, clearConfidentialityLevel, null);
+    }
+
     /** Keep existing request-construction tests and internal integrations source-compatible. */
     public UserUpdateRequest(String fullName, String email, UUID organizationId,
                              UUID maxConfidentialityLevelId, User.UserStatus status) {
-        this(null, fullName, email, organizationId, maxConfidentialityLevelId, status, null);
+        this(null, fullName, email, organizationId, maxConfidentialityLevelId, status, null, null);
     }
 }
