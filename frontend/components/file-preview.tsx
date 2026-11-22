@@ -83,7 +83,7 @@ export function FilePreview({file,onClose,previewBase,allowDownload=true,project
   const [text,setText]=useState("");
   const [office,setOffice]=useState<OfficePreview|null>(null);
   const [error,setError]=useState("");
-  const [loading,setLoading]=useState(!["unsupported","audio","video"].includes(type));
+  const [loading,setLoading]=useState(!["unsupported","audio","video","image"].includes(type));
   const [zoom,setZoom]=useState(1);
   const [pdfPage,setPdfPage]=useState(1);
   const [pdfPages,setPdfPages]=useState(0);
@@ -96,14 +96,14 @@ export function FilePreview({file,onClose,previewBase,allowDownload=true,project
   const mediaUrl="/api/backend"+(previewBase??("/api/v1/files/"+encodeURIComponent(file.id)+"/preview"));
 
   useEffect(()=>{
-    if(["unsupported","audio","video","pdf"].includes(type))return;
+    if(["unsupported","audio","video","pdf","image"].includes(type))return;
     let cancelled=false;
     let objectUrl="";
     const controller=new AbortController();
     async function load(){
       try{
         const url=mediaUrl+(type==="office"?"/office":"");
-        if(type!=="office"&&type!=="text"&&file.sizeBytes!=null&&file.sizeBytes>75*1024*1024)
+        if(type!=="office"&&type!=="text"&&type!=="image"&&file.sizeBytes!=null&&file.sizeBytes>75*1024*1024)
           throw new Error("حجم الملف كبير للمعاينة داخل المتصفح؛ يمكنك تنزيله");
         const response=await authorizedPreview(url,controller.signal);
         if(type==="office"){
@@ -187,12 +187,12 @@ export function FilePreview({file,onClose,previewBase,allowDownload=true,project
         </div>
         <img className="archive-pdf-page-image" src={source} alt={"صفحة "+pdfPage+" من "+pdfPages} onError={()=>setError("تعذر عرض صورة صفحة PDF")}/>
       </div>:
-      type==="image"&&source?<div className="archive-preview-image-wrap"><div className="archive-preview-zoom">
+      type==="image"?<div className="archive-preview-image-wrap"><div className="archive-preview-zoom">
         <button type="button" onClick={()=>setZoom(v=>Math.max(.25,+(v-.25).toFixed(2)))} aria-label="تصغير الصورة"><ZoomOut size={16}/></button>
         <span>{Math.round(zoom*100)}%</span>
         <button type="button" onClick={()=>setZoom(v=>Math.min(4,+(v+.25).toFixed(2)))} aria-label="تكبير الصورة"><ZoomIn size={16}/></button>
         <button type="button" onClick={()=>setZoom(1)} aria-label="إعادة ضبط التكبير"><RotateCcw size={16}/></button>
-      </div><img src={source} alt={file.originalName} onError={()=>setError("تعذر عرض الصورة؛ قد لا يدعم المتصفح ترميزها")} style={{transform:"scale("+zoom+")",transformOrigin:"center center"}}/></div>:
+      </div><img src={mediaUrl} alt={file.originalName} loading="lazy" onError={()=>setError("تعذر عرض الصورة؛ تحقق من جلسة الدخول أو ترميز الصورة")} style={{transform:"scale("+zoom+")",transformOrigin:"center center"}}/></div>:
       type==="audio"?<audio controls preload="metadata" src={mediaUrl} onError={()=>setError("تعذر تشغيل الصوت؛ تحقق من الترميز أو صلاحية الجلسة")} className="archive-preview-audio"/>:
       type==="video"?<video controls preload="metadata" src={mediaUrl} onError={()=>setError("تعذر تشغيل الفيديو؛ تحقق من الترميز أو صلاحية الجلسة")} className="archive-preview-video"/>:
       null}
