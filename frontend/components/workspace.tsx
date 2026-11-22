@@ -12,6 +12,7 @@ import {QuarantinedFiles} from "@/components/quarantined-files";
 import {ImportExport,Migration}from"@/components/operations";
 import {AdminSection}from"@/components/admin";
 import {AccountSettings} from "@/components/account-settings";
+import {DataEntryProductivity} from "@/components/data-entry-productivity";
 function Dashboard(){
  const current=useRemote<UserInfo>("/api/v1/auth/me");
  const roles=current.data?.roles??[];
@@ -42,6 +43,7 @@ export function Workspace({section}:{section:string}){
  case "files":return <AdvancedFileSearch/>;
  case "quarantine":return <QuarantinedFiles/>;
  case "account":return <AccountSettings/>;
+ case "data-entry-productivity":return <DataEntryProductivity/>;
  case "reviews":return <Projects reviewMode/>;
  case "imports":return <ImportExport mode="imports"/>;
  case "exports":return <ImportExport mode="exports"/>;
