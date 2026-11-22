@@ -44,6 +44,12 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(userInfo));
     }
 
+    @PatchMapping("/me")
+    public ResponseEntity<ApiResponse<com.centralArchiveSystem.Archive.core.user.dto.UserResponse>> updateMyProfile(
+            @Valid @RequestBody com.centralArchiveSystem.Archive.auth.dto.UpdateOwnProfileRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(authService.updateOwnProfile(request)));
+    }
+
     @PatchMapping("/change-password")
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @Valid @RequestBody ChangePasswordRequest request) {

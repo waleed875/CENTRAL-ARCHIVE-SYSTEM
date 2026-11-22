@@ -14,6 +14,10 @@ import java.util.UUID;
 
 @Repository
 public interface FileRepository extends JpaRepository<FileEntity, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM FileEntity f WHERE f.id = :id")
+    java.util.Optional<FileEntity> lockFile(@Param("id") UUID id);
+
     Page<FileEntity> findByProjectIdAndDeletedAtIsNull(UUID projectId, Pageable pageable);
     List<FileEntity> findByProjectIdAndDeletedAtIsNull(UUID projectId);
     Page<FileEntity> findByProjectId(UUID projectId, Pageable pageable);

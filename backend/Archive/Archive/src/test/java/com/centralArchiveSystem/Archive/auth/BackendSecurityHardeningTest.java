@@ -47,7 +47,7 @@ class BackendSecurityHardeningTest {
         user.setRoles(Set.of(active, disabled));
         when(users.findByUsername("reader")).thenReturn(Optional.of(user));
         var service = new AuthService(mock(AuthenticationManager.class), mock(JwtTokenProvider.class),
-                users, mock(PasswordEncoder.class));
+                users, mock(PasswordEncoder.class), mock(com.centralArchiveSystem.Archive.core.user.UserService.class));
         assertEquals(List.of("ROLE_read_only"), service.loadUserByUsername("reader")
                 .getAuthorities().stream().map(Object::toString).toList());
     }

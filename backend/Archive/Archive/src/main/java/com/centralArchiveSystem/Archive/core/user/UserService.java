@@ -109,6 +109,14 @@ public class UserService {
         User user = findForUpdate(id);
 
         validateReferences(request.organizationId(), request.maxConfidentialityLevelId());
+        if (request.username() != null && !request.username().equals(user.getUsername())) {
+            String nextUsername = request.username().trim();
+            if (userRepository.existsByUsernameAndIdNot(nextUsername, id)) {
+                throw new ConflictException("User", "username", nextUsername);
+            }
+            user.setUsername(nextUsername);
+            TokenRevocation.advance(user);
+        }
         if (request.fullName() != null && !request.fullName().isBlank()) {
             user.setFullName(request.fullName());
         }
@@ -120,12 +128,24 @@ public class UserService {
             user.setEmail(request.email().isBlank() ? null : request.email());
         }
 
-        if (request.organizationId() != null) {
+        if (request.organizationId() != null
+                && !request.organizationId().equals(user.getOrganizationId())) {
             user.setOrganizationId(request.organizationId());
+            TokenRevocation.advance(user);
         }
 
-        if (request.maxConfidentialityLevelId() != null) {
+        if (Boolean.TRUE.equals(request.clearConfidentialityLevel()) && request.maxConfidentialityLevelId() != null) {
+            throw new BusinessRuleException("لا يمكن تحديد مستوى سرية وإزالته في الطلب نفسه");
+        }
+        if (Boolean.TRUE.equals(request.clearConfidentialityLevel())) {
+            if (user.getMaxConfidentialityLevelId() != null) {
+                user.setMaxConfidentialityLevelId(null);
+                TokenRevocation.advance(user);
+            }
+        } else if (request.maxConfidentialityLevelId() != null
+                && !request.maxConfidentialityLevelId().equals(user.getMaxConfidentialityLevelId())) {
             user.setMaxConfidentialityLevelId(request.maxConfidentialityLevelId());
+            TokenRevocation.advance(user);
         }
 
         if (request.status() != null) {
@@ -139,6 +159,16 @@ public class UserService {
 
         user = userRepository.save(user);
         return toResponse(user);
+    }
+
+    @Transactional
+    public UserResponse updateOwnDisplayName(UUID id, String fullName) {
+        User user = findForUpdate(id);
+        if (user.getStatus() != User.UserStatus.ACTIVE) {
+            throw new BusinessRuleException("الحساب غير نشط");
+        }
+        user.setFullName(fullName.trim());
+        return toResponse(userRepository.save(user));
     }
 
     @Transactional

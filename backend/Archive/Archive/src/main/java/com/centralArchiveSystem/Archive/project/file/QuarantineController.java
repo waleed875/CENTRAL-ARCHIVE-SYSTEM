@@ -39,6 +39,17 @@ public class QuarantineController {
         return ResponseEntity.ok(ApiResponse.success(quarantine.get(id)));
     }
 
+    @GetMapping("/{id}/reviews")
+    public ResponseEntity<ApiResponse<java.util.List<QuarantineService.HistoryEntry>>> history(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(quarantine.history(id)));
+    }
+
+    @PostMapping("/{id}/review")
+    public ResponseEntity<ApiResponse<QuarantineService.ReviewResult>> review(
+            @PathVariable UUID id, @RequestBody QuarantineService.ReviewRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(quarantine.review(id, request)));
+    }
+
     @GetMapping("/{id}/download")
     public ResponseEntity<StreamingResponseBody> downloadForOfflineReview(@PathVariable UUID id) {
         // The status, project and file confidentiality are verified again in

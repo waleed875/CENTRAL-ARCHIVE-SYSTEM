@@ -26,14 +26,17 @@ public class AuthService implements UserDetailsService {
     private final JwtTokenProvider tokenProvider;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final com.centralArchiveSystem.Archive.core.user.UserService userService;
 
     public AuthService(@Lazy AuthenticationManager authenticationManager,
                        JwtTokenProvider tokenProvider, UserRepository userRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       com.centralArchiveSystem.Archive.core.user.UserService userService) {
         this.authenticationManager = authenticationManager;
         this.tokenProvider = tokenProvider;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.userService = userService;
     }
 
     @Override
@@ -100,6 +103,15 @@ public class AuthService implements UserDetailsService {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return toUserInfo(userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username)));
+    }
+
+    @Transactional
+    public com.centralArchiveSystem.Archive.core.user.dto.UserResponse updateOwnProfile(
+            com.centralArchiveSystem.Archive.auth.dto.UpdateOwnProfileRequest request) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+        return userService.updateOwnDisplayName(user.getId(), request.fullName());
     }
 
     @Transactional
