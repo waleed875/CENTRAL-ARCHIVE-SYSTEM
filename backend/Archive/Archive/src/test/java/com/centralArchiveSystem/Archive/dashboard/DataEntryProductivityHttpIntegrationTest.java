@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -89,17 +89,27 @@ class DataEntryProductivityHttpIntegrationTest {
         jdbc.update("UPDATE project.projects SET discarded_at=now(),is_latest_version=false WHERE id=?",discarded);
 
         String adminToken = bearer(admin,"system_admin");
-        mvc.perform(get("/api/v1/admin/data-entry-productivity")
+        // Other integration tests share the same disposable test database. Confirm
+        // attribution by the fixture user IDs, not a presumed empty global archive.
+        String reportJson = mvc.perform(get("/api/v1/admin/data-entry-productivity")
                         .header("Authorization",adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalProjects").value(2))
-                .andExpect(jsonPath("$.data.dataEntryUsers").value(2))
-                .andExpect(jsonPath("$.data.users[0].userId").value(creator.getId().toString()))
-                .andExpect(jsonPath("$.data.users[0].totalProjects").value(2))
-                .andExpect(jsonPath("$.data.users[0].approved").value(1))
-                .andExpect(jsonPath("$.data.users[0].draftsAndCorrections").value(1))
-                .andExpect(jsonPath("$.data.users[1].userId").value(editor.getId().toString()))
-                .andExpect(jsonPath("$.data.users[1].totalProjects").value(0));
+                .andReturn().getResponse().getContentAsString();
+        var report = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(reportJson).path("data");
+        assertTrue(report.path("totalProjects").asLong() >= 2L);
+        var entries = report.path("users");
+        com.fasterxml.jackson.databind.JsonNode creatorRow = null, editorRow = null;
+        for (var row : entries) {
+            if (creator.getId().toString().equals(row.path("userId").asText())) creatorRow = row;
+            if (editor.getId().toString().equals(row.path("userId").asText())) editorRow = row;
+        }
+        assertNotNull(creatorRow);
+        assertNotNull(editorRow);
+        assertEquals(2L, creatorRow.path("totalProjects").asLong());
+        assertEquals(1L, creatorRow.path("approved").asLong());
+        assertEquals(1L, creatorRow.path("draftsAndCorrections").asLong());
+        assertEquals(0L, editorRow.path("totalProjects").asLong());
 
         mvc.perform(get("/api/v1/admin/data-entry-productivity/{id}/projects",creator.getId())
                         .header("Authorization",adminToken).param("page","1").param("size","20"))
