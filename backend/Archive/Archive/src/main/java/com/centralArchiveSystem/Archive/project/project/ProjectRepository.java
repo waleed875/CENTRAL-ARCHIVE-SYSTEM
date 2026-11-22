@@ -23,6 +23,10 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     @Query("SELECT p FROM Project p WHERE p.id = :id")
     Optional<Project> lockById(@Param("id") UUID id);
 
+    /** Discard operations must not race active legacy import batches. */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM import.migration_batches WHERE status = 'RUNNING')", nativeQuery = true)
+    boolean hasRunningLegacyMigration();
+
     /** All versions, including confidential ones; callers MUST enforce clearance on every row. */
     List<Project> findByProjectUidOrderByVersionNoAsc(UUID projectUid);
 

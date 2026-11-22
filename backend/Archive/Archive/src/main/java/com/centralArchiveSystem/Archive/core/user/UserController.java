@@ -7,6 +7,8 @@ import com.centralArchiveSystem.Archive.core.user.dto.ChangePasswordRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserResponse;
 import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
+import com.centralArchiveSystem.Archive.core.user.dto.AccountRemovalRequest;
+import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,9 +25,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final CurrentUserService currentUserService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, CurrentUserService currentUserService) {
         this.userService = userService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping
@@ -78,6 +82,15 @@ public class UserController {
     public ApiResponse<Void> delete(@PathVariable UUID id) {
         userService.delete(id);
         return ApiResponse.success();
+    }
+
+    @DeleteMapping("/{id}/account")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Anonymize and terminate an account, retaining its audit references")
+    public ApiResponse<Void> removeAccount(@PathVariable UUID id,
+            @Valid @RequestBody AccountRemovalRequest request) {
+        userService.removeAccount(id, currentUserService.userId(), request.reason());
+        return ApiResponse.success(null, "تم حذف الحساب مع الحفاظ على المراجع التاريخية");
     }
 
     @GetMapping("/{id}/roles")

@@ -16,7 +16,7 @@ import java.util.UUID;
 public class User {
 
     public enum UserStatus {
-        ACTIVE, DISABLED, LOCKED
+        ACTIVE, DISABLED, LOCKED, DELETED
     }
 
     @Id
@@ -67,6 +67,15 @@ public class User {
 
     @Column(name = "token_valid_after")
     private Instant tokenValidAfter;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by")
+    private UUID deletedBy;
+
+    @Column(name = "deletion_reason", length = 1000)
+    private String deletionReason;
 
     public User() {}
 
@@ -123,4 +132,11 @@ public class User {
 
     public Instant getTokenValidAfter() { return tokenValidAfter; }
     public void setTokenValidAfter(Instant tokenValidAfter) { this.tokenValidAfter = tokenValidAfter; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public UUID getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(UUID deletedBy) { this.deletedBy = deletedBy; }
+    public String getDeletionReason() { return deletionReason; }
+    public void setDeletionReason(String deletionReason) { this.deletionReason = deletionReason; }
 }

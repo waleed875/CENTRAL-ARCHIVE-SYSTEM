@@ -117,6 +117,16 @@ public class ProjectController {
         projectService.deleteDraft(id);
         return ResponseEntity.ok(ApiResponse.success(null, "تمت إزالة المسودة من قائمة المشاريع؛ تُحفظ سجلات الملفات المحذوفة وفق سياسة الاحتفاظ"));
     }
+    @DeleteMapping("/{id}/migration-draft")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Discard unreviewed migrated draft preserving files and provenance")
+    public ResponseEntity<ApiResponse<Void>> discardMigratedDraft(@PathVariable UUID id,
+            @Valid @RequestBody MigrationDraftDiscardRequest request) {
+        projectService.discardMigratedDraft(id, currentUserService.userId(), request.reason());
+        return ResponseEntity.ok(ApiResponse.success(null,
+                "تم استبعاد المشروع المرحّل من القوائم دون حذف سجلات الملفات أو كائنات MinIO"));
+    }
+
     @GetMapping("/search")
     @Operation(summary = "Search projects with full-text and filter parameters")
     public ResponseEntity<ApiResponse<PagedResponse<ProjectResponse>>> search(

@@ -328,6 +328,59 @@ public class ProjectService {
             projectRepository.save(previous);
         }
     }
+    /**
+     * Administrator-only quarantine of a migrated draft from the active archive.
+     * Metadata, MinIO objects and migration provenance are never destroyed.
+     */
+    @Transactional
+    public void discardMigratedDraft(UUID id, UUID removedBy, String reason) {
+        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الاستبعاد يجب أن يكون بين 12 و1000 حرف");
+        }
+        Project project = projectRepository.lockById(id)
+                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (project.getDiscardedAt() != null) {
+            throw new NoSuchElementException("Project not found with id: " + id);
+        }
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+        if (project.getSourceType() != Project.SourceType.MIGRATION) {
+            throw new BusinessRuleException("الإجراء مخصص فقط للمشاريع التي مصدرها الترحيل");
+        }
+        if (project.getStatus() != Project.ProjectStatus.DRAFT
+                && project.getStatus() != Project.ProjectStatus.IMPORTED) {
+            throw new BusinessRuleException("يمكن استبعاد مسودات الترحيل والمشاريع المستوردة التي لم تُرسل للمراجعة فقط");
+        }
+        if (!Boolean.TRUE.equals(project.getIsLatestVersion())
+                || projectRepository.existsByPreviousProjectId(id)) {
+            throw new BusinessRuleException("لا يمكن استبعاد إصدار قديم أو مشروع له إصدارات لاحقة");
+        }
+        if (projectRepository.hasRunningLegacyMigration()) {
+            throw new BusinessRuleException("أوقف دفعات الترحيل الجارية قبل استبعاد مشروع مرحّل");
+        }
+        if (packageProjectRepository.existsByProjectId(id)) {
+            throw new BusinessRuleException("المشروع مرتبط بحزمة استيراد؛ لا يمكن استبعاده بهذه العملية");
+        }
+
+        Project previous = null;
+        if (project.getPreviousProjectId() != null) {
+            previous = requireAccessibleProject(project.getPreviousProjectId());
+            if (!project.getProjectUid().equals(previous.getProjectUid())
+                    || Boolean.TRUE.equals(previous.getIsLatestVersion())
+                    || previous.getVersionNo() >= project.getVersionNo()) {
+                throw new BusinessRuleException("تسلسل الإصدارات غير متسق؛ لم يُستبعد المشروع");
+            }
+        }
+        project.setDiscardedAt(LocalDateTime.now());
+        project.setDiscardedBy(removedBy);
+        project.setDiscardReason(reason.trim());
+        project.setIsLatestVersion(false);
+        projectRepository.save(project);
+        if (previous != null) {
+            previous.setIsLatestVersion(true);
+            projectRepository.save(previous);
+        }
+    }
+
     public Page<ProjectResponse> search(ProjectSearchRequest request, int page, int size) {
         String sortField = request.sortBy() != null && ALLOWED_SORT_FIELDS.contains(request.sortBy()) ? request.sortBy() : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(request.sortDirection()) ? Sort.Direction.ASC : Sort.Direction.DESC;

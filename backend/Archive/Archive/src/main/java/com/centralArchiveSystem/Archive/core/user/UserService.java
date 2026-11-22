@@ -11,6 +11,7 @@ import com.centralArchiveSystem.Archive.core.user.dto.ChangePasswordRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserResponse;
 import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
+import java.time.LocalDateTime;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperationRepository;
 import org.springframework.data.domain.Page;
@@ -107,6 +108,7 @@ public class UserService {
     public UserResponse update(UUID id, UserUpdateRequest request) {
         userRepository.lockAdministration();
         User user = findForUpdate(id);
+        requireNotDeleted(user);
 
         validateReferences(request.organizationId(), request.maxConfidentialityLevelId());
         if (request.username() != null && !request.username().equals(user.getUsername())) {
@@ -148,6 +150,9 @@ public class UserService {
             TokenRevocation.advance(user);
         }
 
+        if (request.status() == User.UserStatus.DELETED) {
+            throw new BusinessRuleException("استخدم إجراء حذف الحساب المخصص بدل تعديل الحالة");
+        }
         if (request.status() != null) {
             if (request.status() != User.UserStatus.ACTIVE) {
                 requireAnotherAdministrator(user, null);
@@ -175,10 +180,43 @@ public class UserService {
     public void delete(UUID id) {
         userRepository.lockAdministration();
         User user = findForUpdate(id);
+        requireNotDeleted(user);
         requireAnotherAdministrator(user, null);
         requireNoActiveImports(id);
         user.setStatus(User.UserStatus.DISABLED);
         TokenRevocation.advance(user);
+        userRepository.save(user);
+    }
+
+    /**
+     * Terminate and anonymize an account while keeping its UUID for foreign-key
+     * references in project/file/audit history.
+     */
+    @Transactional
+    public void removeAccount(UUID id, UUID administratorId, String reason) {
+        if (id.equals(administratorId)) {
+            throw new BusinessRuleException("لا يمكن حذف الحساب الذي تستخدمه حاليًا");
+        }
+        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الحذف يجب أن يكون بين 12 و1000 حرف");
+        }
+        userRepository.lockAdministration();
+        User user = findForUpdate(id);
+        requireNotDeleted(user);
+        requireAnotherAdministrator(user, null);
+        requireNoActiveImports(id);
+        user.setStatus(User.UserStatus.DELETED);
+        TokenRevocation.advance(user);
+        user.setUsername("deleted_" + id.toString().replace("-", ""));
+        user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID() + ":" + UUID.randomUUID()));
+        user.setFullName("حساب محذوف");
+        user.setEmail(null);
+        user.setOrganizationId(null);
+        user.setMaxConfidentialityLevelId(null);
+        user.getRoles().clear();
+        user.setDeletedAt(LocalDateTime.now());
+        user.setDeletedBy(administratorId);
+        user.setDeletionReason(reason.trim());
         userRepository.save(user);
     }
 
@@ -198,6 +236,7 @@ public class UserService {
     public void addRole(UUID userId, UUID roleId) {
         userRepository.lockAdministration();
         User user = findForUpdate(userId);
+        requireNotDeleted(user);
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
         if (!Boolean.TRUE.equals(role.getIsActive())) {
@@ -215,6 +254,7 @@ public class UserService {
     public void removeRole(UUID userId, UUID roleId) {
         userRepository.lockAdministration();
         User user = findForUpdate(userId);
+        requireNotDeleted(user);
         Role role = roleRepository.findById(roleId)
             .orElseThrow(() -> new ResourceNotFoundException("Role", "id", roleId));
         requireAnotherAdministrator(user, roleId);
@@ -228,6 +268,7 @@ public class UserService {
         userRepository.lockAdministration();
         User user = findForUpdate(userId);
 
+        requireNotDeleted(user);
         if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new BusinessRuleException("كلمة المرور الحالية غير صحيحة");
         }
@@ -241,9 +282,16 @@ public class UserService {
     public void resetPassword(UUID userId, com.centralArchiveSystem.Archive.core.user.dto.ResetPasswordRequest request) {
         userRepository.lockAdministration();
         User user = findForUpdate(userId);
+        requireNotDeleted(user);
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         TokenRevocation.advance(user);
         userRepository.save(user);
+    }
+
+    private void requireNotDeleted(User user) {
+        if (user.getStatus() == User.UserStatus.DELETED) {
+            throw new BusinessRuleException("الحساب محذوف ولا يمكن تعديله أو إعادة تنشيطه");
+        }
     }
 
     private User findForUpdate(UUID id) {
