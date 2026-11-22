@@ -67,6 +67,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                   OR LOWER(COALESCE(u.email, '')) LIKE LOWER(CONCAT('%', :search, '%')))
              AND (:organizationId IS NULL OR u.organizationId = :organizationId)
              AND (:status IS NULL OR u.status = :status)
+              AND (:status IS NOT NULL OR u.status <> com.centralArchiveSystem.Archive.core.user.User.UserStatus.DELETED)
              AND (:roleCode IS NULL OR r.code = :roleCode)
            """)
     Page<User> searchFiltered(
