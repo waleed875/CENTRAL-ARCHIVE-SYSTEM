@@ -44,7 +44,7 @@ public class DataEntryProductivityService {
         WHERE original.version_no = 1
           AND original.source_type = 'MANUAL'
           AND (latest.confidentiality_level_id IS NULL OR
-              (:maxLevel IS NOT NULL AND EXISTS (
+              (CAST(:maxLevel AS INTEGER) IS NOT NULL AND EXISTS (
                 SELECT 1 FROM core.confidentiality_levels level
                 WHERE level.id = latest.confidentiality_level_id
                   AND level.level_order <= :maxLevel)))
