@@ -168,11 +168,11 @@ public class UserService {
             Set<UUID> currentRoleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
             Set<UUID> nextRoleIds = nextRoles.stream().map(Role::getId).collect(Collectors.toSet());
             if (!currentRoleIds.equals(nextRoleIds)) {
-                user.getRoles().stream()
-                        .filter(role -> "system_admin".equals(role.getCode()))
-                        .filter(role -> !nextRoleIds.contains(role.getId()))
-                        .findFirst()
-                        .ifPresent(role -> requireAnotherAdministrator(user, role.getId()));
+                for (Role role : user.getRoles()) {
+                    if ("system_admin".equals(role.getCode()) && !nextRoleIds.contains(role.getId())) {
+                        requireAnotherAdministrator(user, role.getId());
+                    }
+                }
                 user.setRoles(nextRoles);
                 TokenRevocation.advance(user);
             }
