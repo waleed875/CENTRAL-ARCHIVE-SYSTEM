@@ -21,6 +21,7 @@ export function ProjectDetail({id}:{id:string}){
  const cats=useRemote<FileCategory[]>("/api/v1/file-categories/all?isActive=true");
  const [previewFile,setPreviewFile]=useState<ArchiveFile|null>(null);
  const [mode,setMode]=useState<Mode>(null),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState(""),[reason,setReason]=useState("");
+ const [discardReason,setDiscardReason]=useState(""),[showDiscard,setShowDiscard]=useState(false);
  const [newMember,setNewMember]=useState({personName:"",organizationName:"",roleName:"",notes:""});
  const [edit,setEdit]=useState<Record<string,string>>({}),[uploadFiles,setUploadFiles]=useState<File[]>([]),[dragActive,setDragActive]=useState(false),[categoryId,setCategoryId]=useState(""),[categoryIds,setCategoryIds]=useState<string[]>([]),[typeId,setTypeId]=useState(""),[levelId,setLevelId]=useState(""),[selectedFile,setSelectedFile]=useState<ArchiveFile|null>(null);
  const fileTypes=useRemote<FileType[]>(categoryId?"/api/v1/file-types/by-category/"+categoryId+"?isActive=true":null);
@@ -89,6 +90,15 @@ export function ProjectDetail({id}:{id:string}){
  async function saveFileMeta(e:FormEvent){e.preventDefault();if(!selectedFile)return;setSaving(true);setError("");try{await api("/api/v1/files/"+selectedFile.id,{method:"PATCH",...jsonBody({categoryId:categoryIds[0]??categoryId,categoryIds,typeId:typeId||null,confidentialityLevelId:levelId||null})});setMode(null);files.reload();setSuccess("تم تحديث بيانات الملف")}catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الملف")}finally{setSaving(false)}}
  async function deleteFile(file:ArchiveFile){if(!window.confirm("هل تريد حذف الملف من المشروع؟ يمكن للمدير استعادته لاحقًا."))return;setError("");try{await api("/api/v1/files/"+file.id,{method:"DELETE"});files.reload();setSuccess("تم حذف الملف منطقيًا")}catch(e){setError(e instanceof Error?e.message:"تعذر حذف الملف")}}
  async function createVersion(){if(!window.confirm("إنشاء إصدار جديد من المشروع؟ سيتم الاحتفاظ باسم المشروع نفسه."))return;setSaving(true);try{const result=await api<Project>("/api/v1/projects/"+id+"/new-version",{method:"POST",...jsonBody({})});router.push("/projects/"+result.id+"?back="+encodeURIComponent(backHref))}catch(e){setError(e instanceof Error?e.message:"تعذر إنشاء الإصدار")}finally{setSaving(false)}}
+ async function discardMigratedProject(event:FormEvent){
+  event.preventDefault();setSaving(true);setError("");
+  try{
+   await api("/api/v1/projects/"+id+"/migration-draft",{
+    method:"DELETE",...jsonBody({reason:discardReason})
+   });
+   router.push(backHref);
+  }catch(e){setError(e instanceof Error?e.message:"تعذر استبعاد المشروع المرحّل")}finally{setSaving(false)}
+ }
  async function deleteProject(){if(!window.confirm("إزالة مسودة «"+(p?.name??"")+"» من قائمة المشاريع؟ إن سبق حذف ملفات منها فسيحتفظ الأرشيف بسجلات الحذف وفق سياسة الاحتفاظ، دون استعادتها أو حذفها نهائيًا."))return;setSaving(true);try{await api("/api/v1/projects/"+id,{method:"DELETE"});router.push(backHref)}catch(e){setError(e instanceof Error?e.message:"تعذر حذف المشروع")}finally{setSaving(false)}}
  if(project.loading)return <Loading/>;
  if(project.error)return <><Link className="btn btn-quiet" href={backHref}><ArrowRight size={16}/> العودة للمشاريع</Link><div className="section-gap"><Alert message={project.error}/></div></>;
@@ -126,8 +136,20 @@ export function ProjectDetail({id}:{id:string}){
  {p.status==="APPROVED"&&isArchiver&&<button disabled={saving} className="btn btn-gold" onClick={()=>perform("/archive")}><Archive size={16}/> أرشفة المشروع</button>}
  </div></Panel>
  <div className="section-gap"><Panel title="إصدارات المشروع" subtitle="سجل مستقل لكل إصدار وقرارات مراجعته">{versions.loading?<Loading/>:versions.data?.length?<div className="activity-list">{[...versions.data].sort((a,b)=>a.versionNo-b.versionNo).map(v=><Link href={"/projects/"+v.id} key={v.id} className="activity-item" style={{alignItems:"flex-start"}}><div className="activity-dot"><GitBranch size={16}/></div><div style={{minWidth:0,flex:1}}><div className="chips" style={{justifyContent:"space-between"}}><strong>الإصدار {v.versionNo}</strong>{v.isLatestVersion&&<span className="status status-green">الإصدار الحالي</span>}</div><p>{statusName(v.status)} · أُنشئ في {dateLabel(v.createdAt)}</p>{v.createdBy&&<p className="hint">أنشأه المستخدم: {v.createdBy.slice(0,8)}</p>}{v.submittedAt&&<p className="hint">أُرسل للمراجعة: {dateLabel(v.submittedAt)}{v.submittedBy?" · المستخدم "+v.submittedBy.slice(0,8):""}</p>}{v.approvedAt&&<p className="hint">اعتمد في: {dateLabel(v.approvedAt)}{v.approvedBy?" · المراجع "+v.approvedBy.slice(0,8):""}</p>}{v.reviewNotes&&<div className="review-note"><strong>ملاحظات التصحيح</strong><p>{v.reviewNotes}</p></div>}{v.rejectionReason&&<div className="review-note"><strong>سبب الرفض</strong><p>{v.rejectionReason}</p></div>}</div></Link>)}</div>:<Empty title="لا توجد إصدارات إضافية"/>}</Panel></div>
- {p.status==="DRAFT"&&isEditor&&<div className="section-gap"><button className="btn btn-danger" onClick={deleteProject} disabled={saving}><Trash2 size={16}/> حذف المسودة</button></div>}
+ {p.status==="DRAFT"&&isEditor&&p.sourceType!=="MIGRATION"&&<div className="section-gap"><button className="btn btn-danger" onClick={deleteProject} disabled={saving}><Trash2 size={16}/> حذف المسودة</button></div>}
+  {isAdmin&&p.sourceType==="MIGRATION"&&["DRAFT","IMPORTED"].includes(p.status)&&p.isLatestVersion&&<div className="section-gap">
+   <button type="button" className="btn btn-danger" disabled={saving} onClick={()=>{setError("");setDiscardReason("");setShowDiscard(true)}}><Trash2 size={16}/> استبعاد مسودة الترحيل</button>
+  </div>}
  </aside></div>
+ {showDiscard&&<Modal title="استبعاد مشروع مصدره الترحيل" subtitle="سيُخفى المشروع من القوائم ولن تُحذف الملفات أو بيانات الترحيل أو كائنات MinIO." onClose={()=>setShowDiscard(false)}>
+   <form onSubmit={discardMigratedProject} className="form-stack">
+    <p><strong>{p.name}</strong> · {statusName(p.status)} · {p.projectNumber}</p>
+    <p>يبقى تاريخ الترحيل وسجلات الملفات محفوظًا. الإجراء للمدير فقط، ويرفض المشاريع التي دخلت المراجعة أو لها إصدارات لاحقة.</p>
+    <Field label="سبب الاستبعاد"><textarea required minLength={12} maxLength={1000} value={discardReason} onChange={e=>setDiscardReason(e.target.value)} placeholder="سبب استبعاد مسودة الترحيل"/></Field>
+    {error&&<Alert message={error}/>}
+    <div className="form-actions"><button className="btn btn-danger" disabled={saving||discardReason.trim().length<12}>تأكيد الاستبعاد مع الاحتفاظ بالملفات</button></div>
+   </form>
+  </Modal>}
  {mode==="member"&&<Modal title="إضافة مساهم" subtitle="أسماء الأشخاص الذين أنجزوا المشروع، بشكل مستقل عن المشرف." onClose={()=>setMode(null)}>
    <form className="form-stack" onSubmit={addMember}>
     <Field label="اسم الشخص *"><input required maxLength={200} value={newMember.personName}
