@@ -38,6 +38,9 @@ public class PdfPreviewService {
     static final long MAX_RENDER_PIXELS = 3_000_000L;
     private static final Semaphore RENDER_SLOTS = new Semaphore(2);
 
+    @org.springframework.beans.factory.annotation.Value("${archive.storage.temp-dir:}")
+    private String storageTempDir;
+
     private final FileService files;
 
     public PdfPreviewService(FileService files) {
@@ -117,7 +120,11 @@ public class PdfPreviewService {
         }
         Path spool = null;
         try {
-            spool = Files.createTempFile("archive-pdf-preview-", ".pdf");
+            Path tempDirectory = (storageTempDir == null || storageTempDir.isBlank())
+                    ? Path.of(System.getProperty("java.io.tmpdir"))
+                    : Path.of(storageTempDir);
+            Files.createDirectories(tempDirectory);
+            spool = Files.createTempFile(tempDirectory, "archive-pdf-preview-", ".pdf");
             try (InputStream input = files.downloadFile(id);
                  OutputStream output = Files.newOutputStream(spool, StandardOpenOption.TRUNCATE_EXISTING)) {
                 copyBounded(input, output, MAX_PDF_BYTES);
