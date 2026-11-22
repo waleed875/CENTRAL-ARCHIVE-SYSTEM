@@ -15,4 +15,10 @@ public record UserUpdateRequest(
     UUID maxConfidentialityLevelId,
     User.UserStatus status,
     Boolean clearConfidentialityLevel
-) {}
+) {
+    /** Keep existing request-construction tests and internal integrations source-compatible. */
+    public UserUpdateRequest(String fullName, String email, UUID organizationId,
+                             UUID maxConfidentialityLevelId, User.UserStatus status) {
+        this(null, fullName, email, organizationId, maxConfidentialityLevelId, status, null);
+    }
+}
