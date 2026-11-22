@@ -145,6 +145,12 @@ public class Project {
     @Column(name = "discarded_at")
     private LocalDateTime discardedAt;
 
+    @Column(name = "discarded_by")
+    private UUID discardedBy;
+
+    @Column(name = "discard_reason", length = 1000)
+    private String discardReason;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -327,6 +333,10 @@ public class Project {
 
     public LocalDateTime getDiscardedAt() { return discardedAt; }
     public void setDiscardedAt(LocalDateTime discardedAt) { this.discardedAt = discardedAt; }
+    public UUID getDiscardedBy() { return discardedBy; }
+    public void setDiscardedBy(UUID discardedBy) { this.discardedBy = discardedBy; }
+    public String getDiscardReason() { return discardReason; }
+    public void setDiscardReason(String discardReason) { this.discardReason = discardReason; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
