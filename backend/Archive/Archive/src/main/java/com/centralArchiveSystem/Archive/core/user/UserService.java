@@ -128,8 +128,10 @@ public class UserService {
             user.setEmail(request.email().isBlank() ? null : request.email());
         }
 
-        if (request.organizationId() != null) {
+        if (request.organizationId() != null
+                && !request.organizationId().equals(user.getOrganizationId())) {
             user.setOrganizationId(request.organizationId());
+            TokenRevocation.advance(user);
         }
 
         if (Boolean.TRUE.equals(request.clearConfidentialityLevel()) && request.maxConfidentialityLevelId() != null) {

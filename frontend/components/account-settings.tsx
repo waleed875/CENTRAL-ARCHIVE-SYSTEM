@@ -4,11 +4,12 @@ import {useRouter} from "next/navigation";
 import {api,jsonBody} from "@/lib/api";
 import {useRemote} from "@/components/hooks";
 import {PageHeader,Panel,Loading,Alert,Field} from "@/components/ui";
-import type {UserInfo} from "@/lib/types";
+import type {UserInfo,Reference} from "@/lib/types";
 
 export function AccountSettings(){
  const router=useRouter();
  const current=useRemote<UserInfo>("/api/v1/auth/me");
+ const levels=useRemote<Reference[]>("/api/v1/confidentiality-levels/all");
  const [name,setName]=useState<string|null>(null);
  const [oldPassword,setOldPassword]=useState(""),[newPassword,setNewPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState("");
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
@@ -17,6 +18,7 @@ export function AccountSettings(){
   try{
    await api("/api/v1/auth/me",{method:"PATCH",...jsonBody({fullName:name??current.data?.fullName??""})});
    setSuccess("تم تعديل الاسم");current.reload();
+   window.dispatchEvent(new Event("archive-profile-updated"));
   }catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الاسم")}finally{setBusy(false)}
  }
  async function updatePassword(event:FormEvent){
@@ -35,7 +37,7 @@ export function AccountSettings(){
  <Panel title="معلومات الحساب">
  <p>اسم الدخول: <strong>{current.data?.username??"—"}</strong></p>
  <p>الجهة: {current.data?.organization??"—"}</p>
- <p>مستوى السرية: {current.data?.maxConfidentialityLevelId??"غير محدد"} (يعدّله مدير النظام)</p>
+ <p>مستوى السرية: {levels.data?.find(level=>level.id===current.data?.maxConfidentialityLevelId)?.name??"دون تصريح إضافي"} (يعدّله مدير النظام)</p>
  <form className="form-stack" onSubmit={updateName}>
   <Field label="الاسم الظاهر"><input required maxLength={200} value={name??current.data?.fullName??""} onChange={e=>setName(e.target.value)}/></Field>
   <div className="form-actions"><button disabled={busy} className="btn btn-gold">حفظ الاسم</button></div>

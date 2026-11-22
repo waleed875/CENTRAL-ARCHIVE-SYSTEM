@@ -1,5 +1,6 @@
 "use client";
-import {useState,FormEvent}from"react";import{Plus,UsersRound,ScrollText,Settings2,RefreshCw,KeyRound,BookOpen,Trash2}from"lucide-react";
+import {useState,FormEvent}from"react";
+import {useRouter} from "next/navigation";import{Plus,UsersRound,ScrollText,Settings2,RefreshCw,KeyRound,BookOpen,Trash2}from"lucide-react";
 import {api,jsonBody,qs}from"@/lib/api";import {useRemote}from"@/components/hooks";
 import {PageHeader,Panel,Status,Loading,Empty,Alert,Modal,Field,Pagination}from"@/components/ui";
 import type{PageData,Organization,Reference,UserInfo}from"@/lib/types";import{dateLabel,statusName}from"@/lib/types";
@@ -7,6 +8,7 @@ type UserRow={id:string;username:string;fullName:string;email?:string;status:str
 type RoleRow={id:string;code:string;name:string;isActive?:boolean};
 type LogRow={id:string;action:string;entityType:string;entityId:string;description:string;userId:string;createdAt:string};
 function Users(){
+ const router=useRouter();
  const [search,setSearch]=useState(""),[page,setPage]=useState(1),[modal,setModal]=useState<"create"|"reset"|"edit"|null>(null),[target,setTarget]=useState<UserRow|null>(null),[password,setPassword]=useState(""),[form,setForm]=useState({username:"",password:"",organizationId:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[edit,setEdit]=useState({username:"",fullName:"",maxConfidentialityLevelId:""}),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
  const users=useRemote<PageData<UserRow>>("/api/v1/users"+qs({page,size:15,search}));
  const currentUser=useRemote<UserInfo>("/api/v1/auth/me");
@@ -18,12 +20,18 @@ function Users(){
  async function saveEdit(event:FormEvent){
   event.preventDefault();if(!target)return;
   setSaving(true);setError("");setSuccess("");
+  const mustSignOut=target.id===currentUser.data?.id &&
+   (edit.username!==target.username || edit.maxConfidentialityLevelId!==(target.maxConfidentialityLevelId??""));
   try{
    await api("/api/v1/users/"+target.id,{method:"PATCH",...jsonBody({
     username:edit.username,fullName:edit.fullName,
     maxConfidentialityLevelId:edit.maxConfidentialityLevelId||null,
     clearConfidentialityLevel:!edit.maxConfidentialityLevelId
    })});
+   if(mustSignOut){
+    await fetch("/api/session/logout",{method:"POST"});
+    router.replace("/login");router.refresh();return;
+   }
    setSuccess("تم تحديث بيانات الحساب. تغييرات اسم الدخول/مستوى السرية تبطل الجلسات السابقة.");
    setModal(null);users.reload();
   }catch(e){setError(e instanceof Error?e.message:"تعذر تعديل الحساب")}finally{setSaving(false)}

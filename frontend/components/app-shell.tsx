@@ -25,6 +25,11 @@ export function AppShell({children}:{children:React.ReactNode}){
  const showSection=(href:string)=>{if(["/","/organizations","/projects","/files","/account"].includes(href))return true; if(href==="/reviews")return authorized("auditor");if(href==="/imports")return authorized("import_officer");if(href==="/exports")return authorized("export_officer");return authorized("system_admin")};
  useEffect(()=>{let active=true;api<UserInfo>("/api/v1/auth/me").then(v=>{if(active)setUser(v)}).catch(()=>{});return()=>{active=false}},[]);
  useEffect(()=>setOpen(false),[pathname]);
+ useEffect(()=>{
+   const reloadProfile=()=>{api<UserInfo>("/api/v1/auth/me").then(setUser).catch(()=>{})};
+   window.addEventListener("archive-profile-updated",reloadProfile);
+   return()=>window.removeEventListener("archive-profile-updated",reloadProfile);
+ },[]);
  function submitSearch(e:FormEvent){e.preventDefault();router.push("/files?fileName="+encodeURIComponent(search))}
  async function logout(){setSigningOut(true);try{await fetch("/api/session/logout",{method:"POST"})}finally{router.replace("/login");router.refresh()}}
  return <div className="shell"><div className={open?"mobile-scrim visible":"mobile-scrim"} onClick={()=>setOpen(false)}/>

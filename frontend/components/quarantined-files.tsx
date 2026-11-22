@@ -9,6 +9,7 @@ import {PageHeader,Panel,Alert,Loading,Empty,Pagination,Modal,Field} from "@/com
 import {sizeLabel,dateLabel} from "@/lib/types";
 import type {PageData} from "@/lib/types";
 
+type HistoryEntry={id:string;reviewedBy:string;decision:string;note:string;reviewedAt:string};
 type QuarantineEntry={
  id:string;projectId:string;originalName:string;sourceReference?:string|null;
  sizeBytes:number;checksumSha256?:string|null;quarantineReason?:string|null;
@@ -31,6 +32,8 @@ export function QuarantinedFiles(){
    results.reload();
   }catch(e){setError(e instanceof Error?e.message:"تعذرت مراجعة الملف")}finally{setBusy(false)}
  }
+ const history=useRemote<HistoryEntry[]>(review?
+  "/api/v1/admin/quarantine/"+encodeURIComponent(review.id)+"/reviews":null);
  const results=useRemote<PageData<QuarantineEntry>>(
   "/api/v1/admin/quarantine?page="+page+"&size=20");
  return <>
@@ -74,10 +77,22 @@ export function QuarantinedFiles(){
     <Field label="مبرر القرار"><textarea required minLength={12} maxLength={1000} value={note} onChange={e=>setNote(e.target.value)} placeholder="اكتب نتيجة المراجعة وأسباب القرار"/></Field>
     {error&&<Alert message={error}/>}
     <div className="form-actions"><button disabled={busy} className="btn btn-gold">تسجيل القرار</button></div>
+    <div className="section-gap">
+     <strong>سجل المراجعات السابقة</strong>
+     {history.loading?<Loading/>:history.error?<Alert message={history.error}/>:
+      !history.data?.length?<p>لا توجد قرارات مسجلة سابقًا.</p>:
+      <div className="table-scroller"><table className="data-table">
+       <thead><tr><th>القرار</th><th>المبرر</th><th>المراجع</th><th>التاريخ</th></tr></thead>
+       <tbody>{history.data.map(h=><tr key={h.id}>
+        <td>{h.decision==="KEEP"?"إبقاء معزولًا":"إفراج بعد التحقق"}</td><td>{h.note}</td>
+        <td className="monospace">{h.reviewedBy}</td><td>{dateLabel(h.reviewedAt)}</td>
+       </tr>)}</tbody>
+      </table></div>}
+    </div>
    </form>
   </Modal>}
   <div className="section-gap">
-   <div className="hint"><ShieldAlert size={16}/> لا تفتح الملفات التنفيذية مباشرة، ولا تُعد إضافتها للملفات العادية قبل المراجعة الأمنية.</div>
+   <div className="hint"><ShieldAlert size={16}/> التنزيل بصيغة .bin إجراء وقائي؛ اسم الملف الأصلي ظاهر في الجدول. لا تغيّر الامتداد أو تشغّل الملف على جهاز العمل. الإفراج لا يتجاوز قواعد فحص المحتوى، والملفات التنفيذية أو غير المعروفة تبقى معزولة.</div>
   </div>
  </>;
 }

@@ -18,14 +18,13 @@ import java.nio.file.Path;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
-import java.util.Arrays;
-import java.util.Objects;
 import java.util.Locale;
 import com.centralArchiveSystem.Archive.auth.CurrentUserService;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Administrative inventory of preserved original bytes; not part of the
@@ -47,6 +46,8 @@ public class QuarantineService {
     private static final long MAX_REVIEW_BYTES = 512L * 1024 * 1024;
     public record ReviewRequest(String decision, String note) {}
     public record ReviewResult(UUID fileId, String decision, String fileStatus) {}
+    public record HistoryEntry(UUID id, UUID reviewedBy, String decision,
+                               String note, LocalDateTime reviewedAt) {}
 
     public QuarantineService(FileRepository files, ProjectRepository projects,
                              ConfidentialityAccessService clearance, MinioService minio,
@@ -82,6 +83,31 @@ public class QuarantineService {
         }
     }
 
+    /** Read-only review trail for a quarantined or previously released migrated file. */
+    public List<HistoryEntry> history(UUID fileId) {
+        FileEntity file = files.findById(fileId)
+                .orElseThrow(() -> new EntityNotFoundException("Quarantined file not found"));
+        if (file.getDeletedAt() != null || !"MIGRATION".equals(file.getSourceType())
+                || (!"QUARANTINED".equals(file.getStatus())
+                    && !"ACTIVE".equals(file.getStatus()))) {
+            throw new EntityNotFoundException("Quarantined file not found");
+        }
+        checkAccess(file);
+        return jdbc.query("""
+            SELECT id, reviewed_by, decision, note, reviewed_at
+            FROM project.quarantine_reviews
+            WHERE file_id = ?
+            ORDER BY reviewed_at DESC, id DESC
+            LIMIT 100
+            """, (rs, rowNum) -> new HistoryEntry(
+                rs.getObject("id", UUID.class),
+                rs.getObject("reviewed_by", UUID.class),
+                rs.getString("decision"),
+                rs.getString("note"),
+                rs.getTimestamp("reviewed_at").toLocalDateTime()
+            ), fileId);
+    }
+
     /**
      * Every decision is preserved; RELEASE is deliberately fail-closed.
      * The file retains its original MinIO object and source checksum.
@@ -107,7 +133,7 @@ public class QuarantineService {
         if ("RELEASE".equals(decision)) {
             verifyBeforeRelease(file);
             file.setStatus("ACTIVE");
-            file.setQuarantineReason(null);
+            // Retain the original isolation reason for downstream forensic audit.
             files.saveAndFlush(file);
         }
         jdbc.update("""
