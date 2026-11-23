@@ -27,6 +27,40 @@ import static org.mockito.Mockito.*;
 class ProjectServiceTest {
 
     @Test
+    void administratorCanDeleteArchivedProjectWithShortNonBlankReason() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.ARCHIVED);
+        when(repository.lockById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.findByProjectUidOrderByVersionNoAsc(project.getProjectUid()))
+                .thenReturn(java.util.List.of(project));
+
+        newService(repository, mock(ProjectMemberService.class), mock(ConfidentialityAccessService.class))
+                .adminDeleteProject(project.getId(), UUID.randomUUID(), "ok");
+
+        assertNotNull(project.getDiscardedAt());
+        assertEquals("ok", project.getDiscardReason());
+        verify(repository).saveAll(java.util.List.of(project));
+    }
+
+    @Test
+    void migratedDraftCanBeDiscardedWithShortNonBlankReason() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setSourceType(Project.SourceType.MIGRATION);
+        project.setStatus(Project.ProjectStatus.IMPORTED);
+        when(repository.lockById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        newService(repository, mock(ProjectMemberService.class), mock(ConfidentialityAccessService.class))
+                .discardMigratedDraft(project.getId(), UUID.randomUUID(), "ok");
+
+        assertNotNull(project.getDiscardedAt());
+        assertEquals("ok", project.getDiscardReason());
+        verify(repository).save(project);
+    }
+
+    @Test
     void manualProjectCreateUsesServerControlledProvenance() {
         ProjectRepository repository = mock(ProjectRepository.class);
         ProjectMemberService memberService = mock(ProjectMemberService.class);

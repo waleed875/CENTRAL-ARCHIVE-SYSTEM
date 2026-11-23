@@ -157,18 +157,18 @@ export function ProjectDetail({id}:{id:string}){
    <form onSubmit={discardMigratedProject} className="form-stack">
     <p><strong>{p.name}</strong> · {statusName(p.status)} · {p.projectNumber}</p>
     <p>يبقى تاريخ الترحيل وسجلات الملفات محفوظًا. الإجراء للمدير فقط، ويرفض المشاريع التي دخلت المراجعة أو لها إصدارات لاحقة.</p>
-    <Field label="سبب الاستبعاد"><textarea required minLength={12} maxLength={1000} value={discardReason} onChange={e=>setDiscardReason(e.target.value)} placeholder="سبب استبعاد مسودة الترحيل"/></Field>
+    <Field label="سبب الاستبعاد"><textarea required maxLength={1000} value={discardReason} onChange={e=>setDiscardReason(e.target.value)} placeholder="سبب استبعاد مسودة الترحيل"/></Field>
     {error&&<Alert message={error}/>}
-    <div className="form-actions"><button className="btn btn-danger" disabled={saving||discardReason.trim().length<12}>تأكيد الاستبعاد مع الاحتفاظ بالملفات</button></div>
+    <div className="form-actions"><button className="btn btn-danger" disabled={saving||!discardReason.trim()}>تأكيد الاستبعاد مع الاحتفاظ بالملفات</button></div>
    </form>
   </Modal>}
  {showAdminDelete&&<Modal title="حذف المشروع" subtitle="سيُخفى المشروع وجميع إصداراته من القوائم. تبقى سجلات الملفات وكائنات MinIO محفوظة وفق سياسة الاحتفاظ." onClose={()=>setShowAdminDelete(false)}>
    <form onSubmit={adminDeleteProject} className="form-stack">
     <p><strong>{p.name}</strong> · {p.projectNumber} · {p.versionNo?"الإصدار "+p.versionNo:""}</p>
     <p>هذا الإجراء لمدير النظام، ويؤثر في سلسلة المشروع كاملة. لا يحذف محتوى الملفات من التخزين.</p>
-    <Field label="سبب الحذف *"><textarea required minLength={12} maxLength={1000} value={adminDeleteReason} onChange={e=>setAdminDeleteReason(e.target.value)} placeholder="اذكر سبب حذف المشروع"/></Field>
+    <Field label="سبب الحذف *"><textarea required maxLength={1000} value={adminDeleteReason} onChange={e=>setAdminDeleteReason(e.target.value)} placeholder="اذكر سبب حذف المشروع"/></Field>
     {error&&<Alert message={error}/>}
-    <div className="form-actions"><button className="btn btn-danger" disabled={saving||adminDeleteReason.trim().length<12}>{saving?"جارٍ الحذف...":"تأكيد حذف المشروع"}</button><button type="button" className="btn btn-quiet" onClick={()=>setShowAdminDelete(false)}>إلغاء</button></div>
+    <div className="form-actions"><button className="btn btn-danger" disabled={saving||!adminDeleteReason.trim()}>{saving?"جارٍ الحذف...":"تأكيد حذف المشروع"}</button><button type="button" className="btn btn-quiet" onClick={()=>setShowAdminDelete(false)}>إلغاء</button></div>
    </form>
   </Modal>}
  {mode==="member"&&<Modal title={editingMember?"تعديل بيانات المساهم":"إضافة مساهم"} subtitle="أسماء الأشخاص الذين أنجزوا المشروع، بشكل مستقل عن المشرف." onClose={()=>{setMode(null);setEditingMember(null)}}>

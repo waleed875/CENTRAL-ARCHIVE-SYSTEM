@@ -224,7 +224,8 @@ public class UserService {
         user.setStatus(User.UserStatus.DELETED);
         TokenRevocation.advance(user);
         user.setUsername("deleted_" + id.toString().replace("-", ""));
-        user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID() + ":" + UUID.randomUUID()));
+        // BCrypt accepts at most 72 UTF-8 bytes; one UUID stays below that limit.
+        user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
         user.setFullName("حساب محذوف");
         user.setEmail(null);
         user.setOrganizationId(null);
