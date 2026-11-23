@@ -11,6 +11,7 @@ import com.centralArchiveSystem.Archive.import_.operation.ImportOperation;
 import com.centralArchiveSystem.Archive.import_.operation.ImportOperationRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.Optional;
 import java.util.Set;
@@ -27,7 +28,7 @@ class UserServiceTest {
         UserRepository users = mock(UserRepository.class);
         RoleRepository roles = mock(RoleRepository.class);
         ImportOperationRepository imports = mock(ImportOperationRepository.class);
-        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        PasswordEncoder encoder = spy(new BCryptPasswordEncoder());
         UUID target = UUID.randomUUID(), administrator = UUID.randomUUID();
         User user = new User();
         user.setId(target);
@@ -39,7 +40,6 @@ class UserServiceTest {
         user.setMaxConfidentialityLevelId(UUID.randomUUID());
         user.setStatus(User.UserStatus.ACTIVE);
         when(users.findForUpdate(target)).thenReturn(Optional.of(user));
-        when(encoder.encode(anyString())).thenReturn("tombstonehash");
 
         new UserService(users, roles, imports, encoder)
                 .removeAccount(target, administrator, "Required under administration retention policy");
@@ -51,7 +51,10 @@ class UserServiceTest {
         assertNull(user.getEmail());
         assertNull(user.getOrganizationId());
         assertNull(user.getMaxConfidentialityLevelId());
-        assertEquals("tombstonehash", user.getPasswordHash());
+        org.mockito.ArgumentCaptor<String> generatedPassword = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(encoder).encode(generatedPassword.capture());
+        assertTrue(generatedPassword.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72);
+        assertTrue(encoder.matches(generatedPassword.getValue(), user.getPasswordHash()));
         assertNotNull(user.getDeletedAt());
         assertEquals(administrator, user.getDeletedBy());
         assertNotNull(user.getTokenValidAfter());
