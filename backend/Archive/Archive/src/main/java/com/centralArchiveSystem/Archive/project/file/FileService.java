@@ -102,7 +102,7 @@ public class FileService {
     @Transactional
     public FileResponse uploadFile(UUID projectId, MultipartFile multipartFile,
                                    FileUploadRequest request, UUID uploadedBy) {
-        requireMutableProject(projectId);
+        requireMutableProject(projectId, true);
         confidentialityAccessService.requireReadAccess(request.confidentialityLevelId());
 
         List<FileCategory> categories = resolveActiveCategories(request.categoryIds(), request.categoryId());
@@ -421,6 +421,10 @@ public class FileService {
     }
 
     private Project requireMutableProject(UUID projectId) {
+        return requireMutableProject(projectId, false);
+    }
+
+    private Project requireMutableProject(UUID projectId, boolean allowAppendToApproved) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Project", "id", projectId));
         if (project.getDiscardedAt() != null) {
@@ -428,6 +432,10 @@ public class FileService {
         }
         confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
 
+        if (allowAppendToApproved && project.getStatus() == Project.ProjectStatus.APPROVED
+                && Boolean.TRUE.equals(project.getIsLatestVersion())) {
+            return project;
+        }
         if (project.getStatus() == Project.ProjectStatus.UNDER_REVIEW
                 || project.getStatus() == Project.ProjectStatus.REJECTED
                 || project.getStatus() == Project.ProjectStatus.APPROVED
