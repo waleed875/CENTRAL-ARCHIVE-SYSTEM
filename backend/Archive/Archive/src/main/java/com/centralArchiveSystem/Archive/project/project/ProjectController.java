@@ -127,6 +127,16 @@ public class ProjectController {
                 "تم استبعاد المشروع المرحّل من القوائم دون حذف سجلات الملفات أو كائنات MinIO"));
     }
 
+    @DeleteMapping("/{id}/admin-delete")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Hide a project and all its versions while retaining files and audit history")
+    public ResponseEntity<ApiResponse<Void>> adminDelete(@PathVariable UUID id,
+            @Valid @RequestBody AdminProjectDeleteRequest request) {
+        projectService.adminDeleteProject(id, currentUserService.userId(), request.reason());
+        return ResponseEntity.ok(ApiResponse.success(null,
+                "تم حذف المشروع من القوائم مع الاحتفاظ بسجلاته وملفاته وفق سياسة الاحتفاظ"));
+    }
+
     @GetMapping("/search")
     @Operation(summary = "Search projects with full-text and filter parameters")
     public ResponseEntity<ApiResponse<PagedResponse<ProjectResponse>>> search(

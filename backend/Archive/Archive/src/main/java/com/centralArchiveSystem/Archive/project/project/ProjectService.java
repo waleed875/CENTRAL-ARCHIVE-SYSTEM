@@ -381,6 +381,43 @@ public class ProjectService {
         }
     }
 
+    /**
+     * Administrator-only logical deletion of a project chain. Every version is hidden from
+     * operational views, while project rows, file records, package provenance, and MinIO objects
+     * remain available for retention and audit purposes.
+     */
+    @Transactional
+    public void adminDeleteProject(UUID id, UUID removedBy, String reason) {
+        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الحذف يجب أن يكون بين 12 و1000 حرف");
+        }
+        Project selected = projectRepository.lockById(id)
+                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (selected.getDiscardedAt() != null) {
+            throw new NoSuchElementException("Project not found with id: " + id);
+        }
+        if (projectRepository.hasRunningLegacyMigration()) {
+            throw new BusinessRuleException("أوقف دفعات الترحيل الجارية قبل حذف المشروع");
+        }
+
+        LocalDateTime discardedAt = LocalDateTime.now();
+        List<Project> versions = projectRepository.findByProjectUidOrderByVersionNoAsc(selected.getProjectUid());
+        boolean selectedVersionFound = false;
+        for (Project version : versions) {
+            if (version.getId().equals(selected.getId())) selectedVersionFound = true;
+            if (version.getDiscardedAt() != null) continue;
+            confidentialityAccessService.requireReadAccess(version.getConfidentialityLevelId());
+            version.setDiscardedAt(discardedAt);
+            version.setDiscardedBy(removedBy);
+            version.setDiscardReason(reason.trim());
+            version.setIsLatestVersion(false);
+        }
+        if (!selectedVersionFound) {
+            throw new NoSuchElementException("Project not found with id: " + id);
+        }
+        projectRepository.saveAll(versions);
+    }
+
     public Page<ProjectResponse> search(ProjectSearchRequest request, int page, int size) {
         String sortField = request.sortBy() != null && ALLOWED_SORT_FIELDS.contains(request.sortBy()) ? request.sortBy() : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(request.sortDirection()) ? Sort.Direction.ASC : Sort.Direction.DESC;

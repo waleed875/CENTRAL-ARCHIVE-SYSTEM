@@ -15,6 +15,7 @@ const menu=[
 {href:"/quarantine",label:"الملفات المعزولة",icon:ShieldAlert},
 {href:"/users",label:"المستخدمون",icon:UsersRound},
 {href:"/data-entry-productivity",label:"تقرير مدخلي البيانات",icon:BarChart3},
+{href:"/incomplete-report",label:"اكتمال بيانات المشاريع",icon:ClipboardCheck},
 {href:"/audit",label:"سجل التدقيق",icon:ScrollText},
 {href:"/settings",label:"الإعدادات",icon:Settings2},
 {href:"/account",label:"إعدادات حسابي",icon:UsersRound}

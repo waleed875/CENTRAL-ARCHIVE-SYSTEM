@@ -25,7 +25,7 @@ export async function api<T>(path:string,init:RequestInit={},retry=true):Promise
   return payload.data;
 }
 export function jsonBody(data:unknown):RequestInit{return{headers:{"Content-Type":"application/json"},body:JSON.stringify(data)}}
-export function qs(params:Record<string,string|number|undefined|null>){const s=new URLSearchParams();Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=="")s.set(k,String(v))});return s.size?"?"+s.toString():""}
+export function qs(params:Record<string,string|number|boolean|undefined|null>){const s=new URLSearchParams();Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=="")s.set(k,String(v))});return s.size?"?"+s.toString():""}
 export async function download(path:string,filename:string){
   const response=await fetch("/api/backend"+path,{credentials:"same-origin"});
   if(!response.ok)throw new ApiError(response.status,"تعذر تنزيل الملف");
