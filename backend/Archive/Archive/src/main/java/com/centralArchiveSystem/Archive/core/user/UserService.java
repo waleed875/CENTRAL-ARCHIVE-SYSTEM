@@ -213,8 +213,8 @@ public class UserService {
         if (id.equals(administratorId)) {
             throw new BusinessRuleException("لا يمكن حذف الحساب الذي تستخدمه حاليًا");
         }
-        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
-            throw new BusinessRuleException("سبب الحذف يجب أن يكون بين 12 و1000 حرف");
+        if (reason == null || reason.trim().isEmpty() || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الحذف مطلوب ويجب ألا يتجاوز 1000 حرف");
         }
         userRepository.lockAdministration();
         User user = findForUpdate(id);

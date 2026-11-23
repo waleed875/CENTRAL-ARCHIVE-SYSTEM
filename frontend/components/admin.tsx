@@ -1,6 +1,6 @@
 "use client";
 import {useState,FormEvent}from"react";
-import {useRouter} from "next/navigation";import Link from"next/link";import{Plus,UsersRound,ScrollText,Settings2,RefreshCw,KeyRound,BookOpen,Trash2,Eye,Search,ClipboardCheck}from"lucide-react";
+import {useRouter} from "next/navigation";import{Plus,UsersRound,ScrollText,Settings2,RefreshCw,KeyRound,Trash2,Eye,Search}from"lucide-react";
 import {api,jsonBody,qs}from"@/lib/api";import {useRemote}from"@/components/hooks";
 import {PageHeader,Panel,Status,Loading,Empty,Alert,Modal,Field,Pagination}from"@/components/ui";
 import type{PageData,Organization,Reference,UserInfo}from"@/lib/types";import{dateLabel,statusName}from"@/lib/types";
@@ -8,9 +8,6 @@ type UserRow={id:string;username:string;fullName:string;email?:string;status:str
 type RoleRow={id:string;code:string;name:string;isActive?:boolean};
 type LogRow={id:string;action:string;entityType:string;entityId:string;description:string;userId:string;createdAt:string;oldValues?:string|null;newValues?:string|null;ipAddress?:string|null};
 function formatAuditJson(value:string){try{return JSON.stringify(JSON.parse(value),null,2)}catch{return value}}
-type IncompleteRow={id:string;projectNumber:string;name:string;year:number|null;organizationName?:string|null;status?:string|null;sourceType?:string|null;sourceReference?:string|null;missingFields:string[];notes?:string|null;createdAt?:string|null};
-type IncompleteReport={totalIncomplete:number;totalWithUnknownYear:number;projects:IncompleteRow[];fieldCounts:Array<{field:string;count:number}>};
-const missingFieldNames:Record<string,string>={projectNumber:"رقم المشروع",projectCode:"رمز المشروع",name:"اسم المشروع",year:"سنة المشروع",organizationId:"الجهة",projectTypeId:"نوع المشروع",confidentialityLevelId:"مستوى السرية",description:"الوصف",executingEntity:"الجهة المنفذة",supervisorName:"المشرف",keywords:"الكلمات المفتاحية",sourceReference:"مرجع المصدر"};
 function Users(){
  const router=useRouter();
  const [search,setSearch]=useState(""),[statusFilter,setStatusFilter]=useState(""),[organizationFilter,setOrganizationFilter]=useState(""),[roleFilter,setRoleFilter]=useState(""),[page,setPage]=useState(1),[modal,setModal]=useState<"create"|"reset"|"edit"|"remove"|null>(null),[target,setTarget]=useState<UserRow|null>(null),[password,setPassword]=useState(""),[removeReason,setRemoveReason]=useState(""),[form,setForm]=useState({username:"",password:"",organizationId:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[edit,setEdit]=useState({username:"",fullName:"",maxConfidentialityLevelId:"",roleIds:[] as string[]}),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState("");
@@ -49,7 +46,7 @@ function Users(){
   setSaving(true);setError("");setSuccess("");
   try{
    await api("/api/v1/users/"+target.id+"/account",{
-    method:"DELETE",...jsonBody({reason:removeReason})
+    method:"DELETE",...jsonBody({reason:removeReason.trim()})
    });
    setSuccess("تم حذف الحساب وإبطال جلساته وإخفاؤه من قائمة المستخدمين مع حفظ السجلات");
    setModal(null);setRemoveReason("");users.reload();
@@ -73,9 +70,9 @@ function Users(){
  {modal==="remove"&&target&&<Modal title={"حذف الحساب: "+target.username} subtitle="ستُمحى بيانات الدخول والاسم والبريد وتُبطل الجلسات، مع إبقاء سجلات الأرشيف والتدقيق المرتبطة بالمعرف." onClose={()=>setModal(null)}>
  <form className="form-stack" onSubmit={removeAccount}>
   <p>الحذف نهائي للحساب ولا يمكن إعادة تنشيطه؛ يمكن إنشاء حساب جديد باسم الدخول نفسه.</p>
-  <Field label="سبب حذف الحساب (إلزامي)"><textarea required minLength={12} maxLength={1000} value={removeReason} onChange={e=>setRemoveReason(e.target.value)} placeholder="اكتب مبرر القرار الإداري"/></Field>
+  <Field label="سبب حذف الحساب (إلزامي)"><textarea required maxLength={1000} value={removeReason} onChange={e=>setRemoveReason(e.target.value)} placeholder="اكتب مبرر القرار الإداري"/></Field>
   {error&&<Alert message={error}/>}
-  <div className="form-actions"><button type="submit" className="btn btn-danger" disabled={saving||removeReason.trim().length<12}>تأكيد حذف الحساب</button></div>
+  <div className="form-actions"><button type="submit" className="btn btn-danger" disabled={saving||!removeReason.trim()}>تأكيد حذف الحساب</button></div>
  </form></Modal>}
  {modal==="reset"&&target&&<Modal title={"إعادة تعيين كلمة مرور "+target.fullName} subtitle="سيُطلب من المستخدم تسجيل الدخول مرة أخرى بعد إبطال الرموز السابقة." onClose={()=>setModal(null)}><form className="form-stack" onSubmit={reset}><Field label="كلمة المرور الجديدة"><input type="password" minLength={8} required value={password} onChange={e=>setPassword(e.target.value)}/></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">تغيير كلمة المرور</button></div></form></Modal>}</>;
 }
@@ -87,15 +84,6 @@ function Audit(){
  {logs.loading?<Loading/>:!logs.data?.data.length?<Empty title="لا توجد نتائج" description="قد تتطلب مشاهدة السجل تصريح السرية الأعلى بالإضافة إلى دور المدير."/>:<div className="table-scroller"><table className="data-table"><thead><tr><th>الحدث</th><th>الكيان</th><th>معرّف الكيان</th><th>التفاصيل</th><th>التاريخ</th><th></th></tr></thead><tbody>{logs.data.data.map(l=><tr key={l.id}><td><strong>{l.action}</strong></td><td>{l.entityType}</td><td><span className="monospace">{l.entityId??"—"}</span></td><td>{l.description}</td><td>{dateLabel(l.createdAt)}</td><td><button type="button" className="btn btn-outline btn-sm" onClick={()=>setSelected(l.id)}><Eye size={14}/> التفاصيل</button></td></tr>)}</tbody></table></div>}<Pagination page={page} totalPages={logs.data?.totalPages??0} onChange={setPage}/></Panel>
  {selected&&<Modal title="تفاصيل سجل التدقيق" subtitle={detail.data?dateLabel(detail.data.createdAt):"عرض القيم التي حفظها الخادم"} onClose={()=>setSelected(null)} wide>{detail.loading?<Loading/>:detail.error?<Alert message={detail.error}/>:detail.data?<div className="audit-detail-grid"><div className="audit-detail-summary"><span>الإجراء</span><strong>{detail.data.action}</strong><span>نوع الكيان</span><strong>{detail.data.entityType}</strong><span>معرّف الكيان</span><strong className="monospace">{detail.data.entityId??"—"}</strong><span>معرّف المستخدم</span><strong className="monospace">{detail.data.userId??"—"}</strong><span>عنوان الاتصال</span><strong className="monospace">{detail.data.ipAddress??"—"}</strong><span>الوصف</span><p>{detail.data.description??"—"}</p></div><div className="audit-json-grid"><section><h3>قبل التغيير</h3><pre>{detail.data.oldValues?formatAuditJson(detail.data.oldValues):"لا توجد قيم سابقة"}</pre></section><section><h3>بعد التغيير</h3><pre>{detail.data.newValues?formatAuditJson(detail.data.newValues):"لا توجد قيم جديدة"}</pre></section></div></div>:null}</Modal>}
  </>;
-}
-function IncompleteProjectsReport(){
- const report=useRemote<IncompleteReport>("/api/v1/projects/incomplete-report");
- return <><PageHeader eyebrow="جودة البيانات" title="تقرير اكتمال بيانات المشاريع" description="المشاريع التي دخلت النظام وهي تفتقد حقولًا أساسية، مرتبة لمتابعة استكمالها." action={<button type="button" className="btn btn-quiet btn-sm" onClick={report.reload}><RefreshCw size={15}/> تحديث التقرير</button>}/>
- {report.error&&<Alert message={report.error}/>} {report.loading?<Loading/>:report.data?<>
- <div className="stat-grid"><div className="stat-card"><div className="stat-icon"><ClipboardCheck size={23}/></div><div><span>مشاريع تحتاج استكمالًا</span><strong>{report.data.totalIncomplete.toLocaleString("ar")}</strong></div></div><div className="stat-card"><div className="stat-icon"><BookOpen size={23}/></div><div><span>مشاريع بسنة غير معروفة</span><strong>{report.data.totalWithUnknownYear.toLocaleString("ar")}</strong></div></div></div>
- <div className="split-grid section-gap"><Panel title="الحقول الأكثر نقصًا" subtitle="عدد المشاريع التي ينقصها كل حقل">{report.data.fieldCounts.length?<div className="missing-field-list">{report.data.fieldCounts.map(item=><div key={item.field}><span>{missingFieldNames[item.field]??item.field}</span><strong>{item.count.toLocaleString("ar")}</strong></div>)}</div>:<Empty title="لا توجد حقول ناقصة"/>}</Panel>
- <Panel title="المشاريع المتأثرة" subtitle="افتح المشروع لاستكمال بياناته بحسب صلاحياتك">{report.data.projects.length?<div className="table-scroller"><table className="data-table"><thead><tr><th>المشروع</th><th>الجهة</th><th>السنة</th><th>الحالة</th><th>الحقول الناقصة</th><th></th></tr></thead><tbody>{report.data.projects.map(item=><tr key={item.id}><td><strong>{item.name||"بدون اسم"}</strong><span className="table-sub monospace">{item.projectNumber||"بدون رقم"}</span>{item.sourceReference&&<span className="table-sub">المصدر: {item.sourceReference}</span>}</td><td>{item.organizationName||"—"}</td><td>{item.year===1000||item.year==null?"غير معروفة":item.year}</td><td><Status value={item.status}/></td><td><div className="chips">{item.missingFields.map(field=><span className="status status-amber" key={field}>{missingFieldNames[field]??field}</span>)}</div></td><td><Link className="btn btn-outline btn-sm" href={"/projects/"+item.id}>فتح المشروع</Link></td></tr>)}</tbody></table></div>:<Empty title="لا توجد مشاريع ناقصة" description="كل المشاريع الظاهرة في نطاق صلاحياتك تحتوي الحقول المطلوبة."/>}</Panel></div>
- </>:null}</>;
 }
 type SettingTab="file-categories"|"file-types"|"project-types"|"confidentiality-levels"|"roles";
 type SettingItem={id:string;code:string;name:string;description?:string|null;isActive?:boolean;levelOrder?:number;categoryId?:string;defaultExtension?:string|null;projectsCount?:number;filesCount?:number;usersCount?:number};
@@ -139,4 +127,4 @@ function Settings(){
  <Field label="الوصف"><textarea maxLength={2000} value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/></Field>{error&&<Alert message={error}/>}<div className="form-actions"><button disabled={saving} className="btn btn-gold">{saving?"جارٍ الحفظ...":"حفظ"}</button><button type="button" className="btn btn-quiet" onClick={()=>setModal(false)}>إلغاء</button></div></form></Modal>}
  </>;
 }
-export function AdminSection({section}:{section:string}){return section==="users"?<Users/>:section==="audit"?<Audit/>:section==="incomplete-report"?<IncompleteProjectsReport/>:<Settings/>}
+export function AdminSection({section}:{section:string}){return section==="users"?<Users/>:section==="audit"?<Audit/>:<Settings/>}
