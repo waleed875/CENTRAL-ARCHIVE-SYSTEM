@@ -334,8 +334,8 @@ public class ProjectService {
      */
     @Transactional
     public void discardMigratedDraft(UUID id, UUID removedBy, String reason) {
-        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
-            throw new BusinessRuleException("سبب الاستبعاد يجب أن يكون بين 12 و1000 حرف");
+        if (reason == null || reason.trim().isEmpty() || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الاستبعاد مطلوب ويجب ألا يتجاوز 1000 حرف");
         }
         Project project = projectRepository.lockById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
@@ -388,8 +388,8 @@ public class ProjectService {
      */
     @Transactional
     public void adminDeleteProject(UUID id, UUID removedBy, String reason) {
-        if (reason == null || reason.trim().length() < 12 || reason.length() > 1000) {
-            throw new BusinessRuleException("سبب الحذف يجب أن يكون بين 12 و1000 حرف");
+        if (reason == null || reason.trim().isEmpty() || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب الحذف مطلوب ويجب ألا يتجاوز 1000 حرف");
         }
         Project selected = projectRepository.lockById(id)
                 .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
