@@ -60,6 +60,25 @@ class UserServiceTest {
     }
 
     @Test
+    void accountRemovalAcceptsShortNonBlankReasonAndTrimsIt() {
+        UserRepository users = mock(UserRepository.class);
+        ImportOperationRepository imports = mock(ImportOperationRepository.class);
+        UUID target = UUID.randomUUID(), administrator = UUID.randomUUID();
+        User user = new User();
+        user.setId(target);
+        user.setStatus(User.UserStatus.ACTIVE);
+        when(users.findForUpdate(target)).thenReturn(Optional.of(user));
+        when(imports.countByImportedByAndStatus(target, ImportOperation.Status.STARTED)).thenReturn(0L);
+
+        UserService service = new UserService(users, mock(RoleRepository.class),
+                imports, mock(PasswordEncoder.class));
+        service.removeAccount(target, administrator, " ok ");
+
+        assertEquals("ok", user.getDeletionReason());
+        verify(users).save(user);
+    }
+
+    @Test
     void accountRemovalRejectsSelfAndActiveImports() {
         UserRepository users = mock(UserRepository.class);
         RoleRepository roles = mock(RoleRepository.class);

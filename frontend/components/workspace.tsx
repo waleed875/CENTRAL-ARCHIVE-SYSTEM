@@ -48,7 +48,7 @@ export function Workspace({section}:{section:string}){
  case "imports":return <ImportExport mode="imports"/>;
  case "exports":return <ImportExport mode="exports"/>;
  case "migration":return <Migration/>;
- case "users":case "audit":case "settings":case "incomplete-report":return <AdminSection section={section}/>;
+ case "users":case "audit":case "settings":return <AdminSection section={section}/>;
  default:return <><PageHeader title="الصفحة غير موجودة"/><Panel title="المسار غير متاح"><Empty description="اختر قسمًا من القائمة الجانبية."/></Panel></>;
  }
 }

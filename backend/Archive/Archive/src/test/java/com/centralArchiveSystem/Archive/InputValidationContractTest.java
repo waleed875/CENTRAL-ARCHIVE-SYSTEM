@@ -4,6 +4,7 @@ import com.centralArchiveSystem.Archive.core.organization.dto.OrganizationUpdate
 import com.centralArchiveSystem.Archive.core.role.dto.RoleUpdateRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
+import com.centralArchiveSystem.Archive.core.user.dto.AccountRemovalRequest;
 import com.centralArchiveSystem.Archive.import_.package_.export.export.ExportRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,14 @@ class InputValidationContractTest {
     @Test void validAndOmittedEmailRemainSupported() {
         assertTrue(VALIDATOR.validate(new UserUpdateRequest(null, "person@example.test", null, null, null)).isEmpty());
         assertTrue(VALIDATOR.validate(new UserUpdateRequest(null, "", null, null, null)).isEmpty());
+    }
+    @Test void accountRemovalAcceptsAnyNonBlankReasonAndRejectsWhitespace() throws Exception {
+        AccountRemovalRequest shortReason = new ObjectMapper().readValue(
+                "{\"reason\":\"x\"}", AccountRemovalRequest.class);
+        AccountRemovalRequest blankReason = new AccountRemovalRequest("   ");
+
+        assertTrue(VALIDATOR.validate(shortReason).isEmpty());
+        assertFalse(VALIDATOR.validate(blankReason).isEmpty());
     }
     @Test void nullExportListElementIsRejected() {
         assertFalse(VALIDATOR.validate(new ExportRequest(Arrays.asList((UUID) null))).isEmpty());
