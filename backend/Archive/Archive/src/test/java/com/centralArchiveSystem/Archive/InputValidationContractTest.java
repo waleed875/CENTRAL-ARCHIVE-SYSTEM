@@ -7,6 +7,8 @@ import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.AccountRemovalRequest;
 import com.centralArchiveSystem.Archive.import_.package_.export.export.ExportRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
+import com.centralArchiveSystem.Archive.project.project.dto.AdminProjectDeleteRequest;
+import com.centralArchiveSystem.Archive.project.project.dto.MigrationDraftDiscardRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -50,6 +52,12 @@ class InputValidationContractTest {
 
         assertTrue(VALIDATOR.validate(shortReason).isEmpty());
         assertFalse(VALIDATOR.validate(blankReason).isEmpty());
+    }
+    @Test void projectDeletionReasonsAcceptAnyNonBlankTextAndRejectWhitespace() {
+        assertTrue(VALIDATOR.validate(new AdminProjectDeleteRequest("x")).isEmpty());
+        assertTrue(VALIDATOR.validate(new MigrationDraftDiscardRequest("x")).isEmpty());
+        assertFalse(VALIDATOR.validate(new AdminProjectDeleteRequest("  ")).isEmpty());
+        assertFalse(VALIDATOR.validate(new MigrationDraftDiscardRequest("  ")).isEmpty());
     }
     @Test void nullExportListElementIsRejected() {
         assertFalse(VALIDATOR.validate(new ExportRequest(Arrays.asList((UUID) null))).isEmpty());
