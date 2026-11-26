@@ -91,6 +91,14 @@ public class ProjectController {
     public ResponseEntity<ApiResponse<ProjectResponse>> approve(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(projectService.approve(id, currentUserService.userId()), "Project approved"));
     }
+    @PatchMapping("/{id}/revoke-approval")
+    @PreAuthorize("hasRole('system_admin')")
+    @Operation(summary = "Revoke approval and return the latest project to correction")
+    public ResponseEntity<ApiResponse<ProjectResponse>> revokeApproval(@PathVariable UUID id,
+            @Valid @RequestBody ApprovalReversalRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(projectService.revokeApproval(id, request.reason()),
+                "تم التراجع عن اعتماد المشروع وإعادته للتصحيح"));
+    }
     @PatchMapping("/{id}/reject")
     @PreAuthorize("hasAnyRole('system_admin', 'auditor')")
     @Operation(summary = "Reject a project under review")
