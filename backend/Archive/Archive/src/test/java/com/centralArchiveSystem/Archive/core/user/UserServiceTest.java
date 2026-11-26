@@ -3,6 +3,7 @@ package com.centralArchiveSystem.Archive.core.user;
 import com.centralArchiveSystem.Archive.common.exception.BusinessRuleException;
 import com.centralArchiveSystem.Archive.common.exception.ConflictException;
 import com.centralArchiveSystem.Archive.common.exception.ResourceNotFoundException;
+import com.centralArchiveSystem.Archive.core.role.Role;
 import com.centralArchiveSystem.Archive.core.role.RoleRepository;
 import com.centralArchiveSystem.Archive.core.user.dto.UserRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
@@ -319,6 +320,64 @@ class UserServiceTest {
 
         assertThrows(ConflictException.class, () -> service.addRole(userId, roleId));
         verify(users, never()).save(any());
+    }
+
+    @Test
+    void administratorCanRevokeAnAssignedRoleAndExistingInactiveRolesDoNotBlockEdits() {
+        UserRepository users = mock(UserRepository.class);
+        Role inactiveRole = new Role();
+        UUID roleId = UUID.randomUUID(), userId = UUID.randomUUID();
+        inactiveRole.setId(roleId);
+        inactiveRole.setCode("auditor");
+        inactiveRole.setIsActive(false);
+        User user = new User();
+        user.setId(userId);
+        user.setUsername("disabled-role-holder");
+        user.setStatus(User.UserStatus.DISABLED);
+        user.setRoles(new java.util.HashSet<>(Set.of(inactiveRole)));
+        when(users.findForUpdate(userId)).thenReturn(Optional.of(user));
+        when(users.save(user)).thenReturn(user);
+
+        UserService service = new UserService(users, mock(RoleRepository.class),
+                mock(ImportOperationRepository.class), mock(PasswordEncoder.class));
+        service.update(userId, new UserUpdateRequest(null, "Display name", null, null,
+                null, null, false, Set.of(roleId)));
+        assertEquals(Set.of(inactiveRole), user.getRoles(), "an existing disabled role can be retained while editing other fields");
+
+        service.update(userId, new UserUpdateRequest(null, null, null, null,
+                null, null, false, Set.of()));
+        assertTrue(user.getRoles().isEmpty(), "an administrator can revoke the inactive assigned role");
+        assertNotNull(user.getTokenValidAfter());
+        verify(users, times(2)).save(user);
+    }
+
+    @Test
+    void directRoleRevocationInvalidatesSessionsAndProtectsTheLastAdministrator() {
+        UserRepository users = mock(UserRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        UUID userId = UUID.randomUUID(), roleId = UUID.randomUUID();
+        Role adminRole = new Role();
+        adminRole.setId(roleId);
+        adminRole.setCode("system_admin");
+        adminRole.setIsActive(true);
+        User admin = new User();
+        admin.setId(userId);
+        admin.setStatus(User.UserStatus.ACTIVE);
+        admin.setRoles(new java.util.HashSet<>(Set.of(adminRole)));
+        when(users.findForUpdate(userId)).thenReturn(Optional.of(admin));
+        when(roles.findById(roleId)).thenReturn(Optional.of(adminRole));
+        when(users.countActiveUsersByRoleId(roleId)).thenReturn(1L);
+
+        UserService service = new UserService(users, roles, mock(ImportOperationRepository.class),
+                mock(PasswordEncoder.class));
+        assertThrows(BusinessRuleException.class, () -> service.removeRole(userId, roleId));
+        verify(users, never()).save(any());
+
+        when(users.countActiveUsersByRoleId(roleId)).thenReturn(2L);
+        service.removeRole(userId, roleId);
+        assertTrue(admin.getRoles().isEmpty());
+        assertNotNull(admin.getTokenValidAfter());
+        verify(users).save(admin);
     }
 
     @Test
