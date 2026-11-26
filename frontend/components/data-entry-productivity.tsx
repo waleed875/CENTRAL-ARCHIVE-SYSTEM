@@ -1,7 +1,7 @@
 "use client";
 import {useState} from "react";
 import Link from "next/link";
-import {FolderKanban,UsersRound,ArrowLeft,RefreshCw} from "lucide-react";
+import {FolderKanban,UsersRound,ArrowLeft,RefreshCw,ClipboardCheck,CheckCircle2} from "lucide-react";
 import {useRemote} from "@/components/hooks";
 import {qs} from "@/lib/api";
 import {PageHeader,Panel,Loading,Empty,Alert,Pagination,Status} from "@/components/ui";
@@ -22,15 +22,40 @@ type ProjectRow={
 export function DataEntryProductivity(){
  const current=useRemote<{roles:string[]}>("/api/v1/auth/me");
  const isAdmin=current.data?.roles?.includes("system_admin")===true;
+ const isDataEntry=current.data?.roles?.includes("central_data_entry")===true;
  const summary=useRemote<Summary>(isAdmin?"/api/v1/admin/data-entry-productivity":null);
  const [selected,setSelected]=useState<EntryUser|null>(null);
  const [page,setPage]=useState(1);
  const projects=useRemote<PageData<ProjectRow>>(
   isAdmin&&selected?"/api/v1/admin/data-entry-productivity/"+selected.userId+"/projects"+qs({page,size:20}):null
  );
+ const ownSummary=useRemote<EntryUser>(!isAdmin&&isDataEntry?"/api/v1/data-entry-productivity/me":null);
+ const ownProjects=useRemote<PageData<ProjectRow>>(
+  !isAdmin&&isDataEntry?"/api/v1/data-entry-productivity/me/projects"+qs({page,size:20}):null
+ );
  if(current.loading)return <Loading/>;
  if(current.error)return <Alert message={current.error}/>;
- if(!isAdmin)return <Alert message="هذا التقرير متاح لمدير النظام فقط"/>;
+ if(!isAdmin&&!isDataEntry)return <Alert message="هذا التقرير متاح لمدير النظام ومدخل البيانات فقط"/>;
+ if(!isAdmin)return <>
+  <PageHeader eyebrow="تقاريري" title="مشاريعي المدخلة"
+   description="يعرض المشاريع التي أنشأتها، ويحتسب كل مشروع مرة واحدة حتى عند إضافة إصدارات لاحقة."
+   action={<button type="button" className="btn btn-outline" onClick={()=>{ownSummary.reload();ownProjects.reload()}}><RefreshCw size={16}/> تحديث</button>}/>
+  {ownSummary.error&&<Alert message={ownSummary.error}/>}
+  <div className="stat-grid">
+   <div className="stat-card"><div className="stat-icon"><FolderKanban size={22}/></div><div><span>إجمالي المشاريع التي أدخلتها</span><strong>{ownSummary.loading?"—":(ownSummary.data?.totalProjects??0).toLocaleString("ar")}</strong></div></div>
+   <div className="stat-card"><div className="stat-icon"><ClipboardCheck size={22}/></div><div><span>قيد المراجعة</span><strong>{ownSummary.loading?"—":(ownSummary.data?.underReview??0).toLocaleString("ar")}</strong></div></div>
+   <div className="stat-card"><div className="stat-icon"><CheckCircle2 size={22}/></div><div><span>معتمد أو مؤرشف</span><strong>{ownSummary.loading?"—":((ownSummary.data?.approved??0)+(ownSummary.data?.archived??0)).toLocaleString("ar")}</strong></div></div>
+  </div>
+  <Panel title="قائمة مشاريعي" subtitle="قد لا تظهر المشاريع التي تتجاوز مستوى السرية المصرح لك به.">
+   {ownProjects.error&&<Alert message={ownProjects.error}/>}
+   {ownProjects.loading?<Loading/>:!ownProjects.data?.data?.length?<Empty title="لا توجد مشاريع مسجلة باسمك"/>:
+    <div className="table-scroller"><table className="data-table"><thead><tr><th>المشروع</th><th>الرقم</th><th>السنة</th><th>الحالة</th><th>الإصدار</th><th>تاريخ الإدخال</th></tr></thead><tbody>
+     {ownProjects.data.data.map(p=><tr key={p.id}><td><Link className="table-link" href={"/projects/"+p.id}>{p.name}</Link></td><td>{p.projectNumber}</td><td>{p.year}</td><td><Status value={p.status}/></td><td>{p.versionNo}</td><td>{dateLabel(p.firstCreatedAt)}</td></tr>)}
+    </tbody></table></div>}
+   <Pagination page={page} totalPages={ownProjects.data?.totalPages??0} onChange={setPage}/>
+  </Panel>
+  <p className="hint">تُنسب الإصدارات إلى منشئ الإصدار الأول. المشاريع المرحّلة أو المحذوفة منطقيًا لا تدخل في العدد.</p>
+ </>;
  return <>
   <PageHeader eyebrow="تقارير الإدارة" title="إنتاجية مدخلي البيانات"
    description="عدد المشاريع اليدوية المنسوبة إلى منشئ المشروع الأصلي، دون مضاعفة العدد عند إنشاء إصدارات جديدة. المشاريع المرحّلة والمستبعدة لا تُحتسب."
