@@ -232,6 +232,31 @@ public class ProjectService {
         project.setApprovedAt(LocalDateTime.now());
         return ProjectResponse.fromEntity(projectRepository.save(project));
     }
+    /** Revoke the current approval and send the latest approved version back for correction. */
+    @Transactional
+    public ProjectResponse revokeApproval(UUID id, String reason) {
+        if (reason == null || reason.isBlank() || reason.length() > 1000) {
+            throw new BusinessRuleException("سبب التراجع عن الاعتماد مطلوب ويجب ألا يتجاوز 1000 حرف");
+        }
+        Project project = projectRepository.lockById(id)
+                .orElseThrow(() -> new NoSuchElementException("Project not found with id: " + id));
+        if (project.getDiscardedAt() != null) {
+            throw new NoSuchElementException("Project not found with id: " + id);
+        }
+        confidentialityAccessService.requireReadAccess(project.getConfidentialityLevelId());
+        if (project.getStatus() != Project.ProjectStatus.APPROVED) {
+            throw new BusinessRuleException("يمكن التراجع عن اعتماد المشروع المعتمد فقط. الحالة الحالية: "
+                    + project.getStatus().describe());
+        }
+        if (!Boolean.TRUE.equals(project.getIsLatestVersion())) {
+            throw new BusinessRuleException("لا يمكن التراجع عن اعتماد إصدار قديم؛ افتح أحدث إصدار من المشروع");
+        }
+        project.setStatus(Project.ProjectStatus.NEEDS_CORRECTION);
+        project.setApprovedBy(null);
+        project.setApprovedAt(null);
+        project.setReviewNotes(reason.trim());
+        return ProjectResponse.fromEntity(projectRepository.save(project));
+    }
     public ProjectResponse reject(UUID id, String rejectionReason) {
         if (rejectionReason == null || rejectionReason.isBlank()) throw new IllegalArgumentException("rejection_reason is required");
         Project project = requireAccessibleProject(id);

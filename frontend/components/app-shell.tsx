@@ -23,7 +23,7 @@ export function AppShell({children}:{children:React.ReactNode}){
  const [user,setUser]=useState<UserInfo|null>(null),[open,setOpen]=useState(false),[search,setSearch]=useState(""),[signingOut,setSigningOut]=useState(false);
  const pathname=usePathname(),router=useRouter();
  const authorized=(...roles:string[])=>!!user&&(user.roles.includes("system_admin")||roles.some(role=>user.roles.includes(role)));
- const showSection=(href:string)=>{if(["/","/organizations","/projects","/files","/account"].includes(href))return true; if(href==="/reviews")return authorized("auditor");if(href==="/imports")return authorized("import_officer");if(href==="/exports")return authorized("export_officer");return authorized("system_admin")};
+ const showSection=(href:string)=>{if(["/","/organizations","/projects","/files","/account"].includes(href))return true; if(href==="/data-entry-productivity")return authorized("central_data_entry");if(href==="/reviews")return authorized("auditor");if(href==="/imports")return authorized("import_officer");if(href==="/exports")return authorized("export_officer");return authorized("system_admin")};
  useEffect(()=>{let active=true;api<UserInfo>("/api/v1/auth/me").then(v=>{if(active)setUser(v)}).catch(()=>{});return()=>{active=false}},[]);
  useEffect(()=>setOpen(false),[pathname]);
  useEffect(()=>{

@@ -117,6 +117,22 @@ class DataEntryProductivityHttpIntegrationTest {
                 .andExpect(jsonPath("$.data.total").value(2))
                 .andExpect(jsonPath("$.data.data.length()").value(2));
 
+        String creatorToken = bearer(creator,"central_data_entry");
+        mvc.perform(get("/api/v1/data-entry-productivity/me")
+                        .header("Authorization",creatorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(creator.getId().toString()))
+                .andExpect(jsonPath("$.data.totalProjects").value(2))
+                .andExpect(jsonPath("$.data.approved").value(1));
+        mvc.perform(get("/api/v1/data-entry-productivity/me/projects")
+                        .header("Authorization",creatorToken).param("page","1").param("size","20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.data.length()").value(2));
+        mvc.perform(get("/api/v1/data-entry-productivity/me")
+                        .header("Authorization",bearer(reader,"read_only")))
+                .andExpect(status().isForbidden());
+
         mvc.perform(get("/api/v1/admin/data-entry-productivity")
                         .header("Authorization",bearer(reader,"read_only")))
                 .andExpect(status().isForbidden());

@@ -23,6 +23,8 @@ export function ProjectDetail({id}:{id:string}){
  const [mode,setMode]=useState<Mode>(null),[saving,setSaving]=useState(false),[error,setError]=useState(""),[success,setSuccess]=useState(""),[reason,setReason]=useState("");
  const [discardReason,setDiscardReason]=useState(""),[showDiscard,setShowDiscard]=useState(false);
  const [adminDeleteReason,setAdminDeleteReason]=useState(""),[showAdminDelete,setShowAdminDelete]=useState(false);
+ const [approvalReversalReason,setApprovalReversalReason]=useState(""),[showApprovalReversal,setShowApprovalReversal]=useState(false);
+ const [showNoFilesWarning,setShowNoFilesWarning]=useState(false);
  const [newMember,setNewMember]=useState({personName:"",organizationName:"",roleName:"",notes:""}),[editingMember,setEditingMember]=useState<ProjectMember|null>(null);
  const [edit,setEdit]=useState<Record<string,string>>({}),[uploadFiles,setUploadFiles]=useState<File[]>([]),[dragActive,setDragActive]=useState(false),[categoryId,setCategoryId]=useState(""),[categoryIds,setCategoryIds]=useState<string[]>([]),[typeId,setTypeId]=useState(""),[levelId,setLevelId]=useState(""),[selectedFile,setSelectedFile]=useState<ArchiveFile|null>(null);
  const fileTypes=useRemote<FileType[]>(categoryId?"/api/v1/file-types/by-category/"+categoryId+"?isActive=true":null);
@@ -68,6 +70,8 @@ export function ProjectDetail({id}:{id:string}){
  }
  function openEdit(){if(!p)return;setEdit({name:p.name,projectNumber:p.projectNumber,projectCode:p.projectCode??"",year:String(p.year),organizationId:p.organizationId,projectTypeId:p.projectTypeId??"",confidentialityLevelId:p.confidentialityLevelId??"",executingEntity:p.executingEntity??"",supervisorName:p.supervisorName??"",description:p.description??"",notes:p.notes??"",keywords:p.keywords??"",dataCompletionStatus:p.dataCompletionStatus});setError("");setMode("edit")}
  async function perform(path:string,body?:unknown){setError("");setSaving(true);try{await api("/api/v1/projects/"+id+path,{method:"PATCH",...(body?jsonBody(body):{})});setSuccess("تم تنفيذ الإجراء بنجاح");setMode(null);project.reload();versions.reload()}catch(e){setError(e instanceof Error?e.message:"تعذر تنفيذ الإجراء")}finally{setSaving(false)}}
+ async function startSubmitForReview(){setSaving(true);setError("");try{const currentFiles=await api<PageData<ArchiveFile>>("/api/v1/projects/"+id+"/files"+qs({page:1,size:1}));if(currentFiles.total===0){setShowNoFilesWarning(true);return}await perform("/submit-for-review")}catch(e){setError(e instanceof Error?e.message:"تعذر التحقق من ملفات المشروع")}finally{setSaving(false)}}
+ function confirmSubmitWithoutFiles(){setShowNoFilesWarning(false);void perform("/submit-for-review")}
  async function saveEdit(e:FormEvent){e.preventDefault();const body={...edit,year:Number(edit.year),projectTypeId:edit.projectTypeId||null,confidentialityLevelId:edit.confidentialityLevelId||null};await perform("",body)}
  function acceptUploadFiles(incoming:File[]){
   const selected=incoming.filter(Boolean);
@@ -110,14 +114,24 @@ export function ProjectDetail({id}:{id:string}){
    router.push(backHref);
   }catch(e){setError(e instanceof Error?e.message:"تعذر حذف المشروع")}finally{setSaving(false)}
  }
+ async function revokeApproval(event:FormEvent){
+  event.preventDefault();setSaving(true);setError("");
+  try{
+   await api("/api/v1/projects/"+id+"/revoke-approval",{method:"PATCH",...jsonBody({reason:approvalReversalReason.trim()})});
+   setShowApprovalReversal(false);setApprovalReversalReason("");setSuccess("تم التراجع عن الاعتماد وإعادة المشروع إلى التصحيح");project.reload();versions.reload();
+  }catch(e){setError(e instanceof Error?e.message:"تعذر التراجع عن اعتماد المشروع")}finally{setSaving(false)}
+ }
  async function deleteProject(){if(!window.confirm("إزالة مسودة «"+(p?.name??"")+"» من قائمة المشاريع؟ إن سبق حذف ملفات منها فسيحتفظ الأرشيف بسجلات الحذف وفق سياسة الاحتفاظ، دون استعادتها أو حذفها نهائيًا."))return;setSaving(true);try{await api("/api/v1/projects/"+id,{method:"DELETE"});router.push(backHref)}catch(e){setError(e instanceof Error?e.message:"تعذر حذف المشروع")}finally{setSaving(false)}}
  if(project.loading)return <Loading/>;
  if(project.error)return <><Link className="btn btn-quiet" href={backHref}><ArrowRight size={16}/> العودة للمشاريع</Link><div className="section-gap"><Alert message={project.error}/></div></>;
  if(!p)return <Empty title="المشروع غير موجود"/>;
  return <><div className="detail-header"><Link href={backHref} className="eyebrow" style={{display:"inline-flex",gap:6,alignItems:"center"}}><ArrowRight size={15}/> العودة إلى النتائج</Link>
- <div className="detail-heading"><div><h1>{p.name}</h1><div className="detail-meta"><span>{p.projectNumber}</span><span>سنة {p.year}</span><span>الإصدار {p.versionNo??1}</span><Status value={p.status}/></div></div><div className="detail-actions">{canEdit&&<button onClick={openEdit} className="btn btn-outline"><Edit3 size={16}/> تعديل البيانات</button>}{canAppendFile&&<button onClick={()=>{setCategoryId("");setCategoryIds([]);setTypeId("");setLevelId("");setError("");setMode("upload")}} className="btn btn-outline"><UploadCloud size={16}/> رفع ملف</button>}{isEditor&&["DRAFT","IMPORTED","NEEDS_CORRECTION"].includes(p.status)&&<button disabled={saving} onClick={()=>perform("/submit-for-review")} className="btn btn-gold"><ClipboardCheck size={16}/> إرسال للمراجعة</button>}{isEditor&&["APPROVED","ARCHIVED","REJECTED"].includes(p.status)&&p.isLatestVersion&&<button onClick={createVersion} disabled={saving} className="btn btn-gold"><GitBranch size={16}/> إصدار جديد</button>}{isEditor&&p.status==="REJECTED"&&p.isLatestVersion&&<button onClick={()=>perform("/reopen")} disabled={saving} className="btn btn-outline"><RotateCcw size={16}/> إعادة فتح للتصحيح</button>}{isAdmin&&<button type="button" className="btn btn-danger" disabled={saving} onClick={()=>{setError("");setAdminDeleteReason("");setShowAdminDelete(true)}}><Trash2 size={16}/> حذف المشروع</button>}</div></div></div>
+ <div className="detail-heading"><div><h1>{p.name}</h1><div className="detail-meta"><span>{p.projectNumber}</span><span>سنة {p.year}</span><span>الإصدار {p.versionNo??1}</span><Status value={p.status}/></div></div><div className="detail-actions">{canEdit&&<button onClick={openEdit} className="btn btn-outline"><Edit3 size={16}/> تعديل البيانات</button>}{canAppendFile&&<button onClick={()=>{setCategoryId("");setCategoryIds([]);setTypeId("");setLevelId("");setError("");setMode("upload")}} className="btn btn-outline"><UploadCloud size={16}/> رفع ملف</button>}{isEditor&&["DRAFT","IMPORTED","NEEDS_CORRECTION"].includes(p.status)&&<button disabled={saving} onClick={startSubmitForReview} className="btn btn-gold"><ClipboardCheck size={16}/> إرسال للمراجعة</button>}{isEditor&&["APPROVED","ARCHIVED","REJECTED"].includes(p.status)&&p.isLatestVersion&&<button onClick={createVersion} disabled={saving} className="btn btn-gold"><GitBranch size={16}/> إصدار جديد</button>}{isEditor&&p.status==="REJECTED"&&p.isLatestVersion&&<button onClick={()=>perform("/reopen")} disabled={saving} className="btn btn-outline"><RotateCcw size={16}/> إعادة فتح للتصحيح</button>}{isAdmin&&p.status==="APPROVED"&&p.isLatestVersion&&<button type="button" className="btn btn-outline" disabled={saving} onClick={()=>{setApprovalReversalReason("");setError("");setShowApprovalReversal(true)}}><RotateCcw size={16}/> التراجع عن الاعتماد</button>}{isAdmin&&<button type="button" className="btn btn-danger" disabled={saving} onClick={()=>{setError("");setAdminDeleteReason("");setShowAdminDelete(true)}}><Trash2 size={16}/> حذف المشروع</button>}</div></div></div>
  {success&&<Alert kind="success" message={success} onClose={()=>setSuccess("")}/>}
  {error&&<Alert message={error} onClose={()=>setError("")}/>}
+ {showNoFilesWarning&&<Modal title="المشروع بلا ملفات مرفوعة" subtitle="تأكد من اكتمال الوثائق قبل إدخال المشروع في دورة المراجعة." onClose={()=>setShowNoFilesWarning(false)}>
+  <div className="form-stack"><div className="archive-preview-warning" role="alert">لا توجد ملفات مرتبطة بهذا المشروع. يمكنك رفع الملفات الآن، أو متابعة الإرسال للمراجعة دون ملفات.</div><div className="form-actions"><button type="button" className="btn btn-gold" disabled={saving} onClick={confirmSubmitWithoutFiles}>متابعة الإرسال للمراجعة</button><button type="button" className="btn btn-quiet" onClick={()=>setShowNoFilesWarning(false)}>العودة ورفع الملفات</button></div></div>
+ </Modal>}
  <div className="detail-grid"><div><Panel title="مسار المشروع" subtitle="مراحل اعتماد الوثائق والتحقق من جاهزية الأرشفة"><div className="steps">{[["DRAFT","مسودة"],["UNDER_REVIEW","قيد المراجعة"],["APPROVED","معتمد"]].map(([status,label],index)=>{let reached=["DRAFT","UNDER_REVIEW","APPROVED"].indexOf(p.status);if(p.status==="ARCHIVED")reached=2;if(p.status==="NEEDS_CORRECTION"||p.status==="REJECTED")reached=1;return <div className={"step "+(index<reached?"done":index===reached?"current":"")} key={status}><span>{index<reached||(status==="APPROVED"&&p.status==="APPROVED")?"✓":index+1}</span><strong>{label}</strong></div>})}</div></Panel>
  <div className="section-gap"><Panel title="الملفات المرتبطة" subtitle="جميع الوثائق محفوظة تحت المشروع وصلاحياته" action={canAppendFile&&<button className="btn btn-outline btn-sm" onClick={()=>{setCategoryId("");setCategoryIds([]);setTypeId("");setError("");setMode("upload")}}><Plus size={15}/> رفع ملف</button>}>
  <form className="toolbar" onSubmit={e=>{e.preventDefault();setFilePage(1);setFileSearch(fileSearchInput.trim())}}><input aria-label="البحث باسم ملف المشروع" placeholder="ابحث باسم الملف أو امتداده..." value={fileSearchInput} onChange={e=>setFileSearchInput(e.target.value)}/><button type="submit" className="btn btn-outline">بحث</button>{fileSearch&&<button type="button" className="btn btn-quiet" onClick={()=>{setFileSearch("");setFileSearchInput("");setFilePage(1)}}>مسح البحث</button>}</form>
@@ -171,6 +185,14 @@ export function ProjectDetail({id}:{id:string}){
     <div className="form-actions"><button className="btn btn-danger" disabled={saving||!adminDeleteReason.trim()}>{saving?"جارٍ الحذف...":"تأكيد حذف المشروع"}</button><button type="button" className="btn btn-quiet" onClick={()=>setShowAdminDelete(false)}>إلغاء</button></div>
    </form>
   </Modal>}
+ {showApprovalReversal&&<Modal title="التراجع عن اعتماد المشروع" subtitle="سيعود أحدث إصدار إلى حالة يحتاج تصحيحًا، وسيُطلب من مدخل البيانات مراجعته وإرساله للاعتماد من جديد." onClose={()=>setShowApprovalReversal(false)}>
+  <form onSubmit={revokeApproval} className="form-stack">
+   <p><strong>{p.name}</strong> · {p.projectNumber} · الإصدار {p.versionNo??1}</p>
+   <Field label="سبب التراجع *"><textarea required maxLength={1000} value={approvalReversalReason} onChange={e=>setApprovalReversalReason(e.target.value)} placeholder="اكتب سبب إعادة المشروع للتصحيح"/></Field>
+   {error&&<Alert message={error}/>}
+   <div className="form-actions"><button className="btn btn-danger" disabled={saving||!approvalReversalReason.trim()}>{saving?"جارٍ التراجع...":"تأكيد التراجع عن الاعتماد"}</button><button type="button" className="btn btn-quiet" onClick={()=>setShowApprovalReversal(false)}>إلغاء</button></div>
+  </form>
+ </Modal>}
  {mode==="member"&&<Modal title={editingMember?"تعديل بيانات المساهم":"إضافة مساهم"} subtitle="أسماء الأشخاص الذين أنجزوا المشروع، بشكل مستقل عن المشرف." onClose={()=>{setMode(null);setEditingMember(null)}}>
    <form className="form-stack" onSubmit={saveMember}>
     <Field label="اسم الشخص *"><input required maxLength={200} value={newMember.personName}

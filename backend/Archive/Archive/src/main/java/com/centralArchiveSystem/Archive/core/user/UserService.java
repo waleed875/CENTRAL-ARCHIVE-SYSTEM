@@ -163,16 +163,23 @@ public class UserService {
         }
 
         if (request.roleIds() != null) {
-            Set<Role> nextRoles = request.roleIds().isEmpty()
-                    ? new HashSet<>() : resolveRoles(request.roleIds());
-            Set<UUID> currentRoleIds = user.getRoles().stream().map(Role::getId).collect(Collectors.toSet());
-            Set<UUID> nextRoleIds = nextRoles.stream().map(Role::getId).collect(Collectors.toSet());
+            Set<Role> currentRoles = new HashSet<>(user.getRoles());
+            Set<UUID> currentRoleIds = currentRoles.stream().map(Role::getId).collect(Collectors.toSet());
+            Set<UUID> nextRoleIds = new HashSet<>(request.roleIds());
             if (!currentRoleIds.equals(nextRoleIds)) {
-                for (Role role : user.getRoles()) {
+                for (Role role : currentRoles) {
                     if ("system_admin".equals(role.getCode()) && !nextRoleIds.contains(role.getId())) {
                         requireAnotherAdministrator(user, role.getId());
                     }
                 }
+                // Preserve roles already assigned when they have since been deactivated; they
+                // cannot be newly granted, but admins must still be able to retain or revoke them.
+                Set<Role> nextRoles = currentRoles.stream()
+                        .filter(role -> nextRoleIds.contains(role.getId()))
+                        .collect(Collectors.toCollection(HashSet::new));
+                Set<UUID> addedRoleIds = new HashSet<>(nextRoleIds);
+                addedRoleIds.removeAll(currentRoleIds);
+                if (!addedRoleIds.isEmpty()) nextRoles.addAll(resolveRoles(addedRoleIds));
                 user.setRoles(nextRoles);
                 TokenRevocation.advance(user);
             }

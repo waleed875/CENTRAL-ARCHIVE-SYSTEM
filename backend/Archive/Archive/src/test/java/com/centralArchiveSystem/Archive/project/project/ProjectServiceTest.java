@@ -27,6 +27,42 @@ import static org.mockito.Mockito.*;
 class ProjectServiceTest {
 
     @Test
+    void administratorReversalReturnsApprovedLatestVersionToCorrection() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.APPROVED);
+        project.setApprovedBy(UUID.randomUUID());
+        project.setApprovedAt(java.time.LocalDateTime.now());
+        when(repository.lockById(project.getId())).thenReturn(Optional.of(project));
+        when(repository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectResponse response = newService(repository, mock(ProjectMemberService.class),
+                mock(ConfidentialityAccessService.class)).revokeApproval(project.getId(), "Metadata needs correction");
+
+        assertEquals(Project.ProjectStatus.NEEDS_CORRECTION, project.getStatus());
+        assertNull(project.getApprovedBy());
+        assertNull(project.getApprovedAt());
+        assertEquals("Metadata needs correction", project.getReviewNotes());
+        assertEquals(Project.ProjectStatus.NEEDS_CORRECTION, response.status());
+        verify(repository).save(project);
+    }
+
+    @Test
+    void approvalReversalRejectsBlankReasonsAndArchivedVersions() {
+        ProjectRepository repository = mock(ProjectRepository.class);
+        Project project = baseProject();
+        project.setStatus(Project.ProjectStatus.APPROVED);
+        when(repository.lockById(project.getId())).thenReturn(Optional.of(project));
+        ProjectService service = newService(repository, mock(ProjectMemberService.class),
+                mock(ConfidentialityAccessService.class));
+
+        assertThrows(BusinessRuleException.class, () -> service.revokeApproval(project.getId(), "  "));
+        project.setStatus(Project.ProjectStatus.ARCHIVED);
+        assertThrows(BusinessRuleException.class, () -> service.revokeApproval(project.getId(), "reason"));
+        verify(repository, never()).save(any(Project.class));
+    }
+
+    @Test
     void administratorCanDeleteArchivedProjectWithShortNonBlankReason() {
         ProjectRepository repository = mock(ProjectRepository.class);
         Project project = baseProject();

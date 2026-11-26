@@ -106,6 +106,47 @@ public class DataEntryProductivityService {
         );
     }
 
+    /** A data-entry employee's own confidentiality-filtered project counts. */
+    public UserProjects mySummary(UUID userId) {
+        var user = users.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Data entry user", "id", userId));
+        if (user.getStatus() == com.centralArchiveSystem.Archive.core.user.User.UserStatus.DELETED
+                || user.getRoles().stream().noneMatch(r -> "central_data_entry".equals(r.getCode()))) {
+            throw new ResourceNotFoundException("Data entry user", "id", userId);
+        }
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("maxLevel", access.currentMaxLevelOrder())
+                .addValue("userId", userId);
+        return jdbc.queryForObject("""
+            WITH attributed AS (
+              SELECT original.created_by AS creator_id, latest.project_uid, latest.status
+              """ + VISIBLE_LATEST + " AND original.created_by = :userId\n" + """
+            )
+            SELECT u.id AS user_id, u.username, u.full_name, u.status,
+              COUNT(DISTINCT a.project_uid) AS projects,
+              COUNT(DISTINCT a.project_uid) FILTER
+                  (WHERE a.status IN ('DRAFT','NEEDS_CORRECTION')) AS drafts,
+              COUNT(DISTINCT a.project_uid) FILTER
+                  (WHERE a.status = 'UNDER_REVIEW') AS review,
+              COUNT(DISTINCT a.project_uid) FILTER
+                  (WHERE a.status = 'APPROVED') AS approved,
+              COUNT(DISTINCT a.project_uid) FILTER
+                  (WHERE a.status = 'ARCHIVED') AS archived,
+              COUNT(DISTINCT a.project_uid) FILTER
+                  (WHERE a.status NOT IN
+                   ('DRAFT','NEEDS_CORRECTION','UNDER_REVIEW','APPROVED','ARCHIVED')) AS other
+            FROM core.users u
+            LEFT JOIN attributed a ON a.creator_id = u.id
+            WHERE u.id = :userId
+            GROUP BY u.id, u.username, u.full_name, u.status
+            """, params, (rs, rowNum) -> new UserProjects(
+                rs.getObject("user_id", UUID.class), rs.getString("username"),
+                rs.getString("full_name"), rs.getString("status"), rs.getLong("projects"),
+                rs.getLong("drafts"), rs.getLong("review"), rs.getLong("approved"),
+                rs.getLong("archived"), rs.getLong("other")
+        ));
+    }
+
     /** View exactly the latest versions counted in a single user's summary. */
     public PagedResponse<DataEntryProjectRow> projects(UUID userId, int page, int size) {
         if (page < 1 || page > 100000 || size < 1 || size > 100) {

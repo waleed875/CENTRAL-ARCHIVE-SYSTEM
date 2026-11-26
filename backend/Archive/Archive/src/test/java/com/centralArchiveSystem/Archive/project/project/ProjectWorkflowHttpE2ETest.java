@@ -56,6 +56,7 @@ class ProjectWorkflowHttpE2ETest {
     private final String password = "WorkflowE2EPassword123!";
     private String dataEntryUsername;
     private String auditorUsername;
+    private String adminUsername;
     private UUID organizationId;
 
     @BeforeEach
@@ -63,6 +64,7 @@ class ProjectWorkflowHttpE2ETest {
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         dataEntryUsername = "workflow_entry_" + suffix;
         auditorUsername = "workflow_auditor_" + suffix;
+        adminUsername = "workflow_admin_" + suffix;
 
         Role dataEntryRole = roleRepository.findByCode("central_data_entry").orElseGet(() -> {
             Role role = new Role();
@@ -95,6 +97,14 @@ class ProjectWorkflowHttpE2ETest {
         auditor.setStatus(User.UserStatus.ACTIVE);
         auditor.setRoles(Set.of(auditorRole));
         userRepository.save(auditor);
+
+        User admin = new User();
+        admin.setUsername(adminUsername);
+        admin.setPasswordHash(passwordEncoder.encode(password));
+        admin.setFullName("Workflow System Admin");
+        admin.setStatus(User.UserStatus.ACTIVE);
+        admin.setRoles(Set.of(roleRepository.findByCode("system_admin").orElseThrow()));
+        userRepository.save(admin);
 
         Organization organization = new Organization();
         organization.setCode("WF-" + suffix);
@@ -221,6 +231,28 @@ class ProjectWorkflowHttpE2ETest {
         assertEquals(Project.ProjectStatus.APPROVED, persisted.getStatus());
         assertNotNull(persisted.getApprovedBy());
         assertNotNull(persisted.getApprovedAt());
+
+        mockMvc.perform(patch("/api/v1/projects/{id}/revoke-approval", projectId)
+                        .header("Authorization", "Bearer " + auditorToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"reviewer cannot revoke approval\"}"))
+                .andExpect(status().isForbidden());
+
+        String adminToken = login(adminUsername);
+        mockMvc.perform(patch("/api/v1/projects/{id}/revoke-approval", projectId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"A correction is required\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("NEEDS_CORRECTION"))
+                .andExpect(jsonPath("$.data.approvedAt").isEmpty())
+                .andExpect(jsonPath("$.data.approvedBy").isEmpty())
+                .andExpect(jsonPath("$.data.reviewNotes").value("A correction is required"));
+
+        Project reversed = projectRepository.findById(projectId).orElseThrow();
+        assertEquals(Project.ProjectStatus.NEEDS_CORRECTION, reversed.getStatus());
+        assertNull(reversed.getApprovedBy());
+        assertNull(reversed.getApprovedAt());
     }
 
     @Test
