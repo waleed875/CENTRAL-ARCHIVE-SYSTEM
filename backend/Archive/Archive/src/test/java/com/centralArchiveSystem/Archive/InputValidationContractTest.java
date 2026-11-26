@@ -7,6 +7,7 @@ import com.centralArchiveSystem.Archive.core.user.dto.UserUpdateRequest;
 import com.centralArchiveSystem.Archive.core.user.dto.AccountRemovalRequest;
 import com.centralArchiveSystem.Archive.import_.package_.export.export.ExportRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.ProjectRequest;
+import com.centralArchiveSystem.Archive.project.project.dto.ApprovalReversalRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.AdminProjectDeleteRequest;
 import com.centralArchiveSystem.Archive.project.project.dto.MigrationDraftDiscardRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,6 +35,10 @@ class InputValidationContractTest {
         assertFalse(VALIDATOR.validate(new UserUpdateRequest(" ", null, null, null, null)).isEmpty());
         assertFalse(VALIDATOR.validate(new OrganizationUpdateRequest("", null, null, null)).isEmpty());
         assertFalse(VALIDATOR.validate(new RoleUpdateRequest("\t", null, null)).isEmpty());
+    }
+    @Test void approvalReversalRequiresANonBlankReason() {
+        assertTrue(VALIDATOR.validate(new ApprovalReversalRequest("ok")).isEmpty());
+        assertFalse(VALIDATOR.validate(new ApprovalReversalRequest("  ")).isEmpty());
     }
     @Test void invalidEmailIsRejectedOnCreateAndUpdate() {
         UserRequest create = new UserRequest("valid-user", "ValidPassword123!", "Valid User",
