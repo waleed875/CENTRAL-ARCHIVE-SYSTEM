@@ -30,9 +30,13 @@ def verify(name, method, path, body=None, expected=(400,404,409,422), table=None
         COVERED.add(operation)
     def snapshot():
         return app.sql(app.TARGET, "SELECT md5(COALESCE(string_agg(row_to_json(t)::text,'' ORDER BY id),'')) FROM " + table + ' t')
+    # The employee self-report endpoints are intentionally restricted to the
+    # authenticated data-entry role. Probe their input contract as that role,
+    # not as the default system administrator used by the other API probes.
+    actor = 'entry' if path.startswith(ROOT + '/data-entry-productivity/me') else 'admin'
     before = snapshot() if table else None
     app.scenario('invalid value: ' + name, lambda: app.request('invalid value: ' + name, method, path,
-                    body=body, expected=expected, raw=raw, content_type=content_type))
+                    body=body, expected=expected, raw=raw, content_type=content_type, actor=actor))
     if table:
         app.record('rejected write leaves data unchanged: ' + name, before == snapshot(), table=table)
 
@@ -89,7 +93,8 @@ def contract_cases():
             # Read-only argumentless functions have no invalid value to supply.
             if key not in COVERED and verb=='get' and '{' not in path and not parameters:
                 READ_WITHOUT_ARGUMENTS.add(key)
-                app.scenario('read '+key,lambda u=actual: app.request('read '+u,'GET',u))
+                actor = 'entry' if path.startswith(ROOT + '/data-entry-productivity/me') else 'admin'
+                app.scenario('read '+key,lambda u=actual,a=actor: app.request('read '+u,'GET',u,actor=a))
     # Logout has no input body. A missing session must not count as a successful logout.
     app.scenario('logout without session', lambda: app.request('logout without session','POST',
                  ROOT+'/auth/logout',expected=401,actor=None))
